@@ -1,0 +1,41 @@
+<div class="oj-md-margin-12x-top" style="padding: 20px; margin: auto; max-width: 350px; background-color: floralwhite" >
+    <div class="oj-form">
+        <!--  icon row  -->
+        <div class="oj-flex oj-md-padding-2x-horizontal
+            oj-sm-justify-content-center
+            oj-sm-align-items-center
+            oj-sm-padding-2x-top">
+            <div id="login-human-icon" style="color:#2a4263">
+                <svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"
+                     viewBox="0 0 64 64" fill="currentColor">
+                    <circle cx="32" cy="18" r="14"/>
+                    <rect  x="14" y="36" width="36" height="20" rx="10"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="oj-flex oj-md-padding-2x-horizontal oj-md-padding-2x-top">
+            <div class="oj-flex oj-sm-12">
+                <oj-input-text type="text" id="email" class="oj-inputtext-input oj-component-initnode"
+                               autocomplete="off"
+                               aria-invalid="false"
+                               raw-value={{userName}}
+                               on-keydown="[[(event, data) => { if(event.keyCode == 13) {  login(data,event)  } }]]"
+                               value="{{userName}}"
+                               label-hint="Display Name" label-edge="inside"
+                               style="width: 35em"></oj-input-text>
+            </div>
+        </div>
+        <div class="oj-flex oj-md-padding-2x-horizontal"></div><br>
+        <div class="oj-flex oj-md-padding-2x-horizontal">
+            <div class="oj-flex oj-md-12">
+                <div class="oj-flex-item">
+                    <oj-button id="login" chroming="callToAction" on-oj-action="[[login]]"
+                               class="oj-sm-margin-2x-bottom">
+                        Login
+                    </oj-button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,67 @@
+# Compiled class file
+*.class
+
+# Maven
+target/
+.m2/
+
+# Local runtime data
+fastf1-data/
+mongo-data/
+logs/
+
+# Local tooling and assistant/IDE state
+.oca/
+tools/mongodb/
+
+# Environment and local override files
+.env
+.env.*
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / Oracle JET generated files
+node_modules/
+frontend/f1-ui/web/
+frontend/f1-ui/staged-themes/
+frontend/f1-ui/dist/
+frontend/f1-ui/jet_components/
+frontend/f1-ui/exchange_components/
+frontend/f1-ui/jaftmp@/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# IntelliJ Idea
+.idea/*
+!.idea/runConfigurations
+*.iws
+*.ipr
+*.iml
+*.releaseBackup
+atlassian-ide-plugin.xml
+
+# Netbeans
+nbactions.xml
+nb-configuration.xml
+
+# Eclipse
+.settings
+.settings/
+.project
+.classpath
+.factorypath

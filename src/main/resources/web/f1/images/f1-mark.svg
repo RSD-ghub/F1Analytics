@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 86" role="img" aria-labelledby="title desc">
+  <title id="title">F1 Dashboard Mark</title>
+  <desc id="desc">Custom racing inspired logo for the dashboard.</desc>
+  <defs>
+    <linearGradient id="g-red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff2f45"/>
+      <stop offset="100%" stop-color="#c20f2f"/>
+    </linearGradient>
+    <linearGradient id="g-silver" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f2f4f8"/>
+      <stop offset="100%" stop-color="#c4cbd8"/>
+    </linearGradient>
+  </defs>
+
+  <polygon points="14,70 56,14 94,14 52,70" fill="url(#g-red)"/>
+  <polygon points="104,70 146,14 184,14 142,70" fill="url(#g-red)" opacity="0.92"/>
+  <polygon points="198,70 258,14 288,14 228,70" fill="url(#g-silver)"/>
+
+  <text x="300" y="42" font-family="'Segoe UI', Tahoma, sans-serif" font-size="23" font-weight="700" fill="#f2f4f8" letter-spacing="2">RACE</text>
+  <text x="300" y="67" font-family="'Segoe UI', Tahoma, sans-serif" font-size="18" font-weight="600" fill="#cfd7e7" letter-spacing="1.6">DASHBOARD</text>
+</svg>

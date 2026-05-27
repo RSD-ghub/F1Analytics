@@ -1,0 +1,381 @@
+﻿<div class="driver-page">
+    <div class="driver-toolbar">
+        <div class="driver-toolbar__group">
+            <oj-button on-oj-action="[[goDashboard]]" class="dashboard-btn-red oj-sm-margin-2x-end">
+                Back to Dashboard
+            </oj-button>
+            <oj-button on-oj-action="[[refreshDriverAnalytics]]" class="dashboard-btn-red">
+                Refresh Driver Data
+            </oj-button>
+        </div>
+        <div class="driver-toolbar__group driver-toolbar__filters">
+            <oj-select-single value="{{selectedDriver}}"
+                              data="[[driverOptionsDp]]"
+                              item-text="label"
+                              placeholder="Search driver"
+                              class="driver-select"
+                              label-hint="Driver"
+                              label-edge="inside">
+            </oj-select-single>
+            <oj-select-single value="{{selectedSeason}}"
+                              data="[[seasonOptionsDp]]"
+                              item-text="label"
+                              class="driver-season-select"
+                              label-hint="Season"
+                              label-edge="inside">
+            </oj-select-single>
+        </div>
+    </div>
+
+    <div class="driver-status-line">
+        <span class="driver-status-line__title">Driver Focus:</span>
+        <span class="driver-status-line__value"><oj-bind-text value="[[driverTitle]]"></oj-bind-text></span>
+        <span class="driver-status-line__meta"><oj-bind-text value="[[scopeLabel]]"></oj-bind-text></span>
+        <span class="driver-status-line__meta"><oj-bind-text value="[[domainAvailability]]"></oj-bind-text></span>
+        <span class="driver-status-line__meta" data-bind="visible: loading">Loading analytics...</span>
+        <span class="driver-status-line__error" data-bind="visible: errorMessage">
+            <oj-bind-text value="[[errorMessage]]"></oj-bind-text>
+        </span>
+    </div>
+
+    <div class="driver-kpi-grid">
+        <article class="driver-kpi-card">
+            <span class="driver-kpi-card__label">Total Points</span>
+            <span class="driver-kpi-card__value"><oj-bind-text value="[[totalPointsDisplay]]"></oj-bind-text></span>
+        </article>
+        <article class="driver-kpi-card">
+            <span class="driver-kpi-card__label">Wins</span>
+            <span class="driver-kpi-card__value"><oj-bind-text value="[[winsDisplay]]"></oj-bind-text></span>
+        </article>
+        <article class="driver-kpi-card">
+            <span class="driver-kpi-card__label">Podiums</span>
+            <span class="driver-kpi-card__value"><oj-bind-text value="[[podiumsDisplay]]"></oj-bind-text></span>
+        </article>
+        <article class="driver-kpi-card">
+            <span class="driver-kpi-card__label">Races</span>
+            <span class="driver-kpi-card__value"><oj-bind-text value="[[racesDisplay]]"></oj-bind-text></span>
+        </article>
+        <article class="driver-kpi-card">
+            <span class="driver-kpi-card__label">Avg Finish</span>
+            <span class="driver-kpi-card__value"><oj-bind-text value="[[avgFinishDisplay]]"></oj-bind-text></span>
+        </article>
+    </div>
+
+    <div class="driver-analytics-grid">
+        <section class="chart-card chart-card--cool driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Points by Race Trend</h3>
+                <p class="chart-card__kpi">Chronological view across all seasons</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="line"
+                          data="[[pointsByRaceDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"Points","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"lineWidth":3,"markerDisplayed":"on","seriesColors":["#ff3d5a"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--neutral driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Finish Position Trend</h3>
+                <p class="chart-card__kpi">Lower values indicate stronger finishes</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="line"
+                          data="[[finishByRaceDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"Position","min":1,"titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"lineWidth":3,"markerDisplayed":"on","seriesColors":["#4dd0e1"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--warm driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Team Points Share</h3>
+                <p class="chart-card__kpi">Points contribution by constructor tenure</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="pie"
+                          data="[[teamPointsDp]]"
+                          data-label="[[piePointsLabel]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"position":"bottom"}'
+                          style-defaults='{"dataLabelPosition":"outsideSlice","seriesColors":["#ff6f61","#ffb74d","#ffd166","#f06292","#80cbc4","#64b5f6"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--cool driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title"><oj-bind-text value="[[chart4Title]]"></oj-bind-text></h3>
+                <p class="chart-card__kpi"><oj-bind-text value="[[chart4Kpi]]"></oj-bind-text></p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="bar"
+                          data="[[chart4Dp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          x-axis="[[chart4XAxis]]"
+                          y-axis="[[chart4YAxis]]"
+                          style-defaults='{"seriesColors":["#18c6b3"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--neutral driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Podium/Win Breakdown</h3>
+                <p class="chart-card__kpi">Wins vs podiums vs other finishes</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="pie"
+                          data="[[breakdownDp]]"
+                          data-label="[[pieCountLabel]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"position":"bottom"}'
+                          style-defaults='{"dataLabelPosition":"outsideSlice","seriesColors":["#ff3d5a","#ffd166","#90a4ae"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--warm driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Lap Trend</h3>
+                <p class="chart-card__kpi">Average lap time from FastF1 lap feed</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="line"
+                          data="[[lapTrendDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"Avg Lap Time (s)","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"lineWidth":3,"markerDisplayed":"on","seriesColors":["#59b6ff"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--neutral driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Stint Compound Summary</h3>
+                <p class="chart-card__kpi">Laps completed by tyre compound</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="bar"
+                          data="[[stintSummaryDp]]"
+                          orientation="horizontal"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          y-axis='{"title":"Compound","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          x-axis='{"title":"Laps","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"seriesColors":["#ff9e6d"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--cool driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Pit Stop Summary</h3>
+                <p class="chart-card__kpi">Average pit duration per race in scope</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="bar"
+                          data="[[pitStopDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"rendered":"off"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"Seconds","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"seriesColors":["#ffd166"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--warm driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Weather Summary</h3>
+                <p class="chart-card__kpi">Average air and track temperatures by race</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="line"
+                          data="[[weatherDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"position":"bottom"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"Temperature (C)","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"lineWidth":3,"markerDisplayed":"on","seriesColors":["#4dd0e1","#ffb74d"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--neutral driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Telemetry Speed Summary</h3>
+                <p class="chart-card__kpi">Max and average speed by race</p>
+            </div>
+            <div class="chart-card__body">
+                <oj-chart class="chart-widget"
+                          type="bar"
+                          data="[[telemetryDp]]"
+                          animation-on-display="auto"
+                          animation-on-data-change="auto"
+                          legend='{"position":"bottom"}'
+                          x-axis='{"title":"Race","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"rotation":"auto","style":"font-size:10px;color:#eef4ff;"}}'
+                          y-axis='{"title":"km/h","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                          style-defaults='{"seriesColors":["#ff3d5a","#18c6b3"]}'>
+                    <template slot="itemTemplate" data-oj-as="item">
+                        <oj-chart-item value="[[item.data.value]]"
+                                       short-desc="[[item.data.shortDesc]]"
+                                       group-id="[[ [item.data.group] ]]"
+                                       series-id="[[item.data.series]]">
+                        </oj-chart-item>
+                    </template>
+                </oj-chart>
+            </div>
+        </section>
+
+        <section class="chart-card chart-card--cool driver-chart-card">
+            <div class="chart-card__header">
+                <h3 class="chart-card__title">Race Control Timeline</h3>
+                <p class="chart-card__kpi">Message category distribution and latest feed</p>
+            </div>
+            <div class="chart-card__body driver-race-control-body">
+                <div class="driver-race-control-chart">
+                    <oj-chart class="chart-widget"
+                              type="bar"
+                              data="[[raceControlDp]]"
+                              orientation="horizontal"
+                              animation-on-display="auto"
+                              animation-on-data-change="auto"
+                              legend='{"rendered":"off"}'
+                              y-axis='{"title":"Category","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                              x-axis='{"title":"Messages","titleStyle":"font-size:12px;color:#eef4ff;","tickLabel":{"style":"font-size:11px;color:#eef4ff;"}}'
+                              style-defaults='{"seriesColors":["#9fa8da"]}'>
+                        <template slot="itemTemplate" data-oj-as="item">
+                            <oj-chart-item value="[[item.data.value]]"
+                                           short-desc="[[item.data.shortDesc]]"
+                                           group-id="[[ [item.data.group] ]]"
+                                           series-id="[[item.data.series]]">
+                            </oj-chart-item>
+                        </template>
+                    </oj-chart>
+                </div>
+                <div class="driver-race-control-feed" data-bind="if: raceControlPreview().length">
+                    <div class="driver-race-control-feed__title">Latest Events</div>
+                    <ul class="driver-race-control-feed__list" data-bind="foreach: raceControlPreview">
+                        <li class="driver-race-control-feed__item">
+                            <span class="driver-race-control-feed__meta" data-bind="text: ($data.label || '') + ' | ' + ($data.time || '')"></span>
+                            <span class="driver-race-control-feed__message" data-bind="text: ($data.category || '') + ': ' + ($data.message || '')"></span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="driver-race-control-feed driver-race-control-feed--empty" data-bind="ifnot: raceControlPreview().length">
+                    No race control messages available for this scope.
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <section class="chart-card chart-card--neutral driver-table-card">
+        <div class="chart-card__header">
+            <h3 class="chart-card__title">Driver Race Results</h3>
+            <p class="chart-card__kpi">Newest races first</p>
+        </div>
+        <div class="driver-table-wrap">
+            <oj-table id="driverResultsTable"
+                      class="driver-results-table"
+                      data="[[resultsDp]]"
+                      scroll-policy="loadMoreOnScroll"
+                      scroll-policy-options='{"fetchSize": 12}'
+                      columns='[[columns]]'>
+            </oj-table>
+        </div>
+    </section>
+</div>
