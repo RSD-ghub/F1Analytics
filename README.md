@@ -1,6 +1,6 @@
 # prompts
 
-Sample Helidon MP project that includes multiple REST operations.
+Formula 1 Analytics Dashboard
 
 ## Build and run
 
