@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "f1-react",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && cd frontend/f1-react && npm run dev -- --port ${PORT:-5173}"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

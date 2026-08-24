@@ -1,0 +1,171 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# F1 Analytics Dashboard — Docker Compose
+#
+# Usage:
+#   cp .env.example .env          # add TINKER_API_KEY and JWT_SECRET
+#   docker compose up --build     # first run (builds images)
+#   docker compose up             # subsequent runs
+#
+# Only mongodb, core-api and frontend publish host ports. The three internal
+# services are reachable solely on the compose network, which is what makes
+# core-api the single place authentication is enforced.
+#
+# Services:
+#   mongodb            → localhost:27017
+#   core-api           → http://localhost:8000   (FastAPI — the public API)
+#   frontend           → http://localhost:3000   (React / Nginx)
+#   ingestion-service  → internal only
+#   prediction-service → internal only
+#   scoring-service    → internal only
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: f1_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Java Backend (Helidon MP) ─────────────────────────────────────────────
+  # ── Ingestion Service (FastAPI, internal) ─────────────────────────────────
+  # Owns all FastF1-derived data and its completeness guarantees.
+  # No host port: reachable only by core-api on the compose network.
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: services/ingestion-service/Dockerfile
+    container_name: f1_ingestion
+    restart: unless-stopped
+    expose:
+      - "8001"
+    environment:
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DATABASE: "f1_ingestion"
+      DATASET_ROOT: "/data/fastf1"
+      TINKER_API_KEY: "${TINKER_API_KEY:-}"
+    volumes:
+      # Read-write: this service is the only writer of the dataset.
+      - ./fastf1-data:/data/fastf1
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Prediction Service (FastAPI, internal) ────────────────────────────────
+  prediction-service:
+    build:
+      context: .
+      dockerfile: services/prediction-service/Dockerfile
+    container_name: f1_prediction
+    restart: unless-stopped
+    expose:
+      - "8002"
+    environment:
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DATABASE: "f1_prediction"
+      DATA_DIR: "/data/fastf1"
+      INGESTION_SERVICE_URL: "http://ingestion-service:8001"
+    volumes:
+      # Read-only: prediction consumes the dataset, never writes it.
+      - ./fastf1-data:/data/fastf1:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Scoring Service (FastAPI, internal) ───────────────────────────────────
+  scoring-service:
+    build:
+      context: .
+      dockerfile: services/scoring-service/Dockerfile
+    container_name: f1_scoring
+    restart: unless-stopped
+    expose:
+      - "8003"
+    environment:
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DATABASE: "f1_scoring"
+      INGESTION_SERVICE_URL: "http://ingestion-service:8001"
+      PREDICTION_SERVICE_URL: "http://prediction-service:8002"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Core API (FastAPI) — the only publicly reachable backend ──────────────
+  core-api:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile
+    container_name: f1_core_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URI: "mongodb://mongodb:27017"
+      MONGO_DATABASE: "f1_core"
+      JWT_SECRET: "${JWT_SECRET}"
+      TINKER_API_KEY: "${TINKER_API_KEY:-}"
+      INGESTION_SERVICE_URL: "http://ingestion-service:8001"
+      PREDICTION_SERVICE_URL: "http://prediction-service:8002"
+      SCORING_SERVICE_URL: "http://scoring-service:8003"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      ingestion-service:
+        condition: service_healthy
+      prediction-service:
+        condition: service_healthy
+      scoring-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── React Frontend (Nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend/f1-react
+      dockerfile: Dockerfile
+    container_name: f1_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      core-api:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+    driver: local

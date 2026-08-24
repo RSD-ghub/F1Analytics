@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: f1-common
+Version: 0.1.0
+Summary: Shared infrastructure for the F1 forecasting platform services
+Requires-Python: >=3.9
+Requires-Dist: fastapi>=0.110
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: motor>=3.4
+Requires-Dist: httpx>=0.27
+Requires-Dist: pyjwt>=2.8

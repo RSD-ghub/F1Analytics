@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "f1-common"
+version = "0.1.0"
+description = "Shared infrastructure for the F1 forecasting platform services"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "motor>=3.4",
+    "httpx>=0.27",
+    "pyjwt>=2.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["f1_common*"]

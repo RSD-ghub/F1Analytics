@@ -1,0 +1,157 @@
+{
+  "era_decay": 0.6,
+  "feature_means": {
+    "avg_finish_recent": 9.647113665389528,
+    "avg_finish_season": 9.608969486621467,
+    "avg_grid_recent": 11.006114942528734,
+    "circuit_avg_finish": 10.135453384418904,
+    "dnf_rate": 0.16896548490098623,
+    "grid_legacy": 0.0,
+    "grid_modern": 0.0,
+    "is_cold_start": 0.003524904214559387,
+    "points_per_race": 4.8298350173869204,
+    "positions_gained": 1.3139233716475096,
+    "practice_long_run_gap_pct": 0.013421302566961658,
+    "quali_gap_pct": 0.02240764364918927,
+    "quali_teammate_gap_pct": 3.940242317350724e-05,
+    "recent_quali_gap_pct": 0.023178200653514325,
+    "team_avg_finish": 9.570278847291396,
+    "teammate_delta": -0.042065401917688434
+  },
+  "feature_stds": {
+    "avg_finish_recent": 4.551357641128531,
+    "avg_finish_season": 4.437604387823181,
+    "avg_grid_recent": 5.228154654554448,
+    "circuit_avg_finish": 4.112897584412497,
+    "dnf_rate": 0.1342333847196981,
+    "grid_legacy": 6.922186552431729,
+    "grid_modern": 6.072255838455205,
+    "is_cold_start": 0.05926617302338299,
+    "points_per_race": 5.788315246736619,
+    "positions_gained": 2.319068558544171,
+    "practice_long_run_gap_pct": 0.013490073381763844,
+    "quali_gap_pct": 0.021953144638760184,
+    "quali_teammate_gap_pct": 0.008674401227906836,
+    "recent_quali_gap_pct": 0.018100555765763825,
+    "team_avg_finish": 4.3136262248476145,
+    "teammate_delta": 2.368771728053831
+  },
+  "fitted_at": "2026-08-22T14:24:15.067504+00:00",
+  "metrics": {
+    "post_quali": {
+      "test": {
+        "improvement": 0.08291593675375218,
+        "mean_log_likelihood": -36.97350191986784,
+        "races": 88,
+        "uniform_baseline": -40.316371640993204
+      },
+      "train": {
+        "improvement": 0.07663664207523482,
+        "mean_log_likelihood": -39.93940935686946,
+        "races": 225,
+        "uniform_baseline": -43.254271478383366
+      }
+    },
+    "pre_quali": {
+      "test": {
+        "improvement": 0.06543114456537738,
+        "mean_log_likelihood": -37.90925603839691,
+        "races": 88,
+        "uniform_baseline": -40.563363328395056
+      },
+      "train": {
+        "improvement": 0.07051817422836999,
+        "mean_log_likelihood": -40.348683968082305,
+        "races": 225,
+        "uniform_baseline": -43.40986864868062
+      }
+    }
+  },
+  "noise_scale": 0.3,
+  "pre_quali_noise_scale": 0.3,
+  "pre_quali_weights": {
+    "avg_finish_recent": 0.012197597063450128,
+    "avg_finish_season": 0.2800743777044305,
+    "avg_grid_recent": -0.20443883676577398,
+    "circuit_avg_finish": 0.020190815848403713,
+    "dnf_rate": -0.05065903807558869,
+    "is_cold_start": 0.0,
+    "points_per_race": 0.3330634220122712,
+    "positions_gained": 0.015907836847260888,
+    "practice_long_run_gap_pct": -0.10745190072666888,
+    "quali_teammate_gap_pct": 0.0064258529399563,
+    "recent_quali_gap_pct": -0.11658002115763766,
+    "team_avg_finish": -0.36013368188159517,
+    "teammate_delta": -0.030120190498989504
+  },
+  "target_season": 2026,
+  "temperature_sweeps": {
+    "post_quali": {
+      "0.05": 0.5172177888081785,
+      "0.1": 0.48017457055421026,
+      "0.15": 0.45018943388485305,
+      "0.2": 0.4317748120123752,
+      "0.3": 0.42472387389023386,
+      "0.45": 0.4558302662093083,
+      "0.6": 0.49687572457627116,
+      "0.8": 0.5439924549031477,
+      "1.0": 0.5798746616895344,
+      "1.4": 0.6264934381221415,
+      "2.0": 0.6647974961662636
+    },
+    "pre_quali": {
+      "0.05": 0.5494713309854499,
+      "0.1": 0.5201299700066137,
+      "0.15": 0.49631516283068794,
+      "0.2": 0.4796689735780419,
+      "0.3": 0.470935219609788,
+      "0.45": 0.49414530942460333,
+      "0.6": 0.5289373906084655,
+      "0.8": 0.5685755412367721,
+      "1.0": 0.5991230517195764,
+      "1.4": 0.6384788459656086,
+      "2.0": 0.6711847632275139
+    }
+  },
+  "test_seasons": [
+    2024,
+    2025
+  ],
+  "training_seasons": [
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021
+  ],
+  "validation_seasons": [
+    2022,
+    2023
+  ],
+  "version": "race-plackett-luce-v4",
+  "weights": {
+    "avg_finish_recent": 0.07267549261287787,
+    "avg_finish_season": 0.12209153299191702,
+    "avg_grid_recent": -0.12680798904277782,
+    "circuit_avg_finish": 0.048903551387624054,
+    "dnf_rate": -0.04887658624147746,
+    "grid_legacy": -0.20630802084640174,
+    "grid_modern": -0.3217337423724755,
+    "is_cold_start": -0.0034588228100796655,
+    "points_per_race": 0.3182828139654869,
+    "positions_gained": 0.004799764547669389,
+    "practice_long_run_gap_pct": -0.0878216166602214,
+    "quali_gap_pct": -0.049266509738510905,
+    "quali_teammate_gap_pct": 0.0015479069130065705,
+    "recent_quali_gap_pct": -0.028998140355902893,
+    "team_avg_finish": -0.18083114186415344,
+    "teammate_delta": 0.016408555338314746
+  }
+}
