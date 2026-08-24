@@ -17,6 +17,9 @@ tools/mongodb/
 # Environment and local override files
 .env
 .env.*
+# ...but the template carries no secrets and is how someone knows which
+# variables exist. `.env.*` swallowed it, which is why it was never tracked.
+!.env.example
 *.local
 .claude/settings.local.json
 
