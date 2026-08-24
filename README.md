@@ -41,6 +41,69 @@ Quick verification:
 - Check `/f1/ingest/status` returns `state: SUCCESS`.
 - Confirm `rowCounts` has non-zero values for available domains.
 
+## Predictive Race Analytics
+
+Predicts finish positions, optimal pit window, compound strategy, and lap time forecast for any ingested race.
+Trained on all years of data (2010–present) using a `RandomForestRegressor`; falls back to a weighted historical average if scikit-learn is not installed.
+
+### Install dependencies once
+```bash
+py -3 -m pip install -r scripts/predict/requirements.txt
+```
+
+### API endpoints
+```bash
+# Get prediction for a race (cached after first run)
+curl -X GET "http://localhost:8082/f1/predict/race?season=2024&round=5"
+
+# Force recompute (evicts cache and reruns the model)
+curl -X POST "http://localhost:8082/f1/predict/race/refresh?season=2024&round=5"
+```
+
+### Response shape
+```json
+{
+  "season": 2024,
+  "round": 5,
+  "raceName": "Monaco Grand Prix",
+  "circuit": "Monte Carlo",
+  "predictions": [
+    {
+      "driver": "Max Verstappen",
+      "team": "Red Bull Racing",
+      "actualPosition": 1,
+      "predictedPosition": 1,
+      "positionConfidence": 0.87,
+      "predictedPoints": 25,
+      "historicalWinsAtCircuit": 3,
+      "historicalAvgPositionAtCircuit": 1.8,
+      "seasonAvgPosition": 1.4
+    }
+  ],
+  "strategy": {
+    "recommendedPitLap": 28,
+    "recommendedCompoundStrategy": "MEDIUM->HARD",
+    "avgPitStopsAtCircuit": 1.9
+  },
+  "lapTimeForecast": [
+    { "compound": "SOFT",   "predictedAvgLapTimeSeconds": 77.4, "sampleSize": 312 },
+    { "compound": "MEDIUM", "predictedAvgLapTimeSeconds": 78.1, "sampleSize": 489 },
+    { "compound": "HARD",   "predictedAvgLapTimeSeconds": 79.3, "sampleSize": 201 }
+  ],
+  "modelInfo": {
+    "type": "RandomForestRegressor",
+    "trainedOnSeasons": [2010, 2011, "...", 2024],
+    "totalHistoricalRaces": 285,
+    "circuitHistoricalRaces": 14
+  }
+}
+```
+
+### Notes
+- Past-season predictions are cached permanently; current-season predictions expire after 7 days.
+- The model is trained fresh on each cache-miss call. For large datasets this takes ~5–15 seconds.
+- Data must be ingested first via the FastF1 ingest pipeline (see above).
+
 ## Exercise the application
 
 Basic:
