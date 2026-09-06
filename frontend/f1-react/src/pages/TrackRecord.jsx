@@ -53,6 +53,13 @@ export default function TrackRecord() {
           value={record.predictions_pending}
           note="Counted so the record cannot be improved by leaving bad calls unscored."
         />
+        {record.predictions_refused_late > 0 && (
+          <Tile
+            label="Refused — locked too late"
+            value={record.predictions_refused_late}
+            note="Locked at or after the race started, so not scored. A call made after the race is not a forecast."
+          />
+        )}
         <Tile
           label="Made on incomplete data"
           value={record.predictions_incomplete_data}

@@ -76,6 +76,7 @@ def build_track_record(
     scores: Sequence[PredictionScore],
     calibration_samples: Iterable[Tuple[Market, str, float, bool]],
     pending: int = 0,
+    refused_late: int = 0,
     buckets: int = 10,
 ) -> TrackRecord:
     """Assemble the public record from scored predictions."""
@@ -105,6 +106,7 @@ def build_track_record(
         model_versions=sorted({score.model_version for score in scores if score.model_version}),
         predictions_scored=len(scores),
         predictions_pending=pending,
+        predictions_refused_late=refused_late,
         predictions_incomplete_data=sum(1 for s in scores if not s.data_complete),
         windows=[
             build_window_record(window, by_window[window])

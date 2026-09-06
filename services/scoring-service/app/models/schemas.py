@@ -151,6 +151,11 @@ class TrackRecord(BaseModel):
     model_versions: List[str] = Field(default_factory=list)
     predictions_scored: int = 0
     predictions_pending: int = 0
+    #: Locked at or after the race began, and therefore refused scoring. Counted
+    #: separately because folding them into ``pending`` would read as "not
+    #: reconciled yet" when the truth is "will never be scored, and should not
+    #: be" — the opposite claim about the record's integrity.
+    predictions_refused_late: int = 0
     predictions_incomplete_data: int = 0
     windows: List[WindowRecord] = Field(default_factory=list)
     calibration: List[CalibrationCurve] = Field(default_factory=list)

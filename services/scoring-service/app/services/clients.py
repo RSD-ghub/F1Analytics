@@ -55,6 +55,10 @@ class LockedPrediction(BaseModel):
     race_name: str = ""
     window: str
     locked_at: Optional[datetime] = None
+    #: When the race started. The reference point for whether this was a
+    #: forecast at all — see ``is_late_lock``. ``None`` means the prediction
+    #: never recorded one, which is not the same as being on time.
+    race_start_utc: Optional[datetime] = None
     model_version: str = ""
     driver_probabilities: List[DriverProbabilityRow] = Field(default_factory=list)
     #: Markets this forecast actually claimed. Empty means "not declared", which
@@ -65,6 +69,24 @@ class LockedPrediction(BaseModel):
 
     def publishes(self, market: str) -> bool:
         return not self.published_markets or market in self.published_markets
+
+    @property
+    def is_late_lock(self) -> Optional[bool]:
+        """Was this locked at or after the race began?
+
+        Three-valued on purpose. ``True`` means provably late, ``False`` means
+        provably in time, and ``None`` means we cannot tell because one of the
+        timestamps is missing — which must not be silently read as "fine".
+        """
+        if self.locked_at is None or self.race_start_utc is None:
+            return None
+        locked, start = self.locked_at, self.race_start_utc
+        # Mongo round-trips can drop tzinfo; compare like with like rather than
+        # raising on a naive/aware mix.
+        if (locked.tzinfo is None) != (start.tzinfo is None):
+            locked = locked.replace(tzinfo=None)
+            start = start.replace(tzinfo=None)
+        return locked >= start
 
     @classmethod
     def from_payload(cls, payload: Dict[str, Any]) -> "LockedPrediction":
@@ -77,6 +99,7 @@ class LockedPrediction(BaseModel):
             race_name=payload.get("race_name", ""),
             window=payload.get("window", ""),
             locked_at=payload.get("locked_at"),
+            race_start_utc=payload.get("race_start_utc"),
             model_version=payload.get("model_version", ""),
             published_markets=list(payload.get("published_markets", []) or []),
             driver_probabilities=[

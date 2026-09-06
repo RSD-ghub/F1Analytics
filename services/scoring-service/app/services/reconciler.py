@@ -58,6 +58,30 @@ class Reconciler:
         predictions = await self._predictions.predictions_for(season, round_number)
         scores: List[PredictionScore] = []
         for prediction in predictions:
+            if prediction.is_late_lock:
+                # A call placed after the lights went out is not a forecast, and
+                # scoring it would put a result-shaped thing into the public
+                # accuracy record. Refused outright rather than flagged: a
+                # flagged entry still lands in the aggregate, and the one number
+                # this product sells is "we said it beforehand".
+                logger.error(
+                    "REFUSING to score %s for %s-%s: locked at %s, race started "
+                    "at %s. A prediction made after the race is not a forecast.",
+                    prediction.prediction_id, season, round_number,
+                    prediction.locked_at, prediction.race_start_utc,
+                )
+                continue
+            if prediction.is_late_lock is None:
+                # Not provably late, but not provably in time either. Scored,
+                # because refusing every prediction that predates the field
+                # would erase the record; logged, because an unverifiable lock
+                # is a gap in the guarantee and should be visible.
+                logger.warning(
+                    "cannot verify lock timing for %s (locked_at=%s, "
+                    "race_start_utc=%s); scoring it unverified",
+                    prediction.prediction_id, prediction.locked_at,
+                    prediction.race_start_utc,
+                )
             score = score_prediction(prediction, outcome)
             await self._store.save_score(score)
             scores.append(score)
@@ -97,22 +121,31 @@ class Reconciler:
         by simply declining to reconcile the bad ones.
         """
         scores = await self._store.list_scores(season=season)
-        pending = await self._count_pending(season, scores)
+        pending, refused_late = await self._count_pending(season, scores)
         samples = await self._calibration_samples(season, scores)
         return record_builder.build_track_record(
-            scores, samples, pending=pending, buckets=buckets
+            scores, samples, pending=pending, refused_late=refused_late,
+            buckets=buckets
         )
 
     async def _count_pending(
         self, season: Optional[int], scores: Sequence[PredictionScore]
-    ) -> int:
+    ) -> Tuple[int, int]:
+        """``(pending, refused_late)``.
+
+        Split rather than summed: one means "not scored yet", the other means
+        "never will be, deliberately". Reporting them as one number would let a
+        refused forecast masquerade as a backlog.
+        """
         try:
             locked = await self._predictions.list_predictions(season)
         except UpstreamUnavailable:
             logger.warning("cannot count pending predictions; reporting 0")
-            return 0
+            return 0, 0
         scored_ids = {score.prediction_id for score in scores}
-        return sum(1 for p in locked if p.prediction_id not in scored_ids)
+        unscored = [p for p in locked if p.prediction_id not in scored_ids]
+        refused = sum(1 for p in unscored if p.is_late_lock)
+        return len(unscored) - refused, refused
 
     async def _calibration_samples(
         self, season: Optional[int], scores: Sequence[PredictionScore]
