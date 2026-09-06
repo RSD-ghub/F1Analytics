@@ -221,7 +221,13 @@ class Predictor:
         ]
 
         try:
-            status = await self._client.completeness(season, season)
+            # Results depth, not full. prediction-service consumes race
+            # classifications and qualifying — nothing else. Asking whether the
+            # archive is complete at *lap* depth flags every forecast as built
+            # on incomplete data whenever laps have not been backfilled, which
+            # is both wrong and corrosive: a caveat that is always present is a
+            # caveat nobody reads.
+            status = await self._client.completeness(season, season, depth="results")
             upstream_gaps = [
                 gap for gap in status.open_gaps if _is_before(gap, season, snapshot.round)
             ]

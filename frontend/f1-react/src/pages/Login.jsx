@@ -1,94 +1,80 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { loginUser } from '../api/f1Api'
+import { login, register } from '../api/f1Api'
+import { useAuth } from '../context/useAuth'
+import { Panel } from '../components/Panel'
 
-export default function Login() {
-  const [username, setUsername] = useState('')
+/**
+ * Sign in / register.
+ *
+ * The API returns an identical 401 for a wrong password and an unknown
+ * account, so the message here is deliberately identical too. Being more
+ * helpful — "no account with that address" — would turn the form into a free
+ * account-enumeration tool.
+ */
+export default function Login({ mode = 'login' }) {
+  const isRegister = mode === 'register'
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError]       = useState('')
-  const [loading, setLoading]   = useState(false)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const { login: signIn } = useAuth()
+  const navigate = useNavigate()
 
-  const { login } = useAuth()
-  const navigate  = useNavigate()
-
-  async function handleLogin() {
-    const u = username.trim()
-    if (!u || !password) {
-      setError('Please enter your username and password')
-      return
-    }
-    setLoading(true)
-    setError('')
+  async function submit(event) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
     try {
-      const data = await loginUser(u, password)
-      login(data.token, data.username)
-      navigate('/dashboard')
+      const data = isRegister
+        ? await register(email, password)
+        : await login(email, password)
+      signIn(data.access_token, email)
+      navigate('/bernie')
     } catch (err) {
-      setError(err.message || 'Sign in failed. Please try again.')
+      setError(err.message)
     } finally {
-      setLoading(false)
+      setBusy(false)
     }
-  }
-
-  function handleKey(e) {
-    if (e.key === 'Enter') handleLogin()
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <span className="login-card__logo">F1</span>
-
-        <div>
-          <p className="login-card__title">Formula 1 Analytics</p>
-          <p className="login-card__subtitle">Sign in to your account</p>
-        </div>
-
-        {error && <div className="login-card__error">{error}</div>}
-
-        <div className="login-card__fields">
-          <div className="login-card__input-wrap">
-            <label className="login-card__label">Username</label>
-            <input
-              className="input-text"
-              type="text"
-              placeholder="Enter username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              onKeyDown={handleKey}
-              autoFocus
-              autoComplete="username"
-            />
-          </div>
-          <div className="login-card__input-wrap">
-            <label className="login-card__label">Password</label>
-            <input
-              className="input-text"
-              type="password"
-              placeholder="Enter password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={handleKey}
-              autoComplete="current-password"
-            />
-          </div>
-        </div>
-
-        <button
-          className="btn btn--primary login-card__btn"
-          onClick={handleLogin}
-          disabled={loading || !username.trim() || !password}
-        >
-          {loading && <span className="spinner" />}
-          {loading ? 'Signing in…' : 'Sign In'}
-        </button>
-
-        <p className="login-card__footer">
-          Don't have an account?{' '}
-          <Link to="/register" className="login-card__link">Create one</Link>
+    <div className="narrow">
+      <Panel title={isRegister ? 'Create an account' : 'Sign in'}>
+        <p className="muted">
+          An account is only needed to talk to Bernie. Forecasts, the track
+          record and the weekend blog are open to everyone.
         </p>
-      </div>
+        <form className="form" onSubmit={submit}>
+          <label>
+            Email
+            <input type="email" value={email} required
+                   onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} required minLength={10}
+                   onChange={(e) => setPassword(e.target.value)} />
+            {isRegister && (
+              <span className="hint">
+                At least 10 characters. Length is what resists an offline attack,
+                so there are no symbol or digit rules.
+              </span>
+            )}
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button className="button" disabled={busy}>
+            {busy ? 'Working…' : isRegister ? 'Create account' : 'Sign in'}
+          </button>
+        </form>
+        <p className="muted small">
+          {isRegister ? (
+            <>Already have an account? <Link to="/login">Sign in</Link></>
+          ) : (
+            <>No account? <Link to="/register">Create one</Link></>
+          )}
+        </p>
+      </Panel>
     </div>
   )
 }

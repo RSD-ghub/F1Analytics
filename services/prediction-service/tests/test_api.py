@@ -71,7 +71,8 @@ class FakeClient:
             for r in range(1, 11)
         ]
 
-    async def completeness(self, from_season, to_season):
+    async def completeness(self, from_season, to_season, depth="full"):
+        self.completeness_depth = depth
         return CompletenessStatus(
             is_complete=self._complete,
             open_gaps=[] if self._complete else ["2026-3"],
@@ -290,3 +291,28 @@ def test_championship_returns_a_distribution(client_and_store):
     assert sum(d["p_champion"] for d in payload["drivers"]) == pytest.approx(1.0, abs=1e-9)
     assert payload["as_of_round"] == 6
     assert payload["remaining_rounds"] == [7, 8, 9, 10]
+
+
+async def test_completeness_is_checked_at_results_depth(client_and_store):
+    """prediction-service reads classifications and qualifying, not laps.
+
+    Asking whether the archive is complete at full (lap-level) depth marked
+    every forecast as built on incomplete data whenever laps were not
+    backfilled — visible in the UI as "12 prior rounds missing" for a season
+    whose twelve rounds had all ingested cleanly. A caveat that is always on is
+    a caveat that stops being read.
+    """
+    from app import dependencies
+    from app.services.predictor import Predictor
+    from app.main import app
+
+    store = FakeStore()
+    recording = FakeClient()
+    app.dependency_overrides[dependencies.get_predictor] = lambda: Predictor(
+        client=recording, store=store, model=dependencies.get_model()
+    )
+    client, _ = client_and_store
+    client.post("/predictions/preview",
+                json={"season": 2026, "round": 5, "window": "pre_quali"})
+
+    assert recording.completeness_depth == "results"

@@ -1,30 +1,22 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import { AuthContext } from './useAuth'
+import { readStoredAuth, writeStoredAuth } from './token'
 
-const AuthContext = createContext(null)
-
-const STORAGE_KEY = 'f1_auth'
-
-function loadFromStorage() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
+/**
+ * Holds the signed-in user. Initialised from localStorage so a refresh does not
+ * sign the user out.
+ */
 export function AuthProvider({ children }) {
-  // Initialise from localStorage so auth survives a page refresh
-  const [auth, setAuth] = useState(() => loadFromStorage())
+  const [auth, setAuth] = useState(() => readStoredAuth())
 
   const login = useCallback((token, username) => {
     const data = { token, username }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    writeStoredAuth(data)
     setAuth(data)
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY)
+    writeStoredAuth(null)
     setAuth(null)
   }, [])
 
@@ -33,21 +25,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth() {
-  return useContext(AuthContext)
-}
-
-/**
- * Utility to read the token without requiring the hook (usable outside React).
- * Used by f1Api.js to attach Bearer headers to AI requests.
- */
-export function getStoredToken() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw)?.token : null
-  } catch {
-    return null
-  }
 }

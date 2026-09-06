@@ -1,97 +1,100 @@
-import { getStoredToken } from '../context/AuthContext'
-
-const BASE = '/f1'
-
-// ── Core request helper ───────────────────────────────────────────────────────
-
-async function request(path, options = {}) {
-  const res = await fetch(BASE + path, options)
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-  return res.json()
-}
-
 /**
- * Authenticated request — attaches the stored JWT as a Bearer token.
- * Used for endpoints protected by @Secured on the backend.
- * If the server returns 401, throws a descriptive error so the UI
- * can prompt the user to log in again.
+ * The only surface the browser talks to: core-api, via the /api proxy.
+ *
+ * Two conventions worth knowing before reading further:
+ *
+ * 1. Most of this API is deliberately PUBLIC. Forecasts, the track record and
+ *    the weekend blog need no token. A track record behind a login is a
+ *    marketing claim rather than a verifiable one, so only Bernie's
+ *    conversations — which spend model calls and are private to their owner —
+ *    require auth.
+ *
+ * 2. Aggregate endpoints can succeed partially. They return an `unavailable`
+ *    list naming panels that could not be loaded, and the UI is expected to
+ *    say so rather than render a silently emptier page.
  */
-async function authFetch(path, options = {}) {
-  const token = getStoredToken()
-  const headers = {
-    ...(options.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+
+import { getStoredToken } from '../context/token'
+
+const BASE = '/api'
+
+export class ApiError extends Error {
+  constructor(message, status, detail) {
+    super(message)
+    this.status = status
+    this.detail = detail
   }
-  const res = await fetch(BASE + path, { ...options, headers })
-  if (res.status === 401) {
-    throw new Error('Session expired. Please sign in again.')
+}
+
+async function parseError(res) {
+  let detail
+  try {
+    const body = await res.json()
+    detail = body.detail ?? body
+  } catch {
+    detail = res.statusText
   }
-  return res // caller handles streaming or json
+  // core-api returns a structured detail for Bernie failures so the UI can
+  // distinguish "not configured" from "out of credit" from "provider down".
+  const message =
+    typeof detail === 'object' && detail?.message
+      ? detail.message
+      : typeof detail === 'string'
+        ? detail
+        : `Request failed (${res.status})`
+  return new ApiError(message, res.status, detail)
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-
-export async function loginUser(username, password) {
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+async function request(path, { auth = false, ...options } = {}) {
+  const token = auth ? getStoredToken() : null
+  const res = await fetch(BASE + path, {
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Login failed')
-  return data // { token, username }
+  if (!res.ok) throw await parseError(res)
+  return res.status === 204 ? null : res.json()
 }
 
-export async function registerUser(username, password) {
-  const res = await fetch(`${BASE}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Registration failed')
-  return data // { message }
-}
+const post = (path, body, opts = {}) =>
+  request(path, { method: 'POST', body: JSON.stringify(body), ...opts })
 
-// ── F1 Data ───────────────────────────────────────────────────────────────────
+// ── Auth ─────────────────────────────────────────────────────────────────────
+// The API keys on email, not a username. Login returns an identical 401 for a
+// wrong password and an unknown account, so the UI must not try to tell the
+// user which it was — it genuinely does not know.
 
-export const getResults       = ()             => request('/results')
-export const getSeasons       = ()             => request('/seasons')
-export const getDrivers       = ()             => request('/drivers')
-export const getAnalytics     = (season)       => request(`/analytics/${season}`)
-export const getDriverAnalytics = (name, season) => {
-  const params = new URLSearchParams({ name })
-  if (season && season !== 'ALL') params.set('season', season)
-  return request(`/analytics/driver?${params}`)
-}
-export const syncCurrentSeason = ()           => request('/sync/current', { method: 'POST' })
-export const syncSeason        = (season)     => request(`/sync/${season}`, { method: 'POST' })
-export const getRaces          = (season)     => request(`/races/${season}`)
+export const register = (email, password) => post('/auth/register', { email, password })
+export const login = (email, password) => post('/auth/login', { email, password })
+export const me = () => request('/auth/me', { auth: true })
 
-// ── Predictions (authenticated) ───────────────────────────────────────────────
+// ── Public: forecasts, record, championship ──────────────────────────────────
 
-export const getPrediction = (season, round) =>
-  authFetch(`/predict/race?season=${season}&round=${round}`).then(r => r.json())
+export const getNextRace = () => request('/next-race')
+export const getTrackRecord = (season) =>
+  request(`/track-record${season ? `?season=${season}` : ''}`)
+export const getChampionship = (season) => request(`/championship/${season}`)
+export const getSystemStatus = () => request('/status')
 
-export const refreshPrediction = (season, round) =>
-  authFetch(`/predict/race/refresh?season=${season}&round=${round}`, { method: 'POST' }).then(r => r.json())
+// ── One Blog ─────────────────────────────────────────────────────────────────
 
-// ── AI (authenticated — require Bearer token) ─────────────────────────────────
+export const getWeekend = (season, round, { narrate = true } = {}) =>
+  request(`/blog/${season}/${round}?narrate=${narrate}`)
 
-export const generateSeasonReview = (season) =>
-  authFetch(`/ai/season-review?season=${season}`, { method: 'POST' })
+// ── Bernie ───────────────────────────────────────────────────────────────────
 
-export const generateRaceRewind = (season, round) =>
-  authFetch(`/ai/race-rewind?season=${season}&round=${round}`, { method: 'POST' })
+export const whyThisPrediction = (season, round) =>
+  request(`/bernie/why/${season}/${round}`)
 
-// ── Bernie strategist agent ───────────────────────────────────────────────────
+export const startThread = (season, round, question) =>
+  post('/bernie/threads', { season, round, question }, { auth: true })
 
-export const getBernieUpcomingRaces = (season) =>
-  authFetch(`/bernie/upcoming-races?season=${season}`).then(r => r.json())
+export const continueThread = (threadId, question) =>
+  post(`/bernie/threads/${threadId}`, { question }, { auth: true })
 
-export const bernieChat = (message, history, season, round) =>
-  authFetch('/bernie/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history, season, round }),
-  })
+export const listThreads = () => request('/bernie/threads', { auth: true })
+export const readThread = (threadId) =>
+  request(`/bernie/threads/${threadId}`, { auth: true })
