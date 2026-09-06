@@ -20,6 +20,11 @@ class Settings(ServiceSettings):
     # Periodic refresh of the current season, in hours.
     auto_refresh_hours: int = 24
 
+    # How often to look for a newly published FIA starting grid. Minutes, not
+    # hours: the document lands a few hours after qualifying and the post-quali
+    # forecast locks shortly after, so the useful window is narrow.
+    grid_check_minutes: int = 30
+
     # Upstream schedule/results API used alongside FastF1 for forward-looking data.
     ergast_base_url: str = "https://api.jolpi.ca/ergast"
 

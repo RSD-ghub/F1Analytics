@@ -26,6 +26,7 @@ from app.models.schemas import (
     CompletenessSummary,
     ExpectedSession,
     IngestDepth,
+    QualifyingRow,
     SessionIngestState,
     SessionPayload,
     SessionState,
@@ -38,10 +39,18 @@ from app.services.fastf1_source import (
     SessionUnavailableError,
 )
 from app.services.storage import IngestionStore
+from app.services import fia_documents, grid_resolution
+from app.services.storage import DATA_COLLECTIONS, QUALIFYING
 from app.services import signals, transforms
 from f1_common.llm import LLMClient
 
 logger = logging.getLogger(__name__)
+
+#: FIA document kind -> the ``GridSource`` value we record for it.
+_KIND_TO_SOURCE_NAME = {
+    "final": "official_final",
+    "provisional": "official_provisional",
+}
 
 
 class IngestRunner:
@@ -104,11 +113,146 @@ class IngestRunner:
         missing grid matters — which, for a post-quali forecast, it does.
         """
         rows = await asyncio.to_thread(self._source.load_qualifying, expected)
+        rows = await self._with_official_grid(expected, rows)
         saved = await self._store.save_qualifying(
             expected.season, expected.round, rows
         )
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
+
+    async def refresh_starting_grid(self, expected: ExpectedSession) -> dict:
+        """Re-read the official grid for a round we already have qualifying for.
+
+        Separate from ``ingest_qualifying`` because the two become available at
+        different times: the classification exists the moment the session ends,
+        the FIA grid document lands hours later. Polling this is cheap — one
+        PDF — where re-running qualifying ingest is not, so a lock window
+        waiting on penalties can check often.
+
+        Unlike the overlay inside ``ingest_qualifying`` this reports what
+        happened rather than swallowing it, because here the grid *is* the thing
+        that was asked for.
+        """
+        rows = [
+            QualifyingRow(**row)
+            for row in await self._store.find_rows(
+                QUALIFYING,
+                {"season": expected.season, "round": expected.round},
+                sort=[("position", 1)],
+            )
+        ]
+        if not rows:
+            raise SessionUnavailableError(
+                "no qualifying classification stored for {}; ingest qualifying "
+                "before asking for the grid".format(expected.key)
+            )
+
+        document = await fia_documents.fetch_starting_grid(
+            expected.season, expected.round, expected.race_name
+        )
+        applied = grid_resolution.apply_starting_grid(rows, document)
+        saved = await self._store.save_qualifying(
+            expected.season, expected.round, applied
+        )
+        return {
+            "season": expected.season,
+            "round": expected.round,
+            "grid_source": _KIND_TO_SOURCE_NAME[document.kind],
+            "document_number": document.document_number,
+            "document_url": document.url,
+            "rows_updated": saved,
+            "pit_lane_starts": [
+                row.driver for row in applied if row.starts_from_pit_lane
+            ],
+        }
+
+    async def refresh_pending_grids(self, season: int) -> dict:
+        """Try to confirm the grid for any round still running on a stand-in.
+
+        The gap-healing pass cannot do this. A round whose qualifying ingested
+        cleanly is not a gap, so healing skips it forever — but its grid stays
+        provisional until the FIA publishes, which happens hours *after*
+        qualifying. Something has to come back and look again, and this is it.
+
+        Scope is deliberately narrow: rounds that have a qualifying
+        classification, have no confirmed grid yet, and whose race has not run.
+        A finished race is not chased, both because its grid is already settled
+        and because re-reading two dozen documents every tick would be rude to
+        an upstream that is doing us a favour.
+        """
+        confirmed, pending, failed = [], [], []
+        for weekend in await self._store.list_weekends(season, season):
+            round_number = weekend["round"]
+            if await self._store.count_matching(
+                DATA_COLLECTIONS["results"], {"season": season, "round": round_number}
+            ):
+                continue  # the race has run; the grid is history now
+            rows = await self._store.find_rows(
+                QUALIFYING, {"season": season, "round": round_number}
+            )
+            if not rows or any(QualifyingRow(**row).has_confirmed_grid for row in rows):
+                continue
+
+            expected = ExpectedSession(
+                season=season,
+                round=round_number,
+                race_name=weekend.get("race_name", ""),
+                circuit=weekend.get("circuit", ""),
+            )
+            try:
+                result = await self.refresh_starting_grid(expected)
+                confirmed.append("{}-{} ({})".format(
+                    season, round_number, result["grid_source"]))
+            except fia_documents.GridDocumentUnavailable:
+                pending.append("{}-{}".format(season, round_number))
+            except Exception:
+                logger.exception(
+                    "could not confirm the grid for %s-%s", season, round_number
+                )
+                failed.append("{}-{}".format(season, round_number))
+
+        if confirmed:
+            logger.info("confirmed official grids: %s", ", ".join(confirmed))
+        return {"confirmed": confirmed, "still_pending": pending, "failed": failed}
+
+    async def _with_official_grid(self, expected: ExpectedSession, rows):
+        """Overlay the FIA's starting grid onto the qualifying classification.
+
+        Best-effort *by design*, and the only place in ingestion where that is
+        the right call. The classification is already a usable forecast input;
+        the official grid makes it correct rather than making it exist. So a
+        document that is not published yet, or that will not parse, must leave
+        us with a flagged-but-working grid rather than failing the whole
+        qualifying ingest — which would turn a missing nicety into a missing
+        session and block the lock window entirely.
+
+        What it must never do is apply a grid it is not sure of. That failure is
+        loud and total, and lives in ``grid_resolution``.
+        """
+        if not rows:
+            return rows
+        try:
+            document = await fia_documents.fetch_starting_grid(
+                expected.season, expected.round, expected.race_name
+            )
+            return grid_resolution.apply_starting_grid(rows, document)
+        except fia_documents.GridDocumentUnavailable as exc:
+            logger.info(
+                "no official grid for %s yet; forecasts will use the qualifying "
+                "classification and be flagged provisional (%s)", expected.key, exc
+            )
+        except (fia_documents.GridDocumentUnreadable,
+                grid_resolution.GridApplicationError):
+            logger.exception(
+                "official grid for %s was published but could not be applied; "
+                "falling back to the qualifying classification", expected.key
+            )
+        except Exception:
+            logger.exception(
+                "unexpected failure reading the official grid for %s; falling "
+                "back to the qualifying classification", expected.key
+            )
+        return rows
 
     async def ingest_practice(
         self,

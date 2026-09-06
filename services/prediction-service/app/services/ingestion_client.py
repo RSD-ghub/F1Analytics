@@ -113,6 +113,12 @@ class PracticePace(BaseModel):
     long_run_laps: int = 0
 
 
+#: Grid provenances that state where a driver actually starts. Mirrors
+#: ingestion's ``CONFIRMED_GRID_SOURCES``; duplicated rather than imported
+#: because the services share no runtime code, only a wire contract.
+CONFIRMED_GRID_SOURCES = ("race_result", "official_final", "official_provisional")
+
+
 class GridSlot(BaseModel):
     """Where a driver starts, and whether we actually know that yet."""
 
@@ -124,10 +130,24 @@ class GridSlot(BaseModel):
     position: int = 999
     #: Confirmed starting position. 0 means the official grid is not published.
     grid_position: int = 0
+    #: Where ``grid_position`` came from — see ingestion's ``GridSource``. The
+    #: default is the honest one: absent provenance means unconfirmed.
+    grid_source: str = "qualifying"
+    #: Required to start from the pit lane. Already reflected in
+    #: ``grid_position`` (the slots behind the last grid place), and carried
+    #: separately so it can be shown to a reader.
+    starts_from_pit_lane: bool = False
 
     @property
     def confirmed(self) -> bool:
-        return self.grid_position > 0
+        """True only when a source actually stated the starting order.
+
+        Not merely ``grid_position > 0``. A position copied from the qualifying
+        classification is a number in the same field meaning something quite
+        different, and treating it as confirmed is precisely the conflation that
+        put penalised drivers on the wrong slot.
+        """
+        return self.grid_position > 0 and self.grid_source in CONFIRMED_GRID_SOURCES
 
     @property
     def effective(self) -> int:

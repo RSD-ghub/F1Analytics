@@ -123,7 +123,11 @@ class Predictor:
         # identifiable in the track record rather than quietly wrong.
         provisional = bool(grid) and not all(slot.confirmed for slot in grid)
         quality = await self._assess_quality(
-            season, snapshot, bool(grid), grid_is_provisional=provisional
+            season,
+            snapshot,
+            bool(grid),
+            grid_is_provisional=provisional,
+            grid_source=_grid_source(grid),
         )
         if provisional:
             logger.warning(
@@ -211,6 +215,7 @@ class Predictor:
         snapshot: FeatureSnapshot,
         has_grid: bool,
         grid_is_provisional: bool = False,
+        grid_source: str = "",
     ) -> DataQuality:
         """Record what was missing, without blocking publication.
 
@@ -241,6 +246,7 @@ class Predictor:
                 missing_sessions=local_gaps,
                 has_grid=has_grid,
                 grid_is_provisional=grid_is_provisional,
+                grid_source=grid_source,
                 notes="completeness check unavailable: {}".format(exc),
             )
 
@@ -257,6 +263,7 @@ class Predictor:
             missing_sessions=missing,
             has_grid=has_grid,
             grid_is_provisional=grid_is_provisional,
+            grid_source=grid_source,
             notes="; ".join(notes),
         )
 
@@ -290,3 +297,16 @@ def _is_before(gap_key: str, season: int, target_round: int) -> bool:
     except (ValueError, TypeError):
         return False
     return gap_season == season and gap_round < target_round
+
+
+def _grid_source(grid) -> str:
+    """The provenance shared by the grid, or "mixed" if the rows disagree.
+
+    Rows should always agree — a grid is applied all-or-nothing — so "mixed" is
+    a bug signal rather than a normal value, and worth being able to see in the
+    stored prediction rather than averaging away.
+    """
+    if not grid:
+        return ""
+    sources = {slot.grid_source for slot in grid}
+    return sources.pop() if len(sources) == 1 else "mixed"

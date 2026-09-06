@@ -162,10 +162,14 @@ def extract_qualifying(
                 driver=driver,
                 team=team,
                 position=safe_int(res.get("Position"), 999),
-                # FastF1 exposes GridPosition on the qualifying frame once the
-                # official grid is published; before then it is absent or zero,
-                # which `effective_grid` correctly reads as "not confirmed".
-                grid_position=safe_int(res.get("GridPosition"), 0),
+                # Measured, not assumed: FastF1 carries a GridPosition column on
+                # qualifying sessions but never populates it — zero of nineteen
+                # rows for a long-finished 2024 race, zero of twenty-two for a
+                # current one. The penalty-adjusted grid therefore never arrives
+                # from here; it is applied afterwards from the FIA's own
+                # starting-grid document. See services/fia_documents.py.
+                grid_position=0,
+                driver_number=safe_int(res.get("DriverNumber"), 0),
                 q1_seconds=to_seconds(res.get("Q1")),
                 q2_seconds=to_seconds(res.get("Q2")),
                 q3_seconds=to_seconds(res.get("Q3")),

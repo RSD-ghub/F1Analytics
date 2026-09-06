@@ -34,7 +34,11 @@ async def lifespan(_: FastAPI):
     except Exception:
         logger.exception("index creation failed; continuing without it")
 
-    scheduler.start(get_runner(), settings.auto_refresh_hours)
+    scheduler.start(
+        get_runner(),
+        settings.auto_refresh_hours,
+        settings.grid_check_minutes,
+    )
     yield
     scheduler.shutdown()
     db.close()

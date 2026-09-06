@@ -80,7 +80,15 @@ own pipeline so it inherits the completeness guarantee.
 
 # Forward calendar — needed before the scheduler can place anything.
 curl -X POST "localhost:8001/forward/refresh-calendar?from_season=2026&to_season=2027"
+
+# Official penalty-adjusted grid for a round that has qualified. Normally
+# automatic (every grid_check_minutes), so this is for forcing it early.
+#   200 = applied · 409 = FIA has not published yet · 502 = published but unreadable
+curl -X POST "localhost:8001/forward/starting-grid/2026/14"
 ```
+
+A forecast made before the grid document lands is still published on schedule,
+carrying `grid_is_provisional` — it is not delayed and not hidden.
 
 Check completeness at the depth you care about — they are different questions:
 

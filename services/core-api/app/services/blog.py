@@ -403,6 +403,19 @@ def forecast_entry(
                 detail="Positions are qualifying classification.",
             )
         )
+    elif quality.get("grid_source") in ("official_final", "official_provisional"):
+        final = quality["grid_source"] == "official_final"
+        facts.append(
+            BlogFact(
+                label="Starting grid",
+                value="Official FIA grid" + ("" if final else " (provisional)"),
+                detail=(
+                    "Grid penalties are applied."
+                    if final
+                    else "Grid penalties applied, but the stewards may still revise this."
+                ),
+            )
+        )
     if not quality.get("complete", True):
         facts.append(
             BlogFact(

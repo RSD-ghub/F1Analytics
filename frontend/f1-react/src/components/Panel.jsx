@@ -61,6 +61,8 @@ export function Caveats({ quality }) {
   const notes = []
   if (quality.grid_is_provisional)
     notes.push('Grid is qualifying classification — penalties not yet applied.')
+  else if (quality.grid_source === 'official_provisional')
+    notes.push('Grid is the FIA provisional grid; a later decision could still change it.')
   if (quality.complete === false && quality.notes) notes.push(quality.notes)
   if (!notes.length) return null
   return (

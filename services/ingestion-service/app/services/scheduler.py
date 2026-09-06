@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _scheduler: Optional[AsyncIOScheduler] = None
 
 JOB_ID = "heal-current-season"
+GRID_JOB_ID = "confirm-starting-grids"
 
 
 async def heal_current_season(runner: IngestRunner) -> None:
@@ -45,7 +46,27 @@ async def heal_current_season(runner: IngestRunner) -> None:
         logger.exception("scheduled heal failed for season %s", season)
 
 
-def start(runner: IngestRunner, interval_hours: int) -> Optional[AsyncIOScheduler]:
+async def confirm_starting_grids(runner: IngestRunner) -> None:
+    """Pick up official starting grids as the stewards publish them.
+
+    Runs far more often than the healing pass because it is chasing a much
+    shorter deadline. Qualifying ends roughly a day before the race; the FIA
+    grid document follows within a few hours; the post-quali forecast locks in
+    between. Checking once a day would reliably miss that window — and missing
+    it means publishing a forecast that models penalised drivers from the wrong
+    slot, which is the whole problem this is here to solve.
+
+    One PDF per pending round, and only for rounds that have qualified and not
+    yet raced, so the cost stays near zero outside a race weekend.
+    """
+    season = datetime.now(timezone.utc).year
+    try:
+        await runner.refresh_pending_grids(season)
+    except Exception:
+        logger.exception("scheduled grid confirmation failed for %s", season)
+
+
+def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 30) -> Optional[AsyncIOScheduler]:
     """Start the healing job. ``interval_hours <= 0`` disables it."""
     global _scheduler
     if interval_hours <= 0:
@@ -63,6 +84,17 @@ def start(runner: IngestRunner, interval_hours: int) -> Optional[AsyncIOSchedule
         max_instances=1,
         coalesce=True,
     )
+    if grid_check_minutes > 0:
+        _scheduler.add_job(
+            confirm_starting_grids,
+            trigger=IntervalTrigger(minutes=grid_check_minutes),
+            args=[runner],
+            id=GRID_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info("grid confirmation scheduled every %smin", grid_check_minutes)
+
     _scheduler.start()
     logger.info("auto-refresh scheduled every %sh", interval_hours)
     return _scheduler

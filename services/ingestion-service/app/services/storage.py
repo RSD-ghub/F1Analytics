@@ -390,6 +390,10 @@ class IngestionStore:
             cursor = cursor.limit(limit)
         return [_normalise_id(doc) async for doc in cursor]
 
+    async def count_matching(self, collection: str, query: Dict[str, Any]) -> int:
+        """How many rows match. Used for cheap existence checks."""
+        return await self._db[collection].count_documents(query)
+
     async def distinct_seasons(self) -> List[int]:
         seasons = await self._db[DATA_COLLECTIONS["results"]].distinct("season")
         return sorted(int(season) for season in seasons)

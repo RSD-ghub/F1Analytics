@@ -161,6 +161,33 @@ class ResultRow(RowBase):
     status: str = ""
 
 
+class GridSource(str, Enum):
+    """Where a confirmed starting grid came from.
+
+    Provenance travels with the grid because "we know where they start" and "we
+    are assuming they start where they qualified" are different claims, and only
+    the second one needs a caveat on the forecast that uses it.
+    """
+
+    #: FIA final starting grid document — authoritative.
+    OFFICIAL_FINAL = "official_final"
+    #: FIA provisional grid. Real, but a later stewards' decision can supersede it.
+    OFFICIAL_PROVISIONAL = "official_provisional"
+    #: Taken from the results of a race that has already run.
+    RACE_RESULT = "race_result"
+    #: No confirmed grid — qualifying classification standing in for it.
+    QUALIFYING = "qualifying"
+
+
+#: Sources that state where a driver actually starts, as opposed to standing in
+#: for it. Ordered best-first, which is also the order a refresh should try.
+CONFIRMED_GRID_SOURCES = (
+    GridSource.RACE_RESULT,
+    GridSource.OFFICIAL_FINAL,
+    GridSource.OFFICIAL_PROVISIONAL,
+)
+
+
 class QualifyingRow(RowBase):
     """Qualifying classification — the grid, before the race exists.
 
@@ -182,13 +209,30 @@ class QualifyingRow(RowBase):
     #: moment the session ends; the penalty-adjusted grid is confirmed later,
     #: so for a live weekend this is legitimately empty for a while.
     grid_position: int = 0
+    #: Which source ``grid_position`` came from. ``QUALIFYING`` means it is not
+    #: confirmed at all and ``effective_grid`` is standing in for it.
+    grid_source: GridSource = GridSource.QUALIFYING
+    #: Car number. The stable key for joining the FIA's grid document, which
+    #: spells names its own way — "Kimi ANTONELLI" for "Andrea Kimi Antonelli" —
+    #: so a name join is a guess where a car number is a fact.
+    driver_number: int = 0
+    #: Required to start from the pit lane. They still carry a numeric
+    #: ``grid_position`` (the slots behind the last grid place) because that is
+    #: how race results encode it, and therefore how the model was trained.
+    starts_from_pit_lane: bool = False
     q1_seconds: float = 0.0
     q2_seconds: float = 0.0
     q3_seconds: float = 0.0
 
     @property
     def has_confirmed_grid(self) -> bool:
-        return self.grid_position > 0
+        """True only when a source actually stated the starting order.
+
+        Deliberately not just ``grid_position > 0``: a row could carry a
+        position copied from the classification, and calling that "confirmed"
+        is the exact conflation this field exists to prevent.
+        """
+        return self.grid_position > 0 and self.grid_source in CONFIRMED_GRID_SOURCES
 
     @property
     def effective_grid(self) -> int:

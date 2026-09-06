@@ -224,6 +224,16 @@ def why_this_prediction_facts(
             "Grid positions are qualifying classification; any penalties are "
             "not yet applied."
         )
+    elif quality.get("grid_source") in ("official_final", "official_provisional"):
+        # Worth stating positively. A strategist asked "does the grid account
+        # for Verstappen's penalty?" should be able to answer from the facts
+        # rather than inferring it from the absence of a caveat.
+        facts["grid source"] = (
+            "Starting positions come from the FIA's {} starting grid, so any "
+            "penalties are already applied.".format(
+                "final" if quality["grid_source"] == "official_final" else "provisional"
+            )
+        )
     if not quality.get("complete", True):
         facts["data caveat"] = quality.get("notes") or "some prior rounds incomplete"
 

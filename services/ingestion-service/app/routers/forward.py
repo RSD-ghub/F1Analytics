@@ -22,6 +22,7 @@ from app.models.schemas import (
     ResultRow,
 )
 from app.services import upcoming
+from app.services import fia_documents, grid_resolution
 from app.services.ingest_runner import IngestRunner
 from app.services.standings import (
     StandingsSnapshot,
@@ -179,6 +180,50 @@ async def ingest_qualifying(
             ),
         )
     return {"season": season, "round": round_number, "grid_rows": saved}
+
+
+@router.post("/starting-grid/{season}/{round_number}", status_code=200)
+async def refresh_starting_grid(
+    season: int,
+    round_number: int,
+    runner: IngestRunner = Depends(get_runner),
+    store: IngestionStore = Depends(get_store),
+):
+    """Apply the FIA's official starting grid to a round we already qualified.
+
+    Cheap enough to poll: one PDF, no FastF1 session load. Returns 409 while the
+    stewards have not published yet, which is the normal state for the first few
+    hours after qualifying and not a fault — the caller keeps its provisional
+    grid and tries again.
+    """
+    weekends = await store.list_weekends(season, season)
+    match = next((w for w in weekends if w["round"] == round_number), None)
+    if match is None:
+        raise HTTPException(
+            status_code=404, detail="no timetable for {}-{}".format(season, round_number)
+        )
+
+    expected = ExpectedSession(
+        season=season,
+        round=round_number,
+        race_name=match.get("race_name", ""),
+        circuit=match.get("circuit", ""),
+    )
+    try:
+        return await runner.refresh_starting_grid(expected)
+    except fia_documents.GridDocumentUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except (fia_documents.GridDocumentUnreadable,
+            grid_resolution.GridApplicationError) as exc:
+        # 502: the document exists but the upstream form of it defeated us.
+        # Distinct from 409 so a parser regression is not mistaken for "the
+        # stewards are slow today".
+        raise HTTPException(
+            status_code=502,
+            detail="official grid for {}-{} could not be applied: {}".format(
+                season, round_number, exc
+            ),
+        )
 
 
 def _span(settings: Settings):

@@ -66,6 +66,11 @@ class DataQuality(BaseModel):
     #: penalty is modelled from the wrong starting slot, so this must travel with
     #: the prediction rather than being resolved silently.
     grid_is_provisional: bool = False
+    #: Which source the grid came from, when there was one — "official_final",
+    #: "official_provisional", "race_result" or "qualifying". Stored so the
+    #: track record can separate forecasts made on the real grid from those made
+    #: on a stand-in, instead of only knowing that a stand-in was used.
+    grid_source: str = ""
     notes: str = ""
 
 

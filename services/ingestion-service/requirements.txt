@@ -13,3 +13,6 @@ fastf1>=3.7.0,<4.0.0
 pandas>=2.2.0,<3.0.0
 numpy>=2.0.0,<3.0.0
 pyarrow>=14.0.0
+
+# FIA starting-grid documents are published as PDFs; this reads their text layer.
+pdfplumber>=0.11.0

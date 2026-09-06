@@ -40,8 +40,11 @@ def _slots(confirmed):
         grid = 0
         if confirmed:
             grid = 12 if driver == "Alpha" else max(1, quali - 1)
-        out.append(GridSlot(season=2026, round=6, driver=driver, team=team,
-                            position=quali, grid_position=grid))
+        out.append(GridSlot(
+            season=2026, round=6, driver=driver, team=team,
+            position=quali, grid_position=grid,
+            grid_source="official_final" if confirmed else "qualifying",
+        ))
     return out
 
 
@@ -49,10 +52,27 @@ def _slots(confirmed):
 
 
 def test_confirmed_grid_overrides_qualifying_classification():
-    slot = GridSlot(season=2026, round=6, driver="Alpha", position=2, grid_position=12)
+    slot = GridSlot(
+        season=2026, round=6, driver="Alpha", position=2, grid_position=12,
+        grid_source="official_final",
+    )
 
     assert slot.confirmed
     assert slot.effective == 12
+
+
+def test_a_grid_position_without_provenance_is_not_confirmed():
+    """A number alone is not a claim about where anyone starts.
+
+    Qualifying classification and the official grid are both integers in the
+    same range, and for most drivers on most weekends they agree — so a slot
+    that carries a position but no source is indistinguishable from a copied
+    classification. Calling that "confirmed" is what let penalised drivers be
+    modelled from the wrong slot, so the source is now required.
+    """
+    slot = GridSlot(season=2026, round=6, driver="Alpha", position=2, grid_position=12)
+
+    assert not slot.confirmed
 
 
 def test_unconfirmed_grid_falls_back_to_qualifying():
