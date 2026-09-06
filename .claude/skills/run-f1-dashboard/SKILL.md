@@ -1,148 +1,155 @@
 ---
 name: run-f1-dashboard
-description: Run, start, launch, build, test, or smoke-test the F1 Analytics Dashboard. Use when starting the backend, frontend, or verifying the app works.
+description: Run, start, launch, build, test, or smoke-test the F1 forecasting platform. Use when starting the services, the frontend, or verifying the app works end to end.
 ---
 
-# Run — F1 Analytics Dashboard
+# Run — F1 forecasting platform
 
-Three services: **MongoDB** (27017), **Java/Helidon backend** (8082), **Vite dev server** (5173).
-Drive it with `smoke.sh` (curl-based) at `.claude/skills/run-f1-dashboard/smoke.sh`.
+Four FastAPI services plus MongoDB and a React frontend.
 
-All paths are relative to the project root `/Users/sreedeep/Desktop/Deepu Projects/F1-Dashboard`.
+**Only `core-api` is publicly reachable.** The other three have no published
+host port in compose and are reached solely over the compose network — that is
+what makes core-api the single place authentication is enforced. In dev mode
+below they are exposed directly for convenience, which is *not* the production
+topology.
 
----
-
-## Prerequisites
-
-```bash
-# Java 21
-JAVA_HOME=/Users/sreedeep/java/jdk-21.0.11+10/Contents/Home
-# Maven 3.9.6
-MVN=/Users/sreedeep/java/apache-maven-3.9.6/bin/mvn
-# Node 20 via nvm (npm is NOT in default PATH — must source nvm first)
-export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-# MongoDB data directory
-MONGO_DATA=~/java/mongodb-data
-```
-
-`.env` at project root must contain:
-```
-ANTHROPIC_API_KEY=sk-ant-...
-JWT_SECRET=<32+ random chars>
-```
-
----
-
-## Build
-
-```bash
-JAVA_HOME=/Users/sreedeep/java/jdk-21.0.11+10/Contents/Home \
-  /Users/sreedeep/java/apache-maven-3.9.6/bin/mvn package -DskipTests -q
-# Produces: target/prompts.jar + target/libs/
-```
-
-Frontend build (only needed for embedded jar deploy; dev uses Vite directly):
-```bash
-export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-cd frontend/f1-react && npm run build -- --outDir dist --emptyOutDir
-```
-
----
-
-## Start all services
-
-### 1. MongoDB
-```bash
-mongod --dbpath ~/java/mongodb-data --fork --logpath /tmp/mongod.log
-# Already running? Check: lsof -i :27017 | grep LISTEN
-```
-
-### 2. Java backend
-```bash
-# Load env vars (ANTHROPIC_API_KEY + JWT_SECRET), then start
-set -a && source .env && set +a
-JAVA_HOME=/Users/sreedeep/java/jdk-21.0.11+10/Contents/Home
-nohup "$JAVA_HOME/bin/java" -jar target/prompts.jar > /tmp/f1-backend.log 2>&1 &
-# Takes ~8 seconds to start. Verify:
-curl -s http://localhost:8082/f1/seasons   # returns JSON array of years
-```
-
-### 3. Vite dev server
-```bash
-export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-cd frontend/f1-react
-nohup npm run dev > /tmp/f1-vite.log 2>&1 &
-# Verify: curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/  → 200
-```
-
-App is at **http://localhost:5173**
-
----
-
-## Run (agent path) — smoke.sh
-
-Runs 11 curl checks covering liveness, auth, auth guard, data endpoints, and Vite proxy.
-Requires all three services already running.
-
-```bash
-cd /Users/sreedeep/Desktop/Deepu\ Projects/F1-Dashboard
-bash .claude/skills/run-f1-dashboard/smoke.sh
-```
-
-Expected output: `Passed: 11   Failed: 0`
-
-The script creates and uses a temporary user (`smoketest_<PID>`) for auth checks — it does not pollute existing user data.
-
----
-
-## Key endpoints (verified)
-
-| Endpoint | Method | Auth | Notes |
+| Service | Port | Database | Public |
 |---|---|---|---|
-| `/f1/seasons` | GET | No | Returns `[2026, 2025, 2024, ...]` |
-| `/f1/analytics/{year}` | GET | No | Season analytics |
-| `/f1/races/{year}` | GET | No | Race list for season |
-| `/f1/auth/register` | POST | No | Body: `{"username","password"}` → 201 |
-| `/f1/auth/login` | POST | No | Body: `{"username","password"}` → `{"token","username"}` |
-| `/f1/ai/season-review?season=` | POST | Bearer JWT | Streams markdown |
-| `/f1/ai/race-rewind?season=&round=` | POST | Bearer JWT | Streams markdown |
-| `/f1/predict/race?season=&round=` | GET | Bearer JWT | ML prediction JSON |
-| `/f1/predict/race/refresh?season=&round=` | POST | Bearer JWT | Evicts cache + recomputes |
+| mongodb | 27017 | — | — |
+| ingestion-service | 8001 | `f1_ingestion` | no |
+| prediction-service | 8002 | `f1_prediction` | no |
+| scoring-service | 8003 | `f1_scoring` | no |
+| core-api | 8000 | `f1_core` | **yes** |
+| frontend (Vite dev) | 5173 | — | yes |
 
-**Health check gotcha:** `GET /health` returns HTML (SPA fallback). Use `GET /f1/seasons` to verify the backend is alive.
+Project root: `/Users/sreedeep/Desktop/Deepu Projects/F1-Dashboard`
 
 ---
 
-## Gotchas
+## Fastest path: compose
 
-**npm not in PATH** — Node is installed via nvm. `npm: command not found` means you forgot to source nvm first. Always run `export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh"` before any npm command.
+```bash
+docker compose up --build
+```
 
-**Backend needs JAVA_HOME explicit** — `java` is not in default PATH. Always set `JAVA_HOME=/Users/sreedeep/java/jdk-21.0.11+10/Contents/Home` and use `$JAVA_HOME/bin/java`.
+Frontend on `:3000`, API on `:8000`. Requires `.env` with `JWT_SECRET` (and
+`TINKER_API_KEY` if you want Bernie).
 
-**Maven same issue** — `mvn` is not in PATH. Use `/Users/sreedeep/java/apache-maven-3.9.6/bin/mvn` directly.
-
-**JWT_SECRET must be 32+ chars** — The backend throws `IllegalStateException` on startup if `JWT_SECRET` env var is missing or under 32 characters. Source `.env` before starting.
-
-**Vite EPERM on index.html** — If Vite was started by a different process or session, it may lose read access. `pkill -f vite` then restart using the command above.
-
-**`((var++))` with `set -e`** — Arithmetic expressions that evaluate to 0 cause bash to exit under `set -e`. Use `var=$((var+1))` instead.
-
-**Old jar still running** — After `mvn package`, you must kill the old backend process before starting the new one. Check: `lsof -i :8082 | grep LISTEN`, then `pkill -f "prompts.jar"`.
-
-**Vite build outDir** — `vite.config.js` sets `outDir` to the Java classpath (`../../src/main/resources/web/f1`). For Docker builds override it: `npm run build -- --outDir dist --emptyOutDir`.
+**Note:** Docker is not installed on this machine, so the compose path —
+including the nginx reverse proxy — has never been executed here. Everything
+below is the dev-mode path, which is what has actually been verified.
 
 ---
 
-## Troubleshooting
+## Dev mode (verified)
 
-**`curl: (7) Failed to connect to localhost port 8082`**
-→ Backend not started or still starting (takes ~8s). Check: `tail -20 /tmp/f1-backend.log`
+Prerequisites: MongoDB on 27017, Python venv at `.venv`, `npm` available.
 
-**`HTTP 401` on AI/predict endpoints with a valid token**
-→ JWT_SECRET env var wasn't set when the backend started. Restart with `source .env` first.
+```bash
+cd "/Users/sreedeep/Desktop/Deepu Projects/F1-Dashboard"
+export $(grep -E '^(JWT_SECRET|TINKER_API_KEY|TINKER_BASE_URL|INKLING_MODEL)=' .env | sed 's/"//g' | xargs)
 
-**`HTTP 409` on register**
-→ Username already taken. The smoke script uses a unique PID-based username; this shouldn't happen unless two smoke runs collide.
+# Internal services. Each needs the others' URLs pointed at localhost, since
+# compose hostnames (ingestion-service, etc.) do not resolve outside Docker.
+.venv/bin/python -m uvicorn app.main:app --port 8001 --app-dir services/ingestion-service &
+INGESTION_SERVICE_URL=http://localhost:8001 \
+  .venv/bin/python -m uvicorn app.main:app --port 8002 --app-dir services/prediction-service &
+MONGO_DATABASE=f1_scoring INGESTION_SERVICE_URL=http://localhost:8001 PREDICTION_SERVICE_URL=http://localhost:8002 \
+  .venv/bin/python -m uvicorn app.main:app --port 8003 --app-dir services/scoring-service &
+INGESTION_SERVICE_URL=http://localhost:8001 PREDICTION_SERVICE_URL=http://localhost:8002 SCORING_SERVICE_URL=http://localhost:8003 \
+  .venv/bin/python -m uvicorn app.main:app --port 8000 --app-dir services/core-api &
 
-**Backend starts but returns wrong data**
-→ You may be running the old jar. `ls -lh target/prompts.jar` — check the timestamp matches your last `mvn package`.
+cd frontend/f1-react && npm run dev
+```
+
+Verify: `bash .claude/skills/run-f1-dashboard/smoke.sh`
+
+---
+
+## Getting data in
+
+The corpus lives in Mongo, not in files. Ingestion runs through the service's
+own pipeline so it inherits the completeness guarantee.
+
+```bash
+# Classifications + qualifying (~2s/session). What the model trains on.
+.venv/bin/python services/ingestion-service/scripts/backfill.py results 2010 2026
+
+# Practice long-run pace (~7s/session, 2018+ only).
+.venv/bin/python services/ingestion-service/scripts/backfill.py practice 2018 2026
+
+# Forward calendar — needed before the scheduler can place anything.
+curl -X POST "localhost:8001/forward/refresh-calendar?from_season=2026&to_season=2027"
+```
+
+Check completeness at the depth you care about — they are different questions:
+
+```bash
+curl "localhost:8001/ingest/status?from_season=2026&to_season=2026&depth=results"
+```
+
+---
+
+## Training
+
+```bash
+cd services/prediction-service
+../../.venv/bin/python scripts/train_model.py --from-api \
+  --from-season 2010 --validation-seasons 2022,2023 --write
+```
+
+Reads the corpus through ingestion-service and **refuses to train if it has
+gaps**. Weights land in `app/model_weights.json`; the service will not start
+serving forecasts without it.
+
+Retraining later goes through the champion/challenger gate:
+
+```bash
+../../.venv/bin/python scripts/retrain.py --apply
+```
+
+---
+
+## Forecasts
+
+Lock windows fire on their own once prediction-service is running (every
+`LOCK_CHECK_MINUTES`, default 15). Manual locking exists for backtests:
+
+```bash
+curl -X POST localhost:8002/predictions/lock -H 'Content-Type: application/json' \
+  -d '{"season":2026,"round":13,"window":"post_quali"}'
+```
+
+A second lock for the same window returns **409**. That is the immutability
+guarantee, not a bug — a locked forecast is a historical fact.
+
+After a race:
+
+```bash
+curl -X POST localhost:8003/reconcile/2026/13
+curl localhost:8000/track-record
+```
+
+---
+
+## Bernie
+
+Needs `TINKER_API_KEY` with credit. Without it every Bernie path degrades
+cleanly and the rest of the product is unaffected — verify with:
+
+```bash
+.venv/bin/python scripts/verify_inkling.py
+```
+
+A **402** means the key and endpoint are correct and the account needs credit.
+
+---
+
+## Tests
+
+```bash
+for s in ingestion-service prediction-service scoring-service core-api; do
+  (cd services/$s && ../../.venv/bin/python -m pytest tests/ -q)
+done
+cd frontend/f1-react && npm run build && npx eslint src
+```
