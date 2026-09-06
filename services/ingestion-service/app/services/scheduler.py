@@ -90,6 +90,9 @@ def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 3
             trigger=IntervalTrigger(minutes=grid_check_minutes),
             args=[runner],
             id=GRID_JOB_ID,
+            # Same reasoning as the lock scheduler: a restart must not postpone
+            # the first look for a newly published grid by a whole interval.
+            next_run_time=datetime.now(timezone.utc),
             max_instances=1,
             coalesce=True,
         )

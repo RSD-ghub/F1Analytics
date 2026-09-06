@@ -217,6 +217,11 @@ def start(scheduler_service: LockScheduler, interval_minutes: int) -> Optional[A
         scheduler_service.tick,
         trigger=IntervalTrigger(minutes=interval_minutes),
         id=JOB_ID,
+        # Fire once at startup rather than waiting a full interval. Without
+        # this, a restart silently postpones every open window by the interval —
+        # and the final-grid window is only 45 minutes wide, so a deploy at the
+        # wrong moment could push it past the race and place nothing at all.
+        next_run_time=datetime.now(timezone.utc),
         # A tick can outrun the interval when it has several races to place;
         # overlapping runs would race each other into the unique index.
         max_instances=1,

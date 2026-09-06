@@ -230,3 +230,34 @@ async def test_an_unreachable_calendar_is_survivable():
 
     service = LockScheduler(FakePredictor(), Broken(), PRE_HOURS, POST_HOURS)
     assert await service.tick(now=RACE) == []
+
+
+async def test_the_scheduler_ticks_at_startup_not_a_full_interval_later():
+    """A restart must not silently postpone every open window.
+
+    APScheduler's IntervalTrigger fires first at start + interval, so a service
+    restarted inside a lock window would wait the whole interval before looking.
+    The final-grid window is only 45 minutes wide and opens 15 minutes after the
+    document it depends on — a restart at the wrong moment could push its first
+    look past the race and place nothing at all. Caught live at Monza, where two
+    restarts in succession meant no tick had run with 19 minutes to go.
+    """
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    from app.services import scheduler as lock_scheduler
+
+    class _Stub:
+        async def tick(self, now=None):
+            return []
+
+    started = lock_scheduler.start(_Stub(), interval_minutes=5)
+    try:
+        assert isinstance(started, AsyncIOScheduler)
+        job = started.get_job(lock_scheduler.JOB_ID)
+        assert job is not None
+        # Scheduled to run now-ish rather than five minutes from now.
+        assert job.next_run_time is not None
+        delay = (job.next_run_time - datetime.now(timezone.utc)).total_seconds()
+        assert delay < 60, "first tick is {}s away; it should be immediate".format(delay)
+    finally:
+        lock_scheduler.shutdown()
