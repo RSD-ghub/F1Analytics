@@ -90,7 +90,7 @@ class Bernie:
         self,
         question: str,
         facts: Dict[str, Any],
-        max_tokens: int = 700,
+        max_tokens: int = 900,
         history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """Answer strictly from the supplied facts. Text only."""
@@ -100,7 +100,7 @@ class Bernie:
         self,
         question: str,
         facts: Dict[str, Any],
-        max_tokens: int = 700,
+        max_tokens: int = 900,
         history: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[str, Optional[str]]:
         """A conversational turn: returns ``(answer, reasoning_trace)``.
@@ -132,6 +132,13 @@ class Bernie:
                     prompt=prompt,
                     system=SYSTEM_PROMPT,
                     max_tokens=max_tokens,
+                    # No deliberation. Tinker's separate_reasoning is broken
+                    # (tinker-cookbook#684) and folds the trace into the answer
+                    # body, so the only reliable way to keep speculation out of
+                    # what a reader sees is not to generate it. Bernie
+                    # rephrases facts he is handed; he is not solving anything
+                    # that needs a chain of thought.
+                    reasoning_effort="none",
                     # Low but not zero: strategist prose reads better with a
                     # little variation, and nothing downstream depends on it
                     # being reproducible — unlike the probabilities, which are
@@ -163,7 +170,7 @@ class Bernie:
 def why_this_prediction_facts(
     prediction: Dict[str, Any],
     snapshot: Optional[Dict[str, Any]],
-    top_n: int = 5,
+    top_n: int = 0,
 ) -> Dict[str, Any]:
     """Assemble the facts behind one forecast, ready to hand to Bernie.
 
@@ -176,9 +183,18 @@ def why_this_prediction_facts(
     probabilities = prediction.get("driver_probabilities") or []
     published = prediction.get("published_markets") or []
 
-    ranked = sorted(
-        probabilities, key=lambda row: -(row.get("p_podium") or 0.0)
-    )[:top_n]
+    # The whole field by default, not a top-five slice.
+    #
+    # Truncating made Bernie answer "I do not have that information" to
+    # questions about drivers whose probabilities we were holding all along —
+    # asked about Verstappen, he correctly reported he had not been given a
+    # figure for him, because he had not. A refusal is only honest when the
+    # data really is absent; refusing over data we chose not to pass on is
+    # just unhelpful, and it teaches a reader to distrust the refusals that
+    # matter.
+    ranked = sorted(probabilities, key=lambda row: -(row.get("p_podium") or 0.0))
+    if top_n:
+        ranked = ranked[:top_n]
 
     contenders = []
     for row in ranked:
@@ -194,7 +210,7 @@ def why_this_prediction_facts(
         "forecast window": prediction.get("window"),
         "markets published": ", ".join(published) or "none",
         "model version": prediction.get("model_version"),
-        "top contenders": contenders,
+        "full field with probabilities": contenders,
     }
 
     if "win" not in published:

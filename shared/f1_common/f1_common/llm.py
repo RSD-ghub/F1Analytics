@@ -18,8 +18,21 @@ earlier version of this file got all three wrong:
 
 Tinker also accepts ``reasoning_effort`` — "none" through "xhigh", or a raw
 float in [0.0, 0.99] — which controls how long the model deliberates before
-answering. It defaults to 0.9, which is expensive and slow for short factual
-rephrasing, so callers set it explicitly here.
+answering. It defaults to 0.9.
+
+**``separate_reasoning`` does not work, so we do not rely on it.** Tinker's
+OpenAI-compatible endpoint has a known open bug (tinker-cookbook#684) where
+``reasoning_content`` comes back ``None`` and the thinking tokens are
+concatenated into ``message.content`` instead — sometimes with the separator
+markers stripped, which the maintainers themselves describe as leaving no
+reliable way to parse them apart.
+
+That is disqualifying for a product whose promise is that every published claim
+traces to stored data: the reasoning trace is precisely where a model
+speculates on its way to an answer. So the defence is to stop generating one —
+callers that render text to a reader pass ``reasoning_effort="none"`` — with
+marker stripping below only as a safety net for the cases where a trace appears
+anyway.
 
 Everything that uses this must degrade gracefully when no provider is configured.
 LLM output is enrichment — explanations, extracted signals, Bernie's commentary.
@@ -239,10 +252,22 @@ class TinkerClient:
         if not choices:
             return Completion(text="", reasoning=None)
         message = choices[0].get("message") or {}
-        return Completion(
-            text=(message.get("content") or "").strip(),
-            reasoning=message.get("reasoning_content"),
-        )
+        content = (message.get("content") or "").strip()
+        reasoning = message.get("reasoning_content")
+
+        # Safety net for tinker-cookbook#684. When a trace leaks into content
+        # *with* its marker intact we can recover the answer; when the marker
+        # has been stripped we cannot, which is why the real defence is asking
+        # for no reasoning at all rather than cleaning up afterwards.
+        answer, leaked = _split_leaked_reasoning(content)
+        if leaked:
+            logger.warning(
+                "reasoning leaked into message.content (%d chars stripped); "
+                "set reasoning_effort='none' for user-facing calls",
+                len(leaked),
+            )
+            reasoning = reasoning or leaked
+        return Completion(text=answer, reasoning=reasoning)
 
 
 def build_client(
@@ -275,6 +300,26 @@ def build_client(
             provider,
         )
     return NullClient()
+
+
+#: Markers different model families use to close a reasoning block. The answer
+#: is whatever follows the last one.
+_REASONING_MARKERS = ("</think>", "assistantfinal", "<|start|>assistant")
+
+
+def _split_leaked_reasoning(content: str):
+    """Separate a leaked reasoning trace from the answer.
+
+    Returns ``(answer, leaked_or_None)``. Only handles the case where a marker
+    survived; unmarked traces are indistinguishable from prose and are left
+    alone rather than guessed at, since truncating a genuine answer would be
+    worse than showing a verbose one.
+    """
+    for marker in _REASONING_MARKERS:
+        index = content.rfind(marker)
+        if index != -1:
+            return content[index + len(marker):].strip(), content[:index].strip()
+    return content, None
 
 
 def _loads_lenient(raw: str) -> Any:

@@ -303,3 +303,65 @@ async def test_the_blog_still_renders_when_bernie_is_out_of_credit():
     assert narrated.narrative is None
     assert narrated.facts
     assert narrated.table
+
+
+# ── Leaked reasoning (tinker-cookbook#684) ───────────────────────────────────
+
+
+def test_a_marked_reasoning_trace_is_split_from_the_answer():
+    """Tinker folds thinking tokens into message.content and returns
+    reasoning_content as None. Where the marker survives we can recover the
+    answer; the real defence is asking for no reasoning at all."""
+    from f1_common.llm import TinkerClient
+
+    completion = TinkerClient._parse_completion({
+        "choices": [{"message": {
+            "content": "We need to compare the two.</think>Alpha was quicker.",
+            "reasoning_content": None,
+        }}]
+    })
+
+    assert completion.text == "Alpha was quicker."
+    assert "We need to compare" in completion.reasoning
+
+
+def test_unmarked_content_is_left_alone():
+    """An unmarked trace is indistinguishable from prose. Guessing would risk
+    truncating a genuine answer, which is worse than a verbose one."""
+    from f1_common.llm import TinkerClient
+
+    completion = TinkerClient._parse_completion({
+        "choices": [{"message": {"content": "Alpha was quicker.", "reasoning_content": None}}]
+    })
+
+    assert completion.text == "Alpha was quicker."
+    assert completion.reasoning is None
+
+
+def test_bernie_asks_for_no_reasoning():
+    """User-facing calls must not generate a trace that could leak into the
+    answer body."""
+    import inspect
+    from app.services import bernie as module
+
+    assert 'reasoning_effort="none"' in inspect.getsource(module.Bernie.converse)
+
+
+def test_the_whole_field_is_given_to_bernie():
+    """Truncating to a top-five slice made Bernie refuse questions about
+    drivers whose probabilities we were holding. A refusal is only honest when
+    the data is genuinely absent."""
+    prediction = {
+        "season": 2026, "round": 13, "window": "post_quali",
+        "model_version": "v4", "published_markets": ["win", "podium", "points"],
+        "data_quality": {"complete": True},
+        "driver_probabilities": [
+            {"driver": "D%d" % i, "team": "T", "p_win": 0.05,
+             "p_podium": 0.5 - i * 0.02, "p_points": 0.8}
+            for i in range(20)
+        ],
+    }
+    facts = why_this_prediction_facts(prediction, None)
+
+    assert len(facts["full field with probabilities"]) == 20
+    assert any("D19" in row for row in facts["full field with probabilities"])
