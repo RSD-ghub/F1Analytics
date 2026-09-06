@@ -46,6 +46,14 @@ class Settings(ServiceSettings):
     cors_allow_origins: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
 
+    # LLM budgets. Only meaningful once the app has a public URL, where the
+    # number of callers stops being one. Per-user first so one abusive account
+    # cannot deny everyone else; the global ceiling behind it because per-user
+    # limits multiply by however many accounts someone can register.
+    bernie_calls_per_user_per_day: int = 20
+    bernie_calls_per_day: int = 500
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

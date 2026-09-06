@@ -46,6 +46,13 @@ export default function Layout({ children }) {
           they turn out to be. Every prediction we have ever published stays on
           the <Link to="/track-record">track record</Link>.
         </p>
+        <p className="disclaimer">
+          An unofficial, non-commercial project. Not associated with, endorsed
+          by, or connected to Formula 1, the FIA, or any team. F1, FORMULA ONE
+          and related marks belong to Formula One Licensing BV. Timing and
+          classification data originate with the FIA and Formula One and are
+          used here for analysis only.
+        </p>
       </footer>
     </div>
   )

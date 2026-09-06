@@ -152,3 +152,12 @@ a { color: var(--accent); }
   .fact { grid-template-columns: 1fr; gap: 2px; }
   .masthead { flex-wrap: wrap; gap: 14px; }
 }
+
+/* Attribution the reader should be able to find but not trip over. */
+.colophon .disclaimer {
+  margin-top: 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  opacity: 0.62;
+  max-width: 62ch;
+}

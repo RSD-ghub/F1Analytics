@@ -19,6 +19,7 @@ from app.routers import auth, bernie, blog, dashboard
 from app.services.downstream import DownstreamUnavailable
 from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
+from app.services.usage import UsageStore
 from app.services.users import UserStore
 from f1_common.health import build_health_router
 
@@ -34,6 +35,7 @@ async def lifespan(_: FastAPI):
     try:
         await UserStore(db.db()).ensure_indexes()
         await ConversationStore(db.db()).ensure_indexes()
+        await UsageStore(db.db()).ensure_indexes()
     except Exception:
         logger.exception("index creation failed; email uniqueness is NOT enforced")
 

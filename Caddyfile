@@ -1,0 +1,32 @@
+# TLS is automatic: Caddy obtains and renews a Let's Encrypt certificate for
+# {$DOMAIN} on its own. That is the main reason it is here rather than nginx —
+# a manual certbot renewal is a thing to forget.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	# The API. Everything under /api is core-api, which is the only service
+	# that authenticates — the other three are not reachable from here at all.
+	handle /api/* {
+		reverse_proxy core-api:8000
+	}
+
+	# Everything else is the built React app, served by its own nginx.
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		# Belt and braces on a site that serves only its own assets.
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		# HSTS is deliberately short to begin with. A long max-age is hard to
+		# take back if the certificate or domain arrangement changes.
+		Strict-Transport-Security "max-age=86400"
+		-Server
+	}
+}

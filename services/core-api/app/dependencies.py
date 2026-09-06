@@ -14,6 +14,7 @@ from app.services.security import (
     decode_token,
 )
 from app.services.conversation import ConversationStore
+from app.services.usage import UsageStore
 from app.services.users import UserStore
 from f1_common.llm import LLMClient, build_client
 
@@ -24,6 +25,10 @@ def get_users() -> UserStore:
 
 def get_conversations() -> ConversationStore:
     return ConversationStore(db.db())
+
+
+def get_usage() -> UsageStore:
+    return UsageStore(db.db())
 
 
 @lru_cache

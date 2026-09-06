@@ -8,12 +8,16 @@ version: '3.9'
 #   docker compose up --build     # first run (builds images)
 #   docker compose up             # subsequent runs
 #
-# Only mongodb, core-api and frontend publish host ports. The three internal
+# This file is for LOCAL DEVELOPMENT. For a public host use
+# docker-compose.prod.yml, which publishes nothing but Caddy and requires
+# database credentials.
+#
+# Only mongodb (on loopback), core-api and frontend publish host ports. The three internal
 # services are reachable solely on the compose network, which is what makes
 # core-api the single place authentication is enforced.
 #
 # Services:
-#   mongodb            → localhost:27017
+#   mongodb            → 127.0.0.1:27017 (loopback only)
 #   core-api           → http://localhost:8000   (FastAPI — the public API)
 #   frontend           → http://localhost:3000   (React / Nginx)
 #   ingestion-service  → internal only
@@ -29,7 +33,12 @@ services:
     container_name: f1_mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      # Loopback only. Published at all so you can point a local mongosh or the
+      # backfill scripts at it — but bound to 127.0.0.1 so that running this
+      # file on a machine with a public IP does not expose an unauthenticated
+      # database to the internet. Production uses docker-compose.prod.yml,
+      # which does not publish it at all.
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:

@@ -75,3 +75,48 @@ print("✓ compose is internally consistent")
 print("  (nginx, the container network and the images remain unverified —")
 print("   only `docker compose up --build` can test those)")
 PY
+
+# ── Production compose ───────────────────────────────────────────────────────
+# Static checks only; Docker is not installed here. Deliberately dependency-free
+# (no PyYAML) so this runs on a bare host as well as a dev machine. These assert
+# the two things that would be genuinely dangerous to get wrong in public.
+if [ -f docker-compose.prod.yml ]; then
+  echo ""
+  echo "production compose:"
+  prod_fail=0
+
+  # Every service that publishes host ports, by name. Only caddy may.
+  publishers=$(awk '
+    /^  [a-z][a-z0-9_-]*:/ { svc = $1; sub(/:$/, "", svc) }
+    /^    ports:/          { if (svc != "") print svc }
+  ' docker-compose.prod.yml | sort -u)
+
+  for svc in $publishers; do
+    if [ "$svc" != "caddy" ]; then
+      echo "  ✗ $svc publishes host ports; only caddy may"
+      prod_fail=1
+    fi
+  done
+  [ -n "$publishers" ] || { echo "  ✗ nothing publishes a port — caddy cannot serve"; prod_fail=1; }
+
+  if ! grep -q "MONGO_INITDB_ROOT_USERNAME" docker-compose.prod.yml; then
+    echo "  ✗ the database has no credentials"
+    prod_fail=1
+  fi
+  if grep -qE '^\s+- "27017:27017"' docker-compose.prod.yml; then
+    echo "  ✗ the database publishes 27017 to the host"
+    prod_fail=1
+  fi
+  if ! grep -q 'JWT_SECRET' docker-compose.prod.yml; then
+    echo "  ✗ core-api is missing JWT_SECRET"
+    prod_fail=1
+  fi
+
+  if [ "$prod_fail" -eq 0 ]; then
+    echo "  ✓ only caddy publishes host ports ($publishers)"
+    echo "  ✓ the database is authenticated and not reachable from the host"
+    echo "  ✓ core-api requires JWT_SECRET"
+  else
+    exit 1
+  fi
+fi

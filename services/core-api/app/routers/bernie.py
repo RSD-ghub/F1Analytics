@@ -12,7 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.dependencies import current_user, get_conversations, get_llm
+from app.dependencies import (
+    current_user,
+    get_conversations,
+    get_llm,
+    get_usage,
+)
+from app.services.usage import BudgetExceeded, UsageStore
 from app.models.conversation import (
     AskRequest,
     BernieTurnResponse,
@@ -58,11 +64,19 @@ async def why_this_prediction(
     round_number: int,
     settings: Settings = Depends(get_settings),
     llm=Depends(get_llm),
+    usage: UsageStore = Depends(get_usage),
+    user=Depends(current_user),
 ) -> BernieResponse:
     """Explain a locked forecast in strategist's terms.
 
-    Public: an unexplained probability is exactly the thing this product exists
-    not to publish.
+    The explanation is cached against the prediction rather than regenerated per
+    reader. A locked forecast is immutable, so the explanation of it is a fixed
+    fact about a fixed thing — generating it once makes the cost of explanations
+    scale with the number of forecasts rather than the number of visitors.
+
+    That matters for more than the bill: this route exists because an
+    unexplained probability is the thing the product is trying not to publish,
+    and a per-reader cost is what would eventually force it behind a meter.
     """
     prediction_client = ServiceClient(
         "prediction", settings.prediction_service_url,
@@ -93,6 +107,17 @@ async def why_this_prediction(
             logger.info("snapshot unavailable; explaining without as-of context")
 
     facts = why_this_prediction_facts(prediction, snapshot)
+
+    # Keyed on the prediction, not the race: the two windows are different
+    # forecasts and deserve different explanations. Keyed on the model version
+    # too, so a retrain does not serve stale reasoning about superseded numbers.
+    cache_key = usage.key(
+        "why", prediction.get("prediction_id"), prediction.get("model_version")
+    )
+    cached = await usage.cached(cache_key)
+    if cached:
+        return BernieResponse(**cached)
+
     bernie = Bernie(llm)
     try:
         answer = await bernie.explain(
@@ -109,7 +134,9 @@ async def why_this_prediction(
                 "its inputs are available from /predictions."
             ),
         )
-    return BernieResponse(answer=answer, grounded_on=facts)
+    response = BernieResponse(answer=answer, grounded_on=facts)
+    await usage.store(cache_key, response.model_dump(mode="json"))
+    return response
 
 
 # ── Conversation ─────────────────────────────────────────────────────────────
@@ -188,12 +215,31 @@ async def _weekend_facts(
     return facts
 
 
+
+async def _charge(usage: UsageStore, settings: Settings, user) -> None:
+    """Spend one unit of this caller's daily allowance, or 429.
+
+    Charged before the call, not after: a prompt that fails upstream has still
+    cost us the attempt, and billing only successes would let someone retry a
+    failing question without limit.
+    """
+    try:
+        await usage.consume(
+            str(user["_id"]),
+            per_user=settings.bernie_calls_per_user_per_day,
+            per_day=settings.bernie_calls_per_day,
+        )
+    except BudgetExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
 @router.post("/threads", response_model=BernieTurnResponse, status_code=201)
 async def start_thread(
     request: StartThreadRequest,
     settings: Settings = Depends(get_settings),
     llm=Depends(get_llm),
     store: ConversationStore = Depends(get_conversations),
+    usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
 ) -> BernieTurnResponse:
     """Open a conversation about a race weekend."""
@@ -204,6 +250,7 @@ async def start_thread(
             detail="Bernie is not configured on this deployment.",
         )
 
+    await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, request.season, request.round)
     thread = await store.create(user["_id"], request.season, request.round)
     return await _turn(bernie, store, thread, request.question, facts)
@@ -216,6 +263,7 @@ async def continue_thread(
     settings: Settings = Depends(get_settings),
     llm=Depends(get_llm),
     store: ConversationStore = Depends(get_conversations),
+    usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
 ) -> BernieTurnResponse:
     """Ask a follow-up. History gives continuity; facts are re-derived fresh."""
@@ -230,6 +278,7 @@ async def continue_thread(
         # exists but belongs to another account is itself a disclosure.
         raise HTTPException(status_code=404, detail=str(exc))
 
+    await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, thread.season, thread.round)
     return await _turn(bernie, store, thread, request.question, facts)
 
