@@ -37,6 +37,11 @@ class Settings(ServiceSettings):
     # Earliest season with usable history.
     season_floor: int = 2010
 
+    # How often to check whether a lock window has opened. Frequent relative to
+    # the six-hour grace period, so a post-quali window that is waiting on the
+    # grid gets several chances before the deadline stops meaning anything.
+    lock_check_minutes: int = 15
+
 
 @lru_cache
 def get_settings() -> Settings:

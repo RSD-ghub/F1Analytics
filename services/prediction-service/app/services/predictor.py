@@ -82,6 +82,7 @@ class Predictor:
         circuit: str = "",
         race_start_utc: Optional[datetime] = None,
         race_name: str = "",
+        window_opened_at: Optional[datetime] = None,
     ) -> Tuple[Prediction, FeatureSnapshot]:
         """Produce a forecast without persisting it.
 
@@ -139,6 +140,7 @@ class Predictor:
             window=window,
             locked_at=datetime.now(timezone.utc),
             race_start_utc=race_start_utc,
+            window_opened_at=window_opened_at,
             model_version=self._model.version,
             seed=seed,
             driver_probabilities=_restrict_to_published(
@@ -157,6 +159,7 @@ class Predictor:
         circuit: str = "",
         race_start_utc: Optional[datetime] = None,
         race_name: str = "",
+        window_opened_at: Optional[datetime] = None,
     ) -> Prediction:
         """Build and permanently record a forecast.
 
@@ -164,7 +167,8 @@ class Predictor:
         would be an edit to the public record.
         """
         prediction, snapshot = await self.build(
-            season, round_number, window, circuit, race_start_utc, race_name
+            season, round_number, window, circuit, race_start_utc, race_name,
+            window_opened_at,
         )
 
         await self._store.save_snapshot(snapshot)

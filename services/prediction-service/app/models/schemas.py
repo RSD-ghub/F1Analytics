@@ -11,7 +11,7 @@ predictions. The pre-quali forecast has no grid information; the post-quali one
 does. Comparing their accuracy measures exactly how much the grid tells you.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -166,6 +166,11 @@ class Prediction(BaseModel):
     locked_at: datetime
     #: When the race starts. Lets scoring confirm the lock preceded the race.
     race_start_utc: Optional[datetime] = None
+    #: When this window opened. Stored so lateness stays derivable from the
+    #: prediction alone: a forecast placed hours after its deadline had more of
+    #: the world available than the deadline implies, and the record should show
+    #: that rather than presenting every lock as equally timely.
+    window_opened_at: Optional[datetime] = None
     model_version: str
     #: Seed used for the sampling. With the snapshot, this makes the call exactly
     #: reproducible.
@@ -182,6 +187,19 @@ class Prediction(BaseModel):
 
     def publishes(self, market: str) -> bool:
         return market in self.published_markets
+
+    @property
+    def locked_late_by(self) -> Optional[timedelta]:
+        """How long after its window opened this forecast was placed.
+
+        None when the window time was not recorded (a manual lock). A large
+        value is not invalid — it is a fact the track record should surface,
+        since a late forecast had more of the world available than its deadline
+        implies.
+        """
+        if self.window_opened_at is None:
+            return None
+        return self.locked_at - self.window_opened_at
 
 
 class ModelVersion(BaseModel):

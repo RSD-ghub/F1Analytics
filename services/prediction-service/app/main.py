@@ -11,7 +11,10 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
+from app.dependencies import get_client, get_predictor
 from app.routers import predictions
+from app.services import scheduler as lock_scheduler
+from app.services.scheduler import LockScheduler
 from app.services.storage import PredictionStore
 from f1_common.health import build_health_router
 
@@ -36,7 +39,18 @@ async def lifespan(_: FastAPI):
             "until indexes exist"
         )
 
+    lock_scheduler.start(
+        LockScheduler(
+            predictor=get_predictor(),
+            client=get_client(),
+            pre_quali_hours=settings.pre_quali_lock_hours_before,
+            post_quali_hours=settings.post_quali_lock_hours_before,
+        ),
+        settings.lock_check_minutes,
+    )
+
     yield
+    lock_scheduler.shutdown()
     db.close()
 
 
