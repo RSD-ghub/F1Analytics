@@ -99,7 +99,7 @@ def test_document_url_shape():
 
 
 def test_parses_the_grid_and_the_document_number():
-    entries, doc = _parse_lines(SAO_PAULO_LINES)
+    entries, _pen, doc = _parse_lines(SAO_PAULO_LINES)
     assert doc == 58
     assert len(entries) == 20
     assert (entries[0].position, entries[0].car_number) == (1, 4)
@@ -110,7 +110,7 @@ def test_parses_the_grid_and_the_document_number():
 def test_a_driver_with_no_lap_time_still_takes_their_slot():
     """Bortoleto is classified P18 without a time. Dropping him would shift
     every pit-lane position by one."""
-    entries, _ = _parse_lines(SAO_PAULO_LINES)
+    entries, _pen, _doc = _parse_lines(SAO_PAULO_LINES)
     bortoleto = next(e for e in entries if e.car_number == 5)
     assert bortoleto.position == 18
 
@@ -124,7 +124,7 @@ def test_pit_lane_starters_go_behind_the_grid_not_on_pole():
     grid 19 and Ocon at 20 behind an eighteen-car grid — these assertions are
     that ground truth.
     """
-    entries, _ = _parse_lines(SAO_PAULO_LINES)
+    entries, _pen, _doc = _parse_lines(SAO_PAULO_LINES)
     verstappen = next(e for e in entries if e.car_number == 1)
     ocon = next(e for e in entries if e.car_number == 31)
 
@@ -135,7 +135,7 @@ def test_pit_lane_starters_go_behind_the_grid_not_on_pole():
 
 
 def test_notes_block_is_not_read_as_grid_rows():
-    entries, _ = _parse_lines(SAO_PAULO_LINES)
+    entries, _pen, _doc = _parse_lines(SAO_PAULO_LINES)
     assert all("Stewards" not in e.driver_name for e in entries)
     assert len(entries) == 20
 
@@ -176,7 +176,7 @@ def _rows(with_numbers=True):
 
 
 def _document():
-    entries, _ = _parse_lines(SAO_PAULO_LINES)
+    entries, _pen, _doc = _parse_lines(SAO_PAULO_LINES)
     return StartingGridDocument(
         season=2025, round=21, event_name="São Paulo Grand Prix",
         kind="final", url="http://example/doc.pdf", entries=tuple(entries),
@@ -319,3 +319,104 @@ async def test_an_unpublished_grid_is_reported_pending_not_failed(monkeypatch):
     assert result["still_pending"] == ["2025-1"]
     assert result["failed"] == []
     assert store.grid_saves == 0
+
+
+# ── The glued-row regression ─────────────────────────────────────────────────
+
+#: Verbatim from the 2026 Italian Grand Prix provisional grid (doc 51). The PDF
+#: text layer runs row 22 onto the end of row 21's team line. Parsed with
+#: start-anchored matching only, the grid comes back twenty-one long — and a
+#: 1..21 grid passes every structural check there is, so the loss is silent.
+ITALY_2026_TAIL = [
+    "Doc 51 Time 20:42",
+    "1 10 Pierre GASLY 1:21.786",
+    "BWT Alpine F1 Team",
+    "2 63 George RUSSELL 1:21.846",
+    "Mercedes-AMG PETRONAS F1 Team",
+    "3 16 Charles LECLERC 1:22.004",
+    "Scuderia Ferrari HP",
+    "4 44 Lewis HAMILTON 1:22.011",
+    "Scuderia Ferrari HP",
+    "5 3 Max VERSTAPPEN 1:22.070",
+    "Oracle Red Bull Racing",
+    "6 81 Oscar PIASTRI * 1:21.966",
+    "McLaren Mastercard F1 Team",
+    "7 43 Franco COLAPINTO 1:22.220",
+    "BWT Alpine F1 Team",
+    "8 1 Lando NORRIS 1:22.256",
+    "McLaren Mastercard F1 Team",
+    "9 41 Arvid LINDBLAD 1:22.286",
+    "Visa Cash App Racing Bulls F1 Team",
+    "10 5 Gabriel BORTOLETO 1:22.517",
+    "Audi Revolut F1 Team",
+    "11 87 Oliver BEARMAN 1:22.756",
+    "TGR Haas F1 Team",
+    "12 27 Nico HULKENBERG 1:22.779",
+    "Audi Revolut F1 Team",
+    "13 55 Carlos SAINZ 1:23.453",
+    "Atlassian Williams F1 Team",
+    "14 31 Esteban OCON 1:23.454",
+    "TGR Haas F1 Team",
+    "15 22 Yuki TSUNODA 1:23.755",
+    "Visa Cash App Racing Bulls F1 Team",
+    "16 77 Valtteri BOTTAS 1:24.364",
+    "Cadillac Formula 1 Team",
+    "17 11 Sergio PEREZ 1:24.595",
+    "Cadillac Formula 1 Team",
+    "18 14 Fernando ALONSO 1:25.150",
+    "Aston Martin Aramco F1 Team",
+    "19 18 Lance STROLL 1:25.222",
+    "Aston Martin Aramco F1 Team",
+    "20 12 Kimi ANTONELLI * 1:22.093",
+    "Mercedes-AMG PETRONAS F1 Team",
+    "21 30 Liam LAWSON * 1:22.821",
+    "Oracle Red Bull Racing 22 23 Alexander ALBON * 1:24.356",
+    "Atlassian Williams F1 Team",
+    "* PENALTIES",
+    "Car 12 - 30 place grid penalty - Additional power unit elements have been used",
+    "Car 23 - 20 place grid penalty - Additional power unit elements have been used",
+    "Car 30 - 35 place grid penalty - Additional power unit elements have been used",
+    "Car 81 - 3 place grid penalty - Impeding another driver - Stewards' document no. 47",
+]
+
+
+def test_a_row_glued_onto_the_previous_team_line_is_still_read():
+    entries, _pen, _doc = _parse_lines(ITALY_2026_TAIL)
+
+    assert len(entries) == 22
+    last = entries[-1]
+    assert (last.position, last.car_number) == (22, 23)
+    assert last.driver_name == "Alexander ALBON"
+
+
+def test_the_team_of_a_glued_line_is_not_the_whole_line():
+    """Otherwise Lawson's team reads "Oracle Red Bull Racing 22 23 Alexander
+    ALBON"."""
+    entries, _pen, _doc = _parse_lines(ITALY_2026_TAIL)
+    lawson = next(e for e in entries if e.car_number == 30)
+
+    assert lawson.team == "Oracle Red Bull Racing"
+
+
+def test_penalties_are_captured_from_the_notes():
+    _entries, penalties, _doc = _parse_lines(ITALY_2026_TAIL)
+    by_car = {p.car_number: p for p in penalties}
+
+    assert by_car[30].places == 35
+    assert by_car[81].places == 3
+    assert "Impeding" in by_car[81].reason
+
+
+def test_a_penalised_car_missing_from_the_grid_is_caught():
+    """The document validating itself.
+
+    A row lost off the end leaves a contiguous 1..N grid, so no structural check
+    sees it. But the notes name the cars that were penalised, and every one of
+    them has to be somewhere on the grid those notes explain.
+    """
+    lines = [l for l in ITALY_2026_TAIL if not l.startswith("21 30 Liam LAWSON")]
+    lines = [l.replace("Oracle Red Bull Racing 22 23 Alexander ALBON * 1:24.356",
+                       "Oracle Red Bull Racing") for l in lines]
+    with pytest.raises(GridDocumentUnreadable) as exc:
+        _parse_lines(lines)
+    assert "30" in str(exc.value)

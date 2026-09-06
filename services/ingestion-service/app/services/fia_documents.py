@@ -81,6 +81,20 @@ class GridEntry:
 
 
 @dataclass(frozen=True)
+class GridPenalty:
+    """A penalty the document lists as the reason a driver moved.
+
+    Captured because it is the answer to the question a reader actually asks —
+    not "where does he start" but "why is he back there" — and the document is
+    the only place that states it.
+    """
+
+    car_number: int
+    places: int
+    reason: str
+
+
+@dataclass(frozen=True)
 class StartingGridDocument:
     """A parsed FIA starting grid, with the provenance needed to cite it."""
 
@@ -90,6 +104,7 @@ class StartingGridDocument:
     kind: str
     url: str
     entries: Sequence[GridEntry] = field(default_factory=tuple)
+    penalties: Sequence[GridPenalty] = field(default_factory=tuple)
     document_number: Optional[int] = None
 
     @property
@@ -135,15 +150,39 @@ _PIT_ROW = re.compile(
     r"^(\d{1,2})\s+([A-Za-z][A-Za-z'\-\. ]+?)\s*\*?\s*(?:\d:\d{2}\.\d{3})?$"
 )
 _PIT_HEADER = re.compile(r"PIT\s*LANE", re.IGNORECASE)
+#: ``Car 12 - 30 place grid penalty - Additional power unit elements...``
+_PENALTY = re.compile(
+    r"^Car\s+(\d{1,2})\s*-\s*(\d{1,2})\s+place\s+grid\s+penalty\s*-\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _glued_row(expected_position: int):
+    """A grid row that the PDF's text layer ran onto the end of another line.
+
+    Real and load-bearing: the 2026 Italian Grand Prix document emits
+    ``"Oracle Red Bull Racing 22 23 Alexander ALBON * 1:24.356"`` as a single
+    line, so the last row on the grid is invisible to a start-anchored match —
+    and a grid that is short by its final row still passes a contiguity check,
+    which is precisely the kind of silent loss this module refuses to allow.
+
+    The position we are expecting next is baked into the pattern so this can
+    only ever match the row it is looking for, never stray digits in a team name
+    or a sponsor.
+    """
+    return re.compile(
+        r"(?:^|\s){}\s+(\d{{1,2}})\s+([A-Za-z][A-Za-z'\-\. ]+?)\s*\*?\s*"
+        r"(?:\d:\d{{2}}\.\d{{3}})?\s*$".format(expected_position)
+    )
 _END_OF_GRID = re.compile(r"^\s*(NOTES|\*?\s*PENALTIES)\b", re.IGNORECASE)
 _DOC_NUMBER = re.compile(r"^\s*Doc\s+(\d+)\b", re.IGNORECASE)
 
 
-def parse_grid_pdf(data: bytes) -> Tuple[List[GridEntry], Optional[int]]:
+def parse_grid_pdf(data: bytes):
     """Extract the starting grid from a FIA grid document.
 
-    Returns ``(entries, document_number)``. Raises ``GridDocumentUnreadable``
-    when the result is not a structurally credible grid.
+    Returns ``(entries, penalties, document_number)``. Raises
+    ``GridDocumentUnreadable`` when the result is not a credible grid.
     """
     try:
         import pdfplumber
@@ -160,11 +199,13 @@ def parse_grid_pdf(data: bytes) -> Tuple[List[GridEntry], Optional[int]]:
     return _parse_lines(lines)
 
 
-def _parse_lines(lines: Sequence[str]) -> Tuple[List[GridEntry], Optional[int]]:
+def _parse_lines(lines: Sequence[str]):
     grid: List[GridEntry] = []
     pit_lane: List[GridEntry] = []
+    penalties: List[GridPenalty] = []
     document_number: Optional[int] = None
     in_pit_block = False
+    past_grid = False
 
     for index, line in enumerate(lines):
         if document_number is None:
@@ -172,13 +213,26 @@ def _parse_lines(lines: Sequence[str]) -> Tuple[List[GridEntry], Optional[int]]:
             if found:
                 document_number = int(found.group(1))
 
+        # The notes block ends the grid but not the document: the penalties that
+        # explain the order are printed after it.
         if _END_OF_GRID.match(line):
-            break
+            past_grid = True
+        if past_grid:
+            penalty = _PENALTY.match(line)
+            if penalty:
+                penalties.append(
+                    GridPenalty(
+                        car_number=int(penalty.group(1)),
+                        places=int(penalty.group(2)),
+                        reason=penalty.group(3).strip(),
+                    )
+                )
+            continue
+
         if _PIT_HEADER.search(line):
             in_pit_block = True
             continue
 
-        team = _team_after(lines, index)
         if in_pit_block:
             match = _PIT_ROW.match(line)
             if match:
@@ -187,31 +241,37 @@ def _parse_lines(lines: Sequence[str]) -> Tuple[List[GridEntry], Optional[int]]:
                         position=0,
                         car_number=int(match.group(1)),
                         driver_name=match.group(2).strip(),
-                        team=team,
+                        team=_team_after(lines, index),
                         from_pit_lane=True,
                     )
                 )
             continue
 
+        expected = len(grid) + 1
         match = _GRID_ROW.match(line)
-        if match:
-            position, car, name = int(match.group(1)), int(match.group(2)), match.group(3)
-            # The grid is strictly 1..N. Anything else means the pattern matched
-            # something that is not a grid row, so stop trusting the parse.
-            if position != len(grid) + 1:
+        if match and int(match.group(1)) == expected:
+            car, name = int(match.group(2)), match.group(3)
+        else:
+            # Not at the start of the line — but it may still be *in* it, run on
+            # from the previous row's team. Anchored to the expected position so
+            # it cannot match anything else.
+            glued = _glued_row(expected).search(line)
+            if not glued:
                 continue
-            grid.append(
-                GridEntry(
-                    position=position,
-                    car_number=car,
-                    driver_name=name.strip(),
-                    team=team,
-                )
+            car, name = int(glued.group(1)), glued.group(2)
+
+        grid.append(
+            GridEntry(
+                position=expected,
+                car_number=car,
+                driver_name=name.strip(),
+                team=_team_after(lines, index),
             )
+        )
 
     entries = grid + _assign_pit_lane_positions(pit_lane, len(grid))
-    _validate(entries)
-    return entries, document_number
+    _validate(entries, penalties)
+    return entries, penalties, document_number
 
 
 def _team_after(lines: Sequence[str], index: int) -> str:
@@ -221,7 +281,13 @@ def _team_after(lines: Sequence[str], index: int) -> str:
     candidate = lines[index + 1]
     if _GRID_ROW.match(candidate) or _PIT_ROW.match(candidate) or _END_OF_GRID.match(candidate):
         return ""
-    return candidate if not _PIT_HEADER.search(candidate) else ""
+    if _PIT_HEADER.search(candidate):
+        return ""
+    # When the next line has a grid row run onto its end, the team is only the
+    # part in front of it — otherwise the team reads "Oracle Red Bull Racing 22
+    # 23 Alexander ALBON".
+    trailing = re.search(r"\s\d{1,2}\s+\d{1,2}\s+[A-Z][a-z]+\s+[A-Z]{2,}", candidate)
+    return candidate[: trailing.start()].strip() if trailing else candidate
 
 
 def _assign_pit_lane_positions(
@@ -247,7 +313,7 @@ def _assign_pit_lane_positions(
     ]
 
 
-def _validate(entries: Sequence[GridEntry]) -> None:
+def _validate(entries: Sequence[GridEntry], penalties: Sequence["GridPenalty"] = ()) -> None:
     if len(entries) < 10:
         raise GridDocumentUnreadable(
             "parsed only {} grid slots; a Formula 1 grid is ~20".format(len(entries))
@@ -258,6 +324,17 @@ def _validate(entries: Sequence[GridEntry]) -> None:
     cars = [entry.car_number for entry in entries]
     if len(set(cars)) != len(cars):
         raise GridDocumentUnreadable("the same car appears twice: {}".format(cars))
+
+    # The document checks itself: a car the notes penalise has to appear on the
+    # grid those notes explain. This is the only check that catches a row lost
+    # off the *end* of the grid, where contiguity still looks perfect — which is
+    # exactly how the 2026 Italian Grand Prix document lost Albon at P22.
+    missing = sorted({p.car_number for p in penalties} - set(cars))
+    if missing:
+        raise GridDocumentUnreadable(
+            "cars {} carry a grid penalty in the notes but are absent from the "
+            "parsed grid; rows were lost".format(missing)
+        )
 
 
 # ── Fetching ─────────────────────────────────────────────────────────────────
@@ -289,7 +366,7 @@ async def fetch_starting_grid(
                 continue
             response.raise_for_status()
 
-            entries, document_number = parse_grid_pdf(response.content)
+            entries, penalties, document_number = parse_grid_pdf(response.content)
             logger.info(
                 "read the %s starting grid for %s %s: %d slots (doc %s)",
                 kind, season, event_name, len(entries), document_number,
@@ -301,6 +378,7 @@ async def fetch_starting_grid(
                 kind=kind,
                 url=url,
                 entries=tuple(entries),
+                penalties=tuple(penalties),
                 document_number=document_number,
             )
 
