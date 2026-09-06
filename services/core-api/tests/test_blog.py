@@ -229,3 +229,44 @@ async def test_a_failing_llm_does_not_break_the_entry():
 
     assert narrated.narrative is None
     assert narrated.headline
+
+
+def test_a_forecast_without_a_confirmed_grid_does_not_claim_the_grid_was_set():
+    """Caught on a live weekend.
+
+    The 2026 Italian GP forecast locked at 07:27 on qualifying classification,
+    while the same page's qualifying section reported that Antonelli qualified
+    P7 and starts P19. The forecast still announced itself as "locked with the
+    grid set" — a claim the rest of the page contradicted.
+    """
+    entry = builder.forecast_entry(
+        {
+            "season": 2026, "round": 13, "window": "post_quali",
+            "published_markets": ["win", "podium", "points"],
+            "data_quality": {"grid_is_provisional": True, "complete": False},
+            "driver_probabilities": [
+                {"driver": "Kimi Antonelli", "p_win": 0.28, "p_podium": 0.67, "p_points": 0.9},
+            ],
+        },
+        race_name="Italian Grand Prix",
+    )
+
+    assert "with the grid set" not in entry.headline
+    assert "before the penalties were confirmed" in entry.headline
+
+
+def test_a_forecast_on_the_official_grid_does_say_the_grid_was_set():
+    entry = builder.forecast_entry(
+        {
+            "season": 2026, "round": 13, "window": "post_quali",
+            "published_markets": ["win", "podium", "points"],
+            "data_quality": {"grid_is_provisional": False,
+                             "grid_source": "official_final", "complete": True},
+            "driver_probabilities": [
+                {"driver": "George Russell", "p_win": 0.31, "p_podium": 0.75, "p_points": 0.95},
+            ],
+        },
+        race_name="Italian Grand Prix",
+    )
+
+    assert entry.headline.endswith("with the grid set")

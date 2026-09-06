@@ -436,7 +436,17 @@ def forecast_entry(
         for row in ranked[:TOP_N]
     ]
 
-    label = "before qualifying" if window == "pre_quali" else "with the grid set"
+    # "with the grid set" has to be earned, not inferred from the window. A
+    # post-quali forecast locked before the stewards published starts from the
+    # qualifying classification, and saying the grid was set is then simply
+    # false — visibly so, on a page whose qualifying section is at that moment
+    # reporting the penalties the forecast did not have.
+    if window == "pre_quali":
+        label = "before qualifying"
+    elif quality.get("grid_is_provisional"):
+        label = "after qualifying, before the penalties were confirmed"
+    else:
+        label = "with the grid set"
     return BlogEntry(
         entry_id=_entry_id(
             prediction.get("season", 0), prediction.get("round", 0), EntryKind.FORECAST
