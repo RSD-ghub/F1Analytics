@@ -443,6 +443,8 @@ def forecast_entry(
     # reporting the penalties the forecast did not have.
     if window == "pre_quali":
         label = "before qualifying"
+    elif window == "final_grid":
+        label = "on the confirmed grid, one hour before the start"
     elif quality.get("grid_is_provisional"):
         label = "after qualifying, before the penalties were confirmed"
     else:

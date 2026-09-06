@@ -80,7 +80,8 @@ async def why_this_prediction(
     # Prefer the grid-aware call: it is the more confident of the two and the
     # one a reader is most likely asking about.
     prediction = next(
-        (p for p in predictions if p.get("window") == "post_quali"), predictions[0]
+        (p for p in predictions if p.get("window") in ("final_grid", "post_quali")),
+        predictions[0],
     )
     snapshot = None
     if prediction.get("feature_snapshot_ref"):

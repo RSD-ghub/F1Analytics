@@ -19,6 +19,24 @@ from app.services.downstream import ServiceClient, gather_optional
 
 logger = logging.getLogger(__name__)
 
+
+#: Forecast windows, most-informed first. Used wherever one prediction has to
+#: stand in for the weekend: the final-grid call knows the confirmed starting
+#: order, the post-quali call knows a provisional one, and the pre-quali call
+#: knows no grid at all. Picking "post_quali" by name silently ignored the
+#: better forecast once the final-grid window existed.
+WINDOW_PREFERENCE = ("final_grid", "post_quali", "pre_quali")
+
+
+def most_informed(predictions):
+    """The best available forecast for a race, or None."""
+    for window in WINDOW_PREFERENCE:
+        found = next((p for p in predictions if p.get("window") == window), None)
+        if found is not None:
+            return found
+    return predictions[0] if predictions else None
+
+
 router = APIRouter(prefix="/blog", tags=["blog"])
 
 
@@ -81,12 +99,9 @@ async def weekend(
         ),
     ]
     entries.extend(builder.forecast_entry(row, race_name) for row in predictions)
-    # The result entry compares against the grid-aware forecast when one exists,
-    # since that is the call the model was most confident in.
-    post_quali = next(
-        (p for p in predictions if p.get("window") == "post_quali"),
-        predictions[0] if predictions else None,
-    )
+    # The result entry compares against the best-informed forecast we made —
+    # the one placed on the confirmed grid when that window fired.
+    post_quali = most_informed(predictions)
     entries.append(
         builder.result_entry(
             season, round_number, race_name, results, post_quali

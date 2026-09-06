@@ -21,6 +21,13 @@ from pydantic import BaseModel, Field
 class LockWindow(str, Enum):
     PRE_QUALI = "pre_quali"
     POST_QUALI = "post_quali"
+    #: The confirmed grid. Separate from POST_QUALI because the two are placed
+    #: on genuinely different information: the FIA publishes a provisional grid
+    #: shortly after qualifying and the final one at exactly T-1h, and measured
+    #: over nine events the two differed in six — five of which moved the
+    #: pit-lane set, the largest move there is. A window whose premise is "we
+    #: know where they start" cannot be satisfied eighteen hours early.
+    FINAL_GRID = "final_grid"
 
 
 class Market(str, Enum):
@@ -42,7 +49,12 @@ class Market(str, Enum):
 MARKETS_BY_WINDOW = {
     LockWindow.PRE_QUALI: (Market.PODIUM, Market.POINTS),
     LockWindow.POST_QUALI: (Market.WIN, Market.PODIUM, Market.POINTS),
+    LockWindow.FINAL_GRID: (Market.WIN, Market.PODIUM, Market.POINTS),
 }
+
+#: Windows that are conditioned on a starting grid. Both use the grid block of
+#: the model; they differ in how sure that grid is.
+GRID_WINDOWS = (LockWindow.POST_QUALI, LockWindow.FINAL_GRID)
 
 
 def published_markets(window: LockWindow) -> List[str]:

@@ -24,6 +24,13 @@ class Settings(ServiceSettings):
     pre_quali_lock_hours_before: int = 72
     post_quali_lock_hours_before: int = 18
 
+    # The confirmed-grid window. Minutes, not hours: the FIA publishes the final
+    # starting grid at exactly T-1h — measured at +1.0h on seven of seven events
+    # across two seasons and six timezones — so this window is the sliver
+    # between that publication and the race. 45 minutes leaves a 15-minute
+    # margin after the document appears.
+    final_grid_lock_minutes_before: int = 45
+
     # Sampling iterations for a single race forecast. Higher is smoother but
     # slower; 20k puts the Monte Carlo error on a p_win well below a point.
     prediction_runs: int = 20000
@@ -37,10 +44,12 @@ class Settings(ServiceSettings):
     # Earliest season with usable history.
     season_floor: int = 2010
 
-    # How often to check whether a lock window has opened. Frequent relative to
-    # the six-hour grace period, so a post-quali window that is waiting on the
-    # grid gets several chances before the deadline stops meaning anything.
-    lock_check_minutes: int = 15
+    # How often to check whether a lock window has opened. Now driven by the
+    # tightest window rather than the loosest: the final-grid window is only 45
+    # minutes wide and opens 15 minutes after the document it depends on, so a
+    # 15-minute tick could give it as little as one attempt. Five minutes gives
+    # it a real chance to retry while staying cheap.
+    lock_check_minutes: int = 5
 
 
 @lru_cache

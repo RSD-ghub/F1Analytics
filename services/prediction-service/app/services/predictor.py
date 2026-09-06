@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Sequence, Tuple
 
 from app.models.schemas import (
+    GRID_WINDOWS,
     MARKETS_BY_WINDOW,
     DataQuality,
     DriverProbability,
@@ -40,6 +41,17 @@ from app.services.model import RaceModel
 from app.services.storage import PredictionStore
 
 logger = logging.getLogger(__name__)
+
+
+class ConfirmedGridRequired(RuntimeError):
+    """The final-grid window was asked to fire without a confirmed grid.
+
+    Not an error to recover from by publishing anyway. This window exists
+    precisely to be the forecast made on the real starting order; placing one on
+    the qualifying classification would be a post-quali forecast wearing the
+    wrong label, the same mislabelling the scheduler already refuses in the
+    other direction for pre-quali.
+    """
 
 
 class GridRequired(RuntimeError):
@@ -102,11 +114,28 @@ class Predictor:
                 logger.warning("prior season unavailable; using current season only")
 
         grid = await self._maybe_grid(season, round_number, window)
-        if window is LockWindow.POST_QUALI and not grid:
+        if window in GRID_WINDOWS and not grid:
             raise GridRequired(
                 "no grid ingested for {}-{}; a post-quali forecast without the "
                 "grid is a pre-quali forecast with the wrong label".format(
                     season, round_number
+                )
+            )
+        if window is LockWindow.FINAL_GRID and not all(
+            slot.confirmed for slot in grid
+        ):
+            # The distinction this window exists for. A provisional grid is a
+            # real, penalty-adjusted grid — and across nine measured events it
+            # still differed from the final one six times, five of those moving
+            # the pit-lane set. Publishing that here would make the final-grid
+            # forecast indistinguishable from the post-quali one, which is
+            # exactly the comparison the window was added to make.
+            raise ConfirmedGridRequired(
+                "grid for {}-{} is not confirmed ({}); the final-grid window "
+                "waits for the FIA's grid rather than publishing on a "
+                "stand-in".format(
+                    season, round_number,
+                    ", ".join(sorted({slot.grid_source for slot in grid})),
                 )
             )
 
@@ -201,7 +230,7 @@ class Predictor:
         self, season: int, round_number: int, window: LockWindow
     ) -> Optional[Sequence[GridSlot]]:
         """Fetch the grid only for the window entitled to see it."""
-        if window is not LockWindow.POST_QUALI:
+        if window not in GRID_WINDOWS:
             return None
         try:
             return await self._client.grid(season, round_number)

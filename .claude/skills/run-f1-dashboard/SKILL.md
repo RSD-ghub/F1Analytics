@@ -120,8 +120,21 @@ Retraining later goes through the champion/challenger gate:
 
 ## Forecasts
 
-Lock windows fire on their own once prediction-service is running (every
-`LOCK_CHECK_MINUTES`, default 15). Manual locking exists for backtests:
+Three lock windows fire on their own once prediction-service is running (every
+`LOCK_CHECK_MINUTES`, default 5):
+
+| Window | Opens | Grid it knows |
+|---|---|---|
+| `pre_quali` | T−72h | none — no win market published |
+| `post_quali` | T−18h | the FIA provisional grid (lands ~T−19h) |
+| `final_grid` | T−45m | the FIA **confirmed** grid (published at exactly T−1h) |
+
+`final_grid` refuses to publish on anything but a confirmed grid — a 409 while
+the stewards have not posted. Measured over nine events, provisional and final
+differed in six, five of those moving the pit-lane set, so the gap between the
+last two windows is a real measurement rather than a formality.
+
+Manual locking exists for backtests:
 
 ```bash
 curl -X POST localhost:8002/predictions/lock -H 'Content-Type: application/json' \

@@ -22,7 +22,7 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence
 
-from app.models.schemas import DriverFeatures, FeatureSnapshot, LockWindow
+from app.models.schemas import GRID_WINDOWS, DriverFeatures, FeatureSnapshot, LockWindow
 from app.services import practice_signal, quali_pace
 from app.services.ingestion_client import (
     GridSlot,
@@ -58,7 +58,7 @@ def build_snapshot(
     where it claims to be doing something hard.
     """
     history = _point_in_time(results, season, target_round)
-    use_grid = window is LockWindow.POST_QUALI and grid
+    use_grid = window in GRID_WINDOWS and grid
 
     # Qualifying pace. The rolling features are cut at the target round exactly
     # as results are; only the post-quali window may see this weekend's session.

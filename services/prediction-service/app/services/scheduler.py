@@ -39,7 +39,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.models.schemas import LockWindow
 from app.services.ingestion_client import IngestionClient, IngestionUnavailable
-from app.services.predictor import GridRequired, Predictor
+from app.services.predictor import ConfirmedGridRequired, GridRequired, Predictor
 from app.services.storage import PredictionExists
 
 logger = logging.getLogger(__name__)
@@ -66,10 +66,11 @@ def _aware(value: Any) -> Optional[datetime]:
     return value.astimezone(timezone.utc)
 
 
-def window_opens_at(
-    race_start: datetime, hours_before: int
-) -> datetime:
-    return race_start - timedelta(hours=hours_before)
+def window_opens_at(race_start: datetime, lead: timedelta) -> datetime:
+    """When a window opens. ``lead`` is a timedelta rather than whole hours
+    because the final-grid window is defined in minutes: the FIA publishes the
+    confirmed grid at exactly T-1h, so its window is a 45-minute sliver."""
+    return race_start - lead
 
 
 def should_lock(
@@ -77,7 +78,7 @@ def should_lock(
     now: datetime,
     race_start: Optional[datetime],
     qualifying_start: Optional[datetime],
-    hours_before: int,
+    lead: timedelta,
 ) -> tuple:
     """Decide whether to place this forecast now. Returns ``(lock, reason)``.
 
@@ -89,7 +90,7 @@ def should_lock(
     if now >= race_start:
         return False, "race has already started"
 
-    opens = window_opens_at(race_start, hours_before)
+    opens = window_opens_at(race_start, lead)
     if now < opens:
         return False, "window opens {}".format(opens.isoformat())
 
@@ -110,8 +111,8 @@ def should_lock(
     return True, "window open since {}".format(opens.isoformat())
 
 
-def lateness(now: datetime, race_start: datetime, hours_before: int) -> timedelta:
-    return now - window_opens_at(race_start, hours_before)
+def lateness(now: datetime, race_start: datetime, lead: timedelta) -> timedelta:
+    return now - window_opens_at(race_start, lead)
 
 
 class LockScheduler:
@@ -121,11 +122,15 @@ class LockScheduler:
         client: IngestionClient,
         pre_quali_hours: int,
         post_quali_hours: int,
+        final_grid_minutes: int = 45,
     ) -> None:
         self._predictor = predictor
         self._client = client
-        self._pre = pre_quali_hours
-        self._post = post_quali_hours
+        self._leads = {
+            LockWindow.PRE_QUALI: timedelta(hours=pre_quali_hours),
+            LockWindow.POST_QUALI: timedelta(hours=post_quali_hours),
+            LockWindow.FINAL_GRID: timedelta(minutes=final_grid_minutes),
+        }
 
     async def tick(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """One pass over the upcoming calendar. Returns what it did and why."""
@@ -141,12 +146,9 @@ class LockScheduler:
             race_start = _aware(weekend.race_start_utc)
             quali_start = _aware(weekend.qualifying_start_utc)
 
-            for window, hours in (
-                (LockWindow.PRE_QUALI, self._pre),
-                (LockWindow.POST_QUALI, self._post),
-            ):
+            for window, lead in self._leads.items():
                 lock, reason = should_lock(
-                    window, moment, race_start, quali_start, hours
+                    window, moment, race_start, quali_start, lead
                 )
                 if not lock:
                     continue
@@ -166,13 +168,21 @@ class LockScheduler:
                 race_start_utc=_aware(weekend.race_start_utc),
                 race_name=weekend.race_name,
                 window_opened_at=window_opens_at(
-                    _aware(weekend.race_start_utc),
-                    self._pre if window is LockWindow.PRE_QUALI else self._post,
+                    _aware(weekend.race_start_utc), self._leads[window]
                 ),
             )
         except PredictionExists:
             # The normal path on every tick after the first. Not a failure.
             return {"race": key, "window": window.value, "action": "already locked"}
+        except ConfirmedGridRequired as exc:
+            # The final-grid window is *defined* by the confirmed grid, so it
+            # waits rather than publishing on a stand-in. It stays open until
+            # the race; if the grid never lands, this window simply publishes
+            # nothing, which is the honest outcome for a forecast whose whole
+            # premise went unmet. The other two windows still cover the race.
+            logger.info("final-grid window for %s waiting on the FIA grid: %s", key, exc)
+            return {"race": key, "window": window.value,
+                    "action": "waiting for confirmed grid"}
         except GridRequired as exc:
             # Qualifying has not been ingested yet. The window stays open and
             # the next tick will retry — which is why ticks are frequent

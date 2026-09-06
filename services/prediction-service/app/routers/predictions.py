@@ -28,7 +28,11 @@ from app.services import simulation
 from app.services.features import build_snapshot
 from app.services.ingestion_client import IngestionClient, IngestionUnavailable
 from app.services.model import RaceModel
-from app.services.predictor import GridRequired, Predictor
+from app.services.predictor import (
+    ConfirmedGridRequired,
+    GridRequired,
+    Predictor,
+)
 from app.services.storage import PredictionExists, PredictionStore
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,11 @@ class PreviewResponse(BaseModel):
 def _handle(exc: Exception) -> HTTPException:
     """Map domain errors to the status codes that describe them honestly."""
     if isinstance(exc, PredictionExists):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ConfirmedGridRequired):
+        # 409, not 500: the caller asked for a forecast on the confirmed grid
+        # and the FIA has not published it yet. An expected state in the window
+        # between qualifying and T-1h, and the caller's move is to wait.
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, GridRequired):
         return HTTPException(status_code=409, detail=str(exc))

@@ -26,7 +26,7 @@ def check(window, now, race=RACE, quali=QUALI, hours=None):
     hours = hours if hours is not None else (
         PRE_HOURS if window is LockWindow.PRE_QUALI else POST_HOURS
     )
-    return should_lock(window, now, race, quali, hours)
+    return should_lock(window, now, race, quali, timedelta(hours=hours))
 
 
 # ── The window opens ─────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ def test_post_quali_locks_at_its_own_later_window():
 
 
 def test_window_opening_time_is_relative_to_the_race():
-    assert window_opens_at(RACE, 72) == RACE - timedelta(hours=72)
+    assert window_opens_at(RACE, timedelta(hours=72)) == RACE - timedelta(hours=72)
 
 
 # ── The rules that stop a dishonest lock ─────────────────────────────────────
@@ -106,7 +106,7 @@ def test_a_briefly_missed_window_still_locks():
 
 def test_a_race_with_no_start_time_is_skipped():
     """A TBC calendar entry has no deadline to be early or late for."""
-    lock, reason = should_lock(LockWindow.PRE_QUALI, RACE, None, None, PRE_HOURS)
+    lock, reason = should_lock(LockWindow.PRE_QUALI, RACE, None, None, timedelta(hours=PRE_HOURS))
     assert not lock
     assert "no race start" in reason
 
@@ -115,7 +115,8 @@ def test_pre_quali_locks_when_the_calendar_has_no_qualifying_time():
     """Absent a qualifying time we cannot prove qualifying has run, and
     refusing every such race would silently drop it from the record."""
     lock, _ = should_lock(
-        LockWindow.PRE_QUALI, RACE - timedelta(hours=71), RACE, None, PRE_HOURS
+        LockWindow.PRE_QUALI, RACE - timedelta(hours=71), RACE, None,
+        timedelta(hours=PRE_HOURS)
     )
     assert lock
 
