@@ -42,6 +42,16 @@ class SessionFetchError(RuntimeError):
     """Ingest failed for a reason that may succeed on retry (network, timeout)."""
 
 
+class RateLimited(SessionFetchError):
+    """Upstream refused us for volume, not for content.
+
+    Its own class because the response differs from every other fetch failure:
+    a few seconds of backoff cannot clear an hourly quota, so the right move is
+    to stop the run and resume later rather than spend the remaining sessions
+    failing one at a time.
+    """
+
+
 class SessionUnavailableError(SessionFetchError):
     """Upstream genuinely has no data — a future or cancelled race.
 
@@ -84,8 +94,47 @@ def _session_frame(session: Any, attribute: str) -> pd.DataFrame:
     try:
         return _as_frame(getattr(session, attribute, None))
     except Exception as exc:
-        logger.debug("session.%s unavailable: %s", attribute, exc)
+        # "This session has no laps" and "we could not read this session's laps"
+        # are different facts that arrive as the same empty frame. Collapsing
+        # them cost 47 sessions on a 2018-2025 backfill: FastF1's 500-calls-per
+        # -hour limit produced 429s, each was swallowed to an empty frame at
+        # debug level, and the sessions were recorded as merely lacking lap data
+        # — which is not a fetch failure, so nothing ever retried them and the
+        # reason never appeared in the log.
+        if _is_rate_limit(exc):
+            raise RateLimited(
+                "upstream rate limit hit reading session.{}: {}".format(attribute, exc)
+            ) from exc
+        if _is_transient(exc):
+            raise SessionFetchError(
+                "could not read session.{}: {}".format(attribute, exc)
+            ) from exc
+        logger.debug("session.%s genuinely unavailable: %s", attribute, exc)
         return pd.DataFrame()
+
+
+#: Matched on the exception's type name and message rather than by importing
+#: FastF1's own classes: the ones that matter live in private modules and have
+#: moved between releases, and a failed import here would silently restore the
+#: swallowing this exists to prevent.
+_RATE_LIMIT_MARKERS = ("ratelimit", "rate limit", "429", "calls/h", "too many requests")
+_TRANSIENT_MARKERS = (
+    "timeout", "timed out", "connection", "temporarily unavailable",
+    "read error", "remote end closed", "502", "503", "504",
+)
+
+
+def _matches(exc: Exception, markers) -> bool:
+    haystack = "{} {}".format(type(exc).__name__, exc).lower()
+    return any(marker in haystack for marker in markers)
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    return _matches(exc, _RATE_LIMIT_MARKERS)
+
+
+def _is_transient(exc: Exception) -> bool:
+    return _matches(exc, _TRANSIENT_MARKERS)
 
 
 def _column_datetime(event: Any, column: str) -> Optional[datetime]:

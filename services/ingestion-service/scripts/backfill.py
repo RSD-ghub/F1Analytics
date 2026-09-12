@@ -8,6 +8,16 @@ guarantee — which is exactly what the ad-hoc pull scripts this replaces did no
 
     python scripts/backfill.py results 2010 2025
     python scripts/backfill.py practice 2018 2025
+    python scripts/backfill.py full 2018 2025
+
+``full`` adds laps, stints, pit stops, weather and race control on top of
+``results``. It is much slower — lap frames are the bulk of what FastF1 serves —
+and only meaningful from 2018, which is the first season with lap data.
+
+Keep it off the current season while a race weekend is live. The running
+services own that season, and both this and their scheduled jobs replace rows
+per session; pointing them at the same round invites one deleting the other's
+work.
 """
 
 import asyncio
@@ -43,7 +53,20 @@ async def main() -> int:
         store=store, max_attempts=3, backoff_seconds=2.0,
     )
 
-    if mode == "results":
+    if mode == "full":
+        # Everything results depth covers, plus the lap-level frames. Telemetry
+        # stays off (see FastF1Source above): it is a derived per-lap summary,
+        # it multiplies the cost several times over, and nothing scores on it.
+        summary = await runner.run_backfill(
+            first, last, only_gaps=True, depth=IngestDepth.FULL
+        )
+        logger.info(
+            "full %s-%s: expected=%s complete=%s gaps=%s",
+            first, last, summary.expected, summary.complete, len(summary.open_gaps),
+        )
+        if summary.open_gaps:
+            logger.warning("open gaps: %s", summary.open_gaps[:20])
+    elif mode == "results":
         summary = await runner.run_backfill(
             first, last, only_gaps=True, depth=IngestDepth.RESULTS
         )

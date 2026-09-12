@@ -78,6 +78,12 @@ own pipeline so it inherits the completeness guarantee.
 # Practice long-run pace (~7s/session, 2018+ only).
 .venv/bin/python services/ingestion-service/scripts/backfill.py practice 2018 2026
 
+# Laps, stints, pit stops, weather, race control. 2018+ only — the first season
+# with lap data. Slow, and subject to FastF1's 500-calls-per-hour limit: a full
+# 2018-2025 pass exceeds it and stops partway with the reason logged. Re-run
+# after the hour rolls over; completed sessions are not re-fetched.
+.venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2025
+
 # Forward calendar — needed before the scheduler can place anything.
 curl -X POST "localhost:8001/forward/refresh-calendar?from_season=2026&to_season=2027"
 

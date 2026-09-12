@@ -34,6 +34,7 @@ from app.models.schemas import (
 from app.services.completeness import run_integrity_checks, summarise
 from app.services.fastf1_source import (
     FastF1Source,
+    RateLimited,
     SessionFetchError,
     SessionFrames,
     SessionUnavailableError,
@@ -680,7 +681,20 @@ class IngestRunner:
         for session in expected:
             if only_gaps and session.key in settled:
                 continue
-            await self.ingest_session(session, depth=depth)
+            try:
+                await self.ingest_session(session, depth=depth)
+            except RateLimited as exc:
+                # Stop, do not soldier on. An hourly quota cannot be waited out
+                # inside a retry loop, so continuing would mark every remaining
+                # session as incomplete for a reason that has nothing to do with
+                # them — turning one recoverable pause into a hundred spurious
+                # gaps. The run is resumable; the next pass picks up here.
+                logger.error(
+                    "stopping the backfill at %s: %s. Re-run once the quota "
+                    "resets; completed sessions are not re-fetched.",
+                    session.key, exc,
+                )
+                break
             if depth is IngestDepth.RESULTS:
                 # Qualifying is part of "results depth": it is the other half of
                 # what the model trains on, and it loads just as cheaply.
