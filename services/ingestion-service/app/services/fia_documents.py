@@ -387,3 +387,194 @@ async def fetch_starting_grid(
             season, event_name, ", ".join(attempted)
         )
     )
+
+
+# ── Qualifying classification ────────────────────────────────────────────────
+#
+# A second document from the same source, for a different reason. The grid
+# document exists because FastF1 has no penalty-adjusted grid at all; this one
+# exists because FastF1 is *slow*. In the hours after a session it serves an
+# entry list with every position blank, which is indistinguishable from a
+# successful fetch and useless for a forecast.
+#
+# Measured the evening before the 2026 Spanish Grand Prix: the FIA had published
+# the provisional classification (document 44, timed 17:15) while both FastF1
+# and jolpica still had nothing. The authoritative source was also the fastest.
+
+
+@dataclass(frozen=True)
+class QualifyingEntry:
+    """One driver's qualifying result, as the FIA published it."""
+
+    position: int
+    car_number: int
+    driver_name: str
+    team: str = ""
+    q1_seconds: float = 0.0
+    q2_seconds: float = 0.0
+    q3_seconds: float = 0.0
+
+    @property
+    def surname_key(self) -> str:
+        return normalise_name(self.driver_name).split()[-1] if self.driver_name else ""
+
+
+@dataclass(frozen=True)
+class QualifyingDocument:
+    season: int
+    round: int
+    event_name: str
+    kind: str
+    url: str
+    entries: Sequence[QualifyingEntry] = field(default_factory=tuple)
+    document_number: Optional[int] = None
+
+
+QUALIFYING_DOCUMENT_KINDS = ("final", "provisional")
+
+#: A lap time. Deliberately distinct from the wall-clock stamps on the same line
+#: (``16:13:54``), which have no fractional part and would otherwise be read as
+#: session times.
+_LAP_TIME = re.compile(r"\b(\d):(\d{2})\.(\d{3})\b")
+#: ``1 1 Lando NORRIS McLaren Mastercard F1 Team 1:33.469 7 ...``
+_QUALI_ROW = re.compile(r"^(\d{1,2})\s+(\d{1,2})\s+(.+)$")
+
+
+def qualifying_document_url(season: int, event_name: str, kind: str = "final") -> str:
+    if kind not in QUALIFYING_DOCUMENT_KINDS:
+        raise ValueError("unknown qualifying document kind: {}".format(kind))
+    return "{}/{}_{}_-_{}_qualifying_classification.pdf".format(
+        FIA_DOCUMENT_ROOT, season, event_slug(event_name), kind
+    )
+
+
+def _seconds(match) -> float:
+    return int(match.group(1)) * 60 + int(match.group(2)) + int(match.group(3)) / 1000.0
+
+
+def _split_name_and_team(rest: str):
+    """Separate ``"Lando NORRIS McLaren Mastercard F1 Team"``.
+
+    The FIA prints the surname in capitals and the team immediately after it
+    with no separator, so the split is a guess. Taking the *run* of capitalised
+    tokens is the obvious guess and it is wrong: ``Pierre GASLY BWT Alpine F1
+    Team`` yields "Pierre GASLY BWT", because plenty of teams begin with a
+    capitalised acronym (BWT, TGR, HP).
+
+    One capitalised token it is. A two-word surname would leave its second word
+    at the head of the team, which is cosmetic only — every join that matters
+    keys on the car number, and this name is a display value and a last-resort
+    fallback key. Better a known, bounded imprecision than a heuristic that
+    silently mangles four teams on the current grid.
+    """
+    tokens = rest.split()
+    if not tokens:
+        return "", ""
+    name = [tokens[0]]
+    index = 1
+    if index < len(tokens) and tokens[index].isupper() and tokens[index].isalpha():
+        name.append(tokens[index])
+        index += 1
+    return " ".join(name), " ".join(tokens[index:]).strip()
+
+
+def parse_qualifying_pdf(data: bytes):
+    """Extract the classification. Returns ``(entries, document_number)``."""
+    try:
+        import pdfplumber
+    except ImportError as exc:  # pragma: no cover - dependency is declared
+        raise GridDocumentUnreadable("pdfplumber is required") from exc
+
+    try:
+        with pdfplumber.open(BytesIO(data)) as pdf:
+            text = "\n".join((page.extract_text() or "") for page in pdf.pages)
+    except Exception as exc:
+        raise GridDocumentUnreadable("could not read the PDF: {}".format(exc)) from exc
+
+    return _parse_qualifying_lines(
+        [line.strip() for line in text.splitlines() if line.strip()]
+    )
+
+
+def _parse_qualifying_lines(lines: Sequence[str]):
+    entries: List[QualifyingEntry] = []
+    document_number: Optional[int] = None
+
+    for line in lines:
+        if document_number is None:
+            found = _DOC_NUMBER.match(line)
+            if found:
+                document_number = int(found.group(1))
+        # The fastest-lap block at the foot repeats a driver row shape without a
+        # position, so stop once the classification is done.
+        if line.upper().startswith(("FASTEST LAP", "NOTES", "POLE POSITION")):
+            break
+
+        match = _QUALI_ROW.match(line)
+        if not match:
+            continue
+        position = int(match.group(1))
+        if position != len(entries) + 1:
+            continue
+        times = [_seconds(m) for m in _LAP_TIME.finditer(match.group(3))]
+        name, team = _split_name_and_team(_LAP_TIME.split(match.group(3))[0])
+        entries.append(
+            QualifyingEntry(
+                position=position,
+                car_number=int(match.group(2)),
+                driver_name=name,
+                team=team,
+                q1_seconds=times[0] if len(times) > 0 else 0.0,
+                q2_seconds=times[1] if len(times) > 1 else 0.0,
+                q3_seconds=times[2] if len(times) > 2 else 0.0,
+            )
+        )
+
+    if len(entries) < 10:
+        raise GridDocumentUnreadable(
+            "parsed only {} qualifying rows; a Formula 1 field is ~20".format(len(entries))
+        )
+    cars = [entry.car_number for entry in entries]
+    if len(set(cars)) != len(cars):
+        raise GridDocumentUnreadable("the same car appears twice: {}".format(cars))
+    return entries, document_number
+
+
+async def fetch_qualifying_classification(
+    season: int,
+    round_number: int,
+    event_name: str,
+    timeout_seconds: float = 30.0,
+    kinds: Sequence[str] = QUALIFYING_DOCUMENT_KINDS,
+) -> QualifyingDocument:
+    """Fetch the FIA's qualifying classification, preferring the final one."""
+    attempted: List[str] = []
+    async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+        for kind in kinds:
+            url = qualifying_document_url(season, event_name, kind)
+            attempted.append(url)
+            try:
+                response = await client.get(url)
+            except httpx.HTTPError as exc:
+                logger.warning("qualifying document fetch failed for %s: %s", url, exc)
+                continue
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+
+            entries, document_number = parse_qualifying_pdf(response.content)
+            logger.info(
+                "read the %s qualifying classification for %s %s: %d rows (doc %s)",
+                kind, season, event_name, len(entries), document_number,
+            )
+            return QualifyingDocument(
+                season=season, round=round_number, event_name=event_name,
+                kind=kind, url=url, entries=tuple(entries),
+                document_number=document_number,
+            )
+
+    raise GridDocumentUnavailable(
+        "no qualifying classification published for {} {} (tried {})".format(
+            season, event_name, ", ".join(attempted)
+        )
+    )

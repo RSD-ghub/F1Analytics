@@ -456,6 +456,38 @@ class FastF1Source:
             )
         return rows
 
+    def load_qualifying_entry_list(self, expected: ExpectedSession):
+        """Car number -> (driver, team), without requiring a classification.
+
+        The half of a qualifying session that upstream publishes immediately.
+        When the classification is late we take the *order* from the FIA's
+        document, but the driver identities must still come from here: the FIA
+        prints "Sergio PEREZ" where our corpus has "Sergio Pérez", and joining
+        history on a title-cased surname would quietly fork one driver into two.
+        """
+        fastf1 = self._fastf1()
+        try:
+            session = fastf1.get_session(expected.season, expected.round, "Q")
+            session.load(laps=False, telemetry=False, weather=False, messages=False)
+        except Exception as exc:
+            raise SessionFetchError(
+                "qualifying entry list unavailable for {}: {}".format(expected.key, exc)
+            ) from exc
+
+        frame = _session_frame(session, "results")
+        entries = {}
+        if frame is None or frame.empty:
+            return entries
+        for _, row in frame.iterrows():
+            number = safe_int(row.get("DriverNumber"), 0)
+            if number <= 0:
+                continue
+            entries[number] = (
+                safe_text(row.get("FullName"), safe_text(row.get("Abbreviation"), "Unknown")),
+                safe_text(row.get("TeamName"), "Unknown"),
+            )
+        return entries
+
     @staticmethod
     def _is_future(expected: ExpectedSession) -> bool:
         if expected.session_start_utc is None:

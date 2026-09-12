@@ -40,6 +40,7 @@ from app.services.fastf1_source import (
 )
 from app.services.storage import IngestionStore
 from app.services import fia_documents, grid_resolution
+from app.services.transforms import stable_id
 from app.services.storage import DATA_COLLECTIONS, QUALIFYING
 from app.services import signals, transforms
 from f1_common.llm import LLMClient
@@ -164,13 +165,87 @@ class IngestRunner:
         case, not a hole in the historical record. The caller decides whether a
         missing grid matters — which, for a post-quali forecast, it does.
         """
-        rows = await asyncio.to_thread(self._source.load_qualifying, expected)
+        try:
+            rows = await asyncio.to_thread(self._source.load_qualifying, expected)
+        except SessionFetchError as exc:
+            # FastF1 is the preferred source but not the only one, and for the
+            # hours right after a session it is the slowest. Measured before the
+            # 2026 Spanish Grand Prix: the FIA had published the classification
+            # while FastF1 and jolpica both still returned nothing. Since the
+            # grid-aware lock windows cannot fire without this, one upstream
+            # being slow should not decide whether a race gets forecast.
+            logger.info(
+                "FastF1 has no qualifying classification for %s (%s); trying "
+                "the FIA document", expected.key, exc,
+            )
+            rows = await self._qualifying_from_fia(expected)
+
         rows = await self._with_official_grid(expected, rows)
         saved = await self._store.save_qualifying(
             expected.season, expected.round, rows
         )
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
+
+    async def _qualifying_from_fia(self, expected: ExpectedSession):
+        """Build qualifying rows from the FIA's classification document.
+
+        Identity comes from FastF1's entry list, order and times from the FIA.
+        Neither source is sufficient alone here: upstream publishes who is
+        entered long before it publishes where they finished, and the FIA prints
+        names in a form our corpus does not use ("Sergio PEREZ" for "Sergio
+        Pérez"), so joining history on them would fork a driver in two.
+
+        Raises rather than returning partial rows when the two cannot be
+        reconciled — a half-matched classification is a wrong grid, and a
+        forecast locked on one cannot be taken back.
+        """
+        document = await fia_documents.fetch_qualifying_classification(
+            expected.season, expected.round, expected.race_name
+        )
+        identities = await asyncio.to_thread(
+            self._source.load_qualifying_entry_list, expected
+        )
+
+        rows, unmatched = [], []
+        for entry in document.entries:
+            known = identities.get(entry.car_number)
+            if known is None:
+                unmatched.append("car {} ({})".format(entry.car_number, entry.driver_name))
+                continue
+            driver, team = known
+            rows.append(
+                QualifyingRow(
+                    id=stable_id("quali", expected.season, expected.round, driver),
+                    season=expected.season,
+                    round=expected.round,
+                    race_name=expected.race_name,
+                    driver=driver,
+                    team=team,
+                    position=entry.position,
+                    driver_number=entry.car_number,
+                    q1_seconds=entry.q1_seconds,
+                    q2_seconds=entry.q2_seconds,
+                    q3_seconds=entry.q3_seconds,
+                )
+            )
+
+        if unmatched:
+            raise SessionFetchError(
+                "the FIA classification for {} lists {} that the entry list does "
+                "not: {}".format(expected.key, len(unmatched), ", ".join(unmatched))
+            )
+        if not rows:
+            raise SessionFetchError(
+                "no qualifying rows could be built for {} from the FIA "
+                "document".format(expected.key)
+            )
+        logger.info(
+            "qualifying for %s recovered from the FIA %s classification "
+            "(doc %s): %d rows",
+            expected.key, document.kind, document.document_number, len(rows),
+        )
+        return rows
 
     async def refresh_starting_grid(self, expected: ExpectedSession) -> dict:
         """Re-read the official grid for a round we already have qualifying for.
