@@ -94,11 +94,22 @@ function Tile({ label, value, note }) {
   )
 }
 
+const WINDOW_TITLE = {
+  pre_quali: 'Before qualifying',
+  post_quali: 'After qualifying (provisional grid)',
+  final_grid: 'On the confirmed grid',
+}
+
 const MARKET_LABEL = { win: 'Winner', podium: 'Podium', points: 'Points finish' }
 
 function WindowRecord({ window }) {
-  const title =
-    window.window === 'pre_quali' ? 'Before qualifying' : 'With the grid set'
+  // Three windows now, and two of them know a grid. Collapsing both into
+  // "With the grid set" made the confirmed-grid forecast indistinguishable from
+  // the one built on a provisional grid — which is the whole comparison this
+  // page exists to show.
+  const title = WINDOW_TITLE[window.window] ?? window.window
+
+  const hitRate = window.top_pick_hit_rate
 
   return (
     <Panel
@@ -113,13 +124,20 @@ function WindowRecord({ window }) {
               {skill >= 0 ? '+' : ''}{(skill * 100).toFixed(1)}%
             </span>
             <span className="market-note">
-              better than guessing
+              {skill >= 0 ? 'better than guessing' : 'worse than guessing'}
               {window.brier_by_market?.[market] !== undefined &&
                 ` · Brier ${window.brier_by_market[market].toFixed(4)}`}
             </span>
           </div>
         ))}
       </div>
+      {hitRate !== null && hitRate !== undefined && (
+        <p className="muted small">
+          Its favourite won {(hitRate * 100).toFixed(0)}% of the time. A weak
+          measure — it ignores everything the forecast said about the other
+          nineteen cars — so read the skill scores above instead.
+        </p>
+      )}
       {!('win' in window.skill_by_market) && (
         <p className="muted small">
           This window publishes no winner probability, so there is nothing to

@@ -113,6 +113,13 @@ def score_prediction(
         markets=markets,
         predicted_not_raced=predicted_not_raced,
         raced_not_predicted=raced_not_predicted,
+        # Only meaningful for a window that named a favourite. Pre-quali
+        # publishes no win probability, so it gets None rather than False.
+        top_pick_correct=(
+            top_pick_was_correct(prediction, outcome)
+            if prediction.publishes(Market.WIN.value)
+            else None
+        ),
     )
 
 

@@ -37,7 +37,6 @@ def _mean(values: Sequence[float]) -> Optional[float]:
 def build_window_record(
     window: str,
     scores: Sequence[PredictionScore],
-    hit_rates: Optional[Sequence[bool]] = None,
 ) -> WindowRecord:
     brier: Dict[str, float] = {}
     skill: Dict[str, float] = {}
@@ -64,10 +63,13 @@ def build_window_record(
         brier_by_market=brier,
         skill_by_market=skill,
         mean_log_score=_mean(log_scores),
-        top_pick_hit_rate=(
-            sum(1 for hit in hit_rates if hit) / len(hit_rates)
-            if hit_rates
-            else None
+        top_pick_hit_rate=_mean(
+            # Scores that made no win claim are excluded rather than counted as
+            # misses; a window that declines the question has no hit rate, which
+            # is different from having a bad one.
+            [1.0 if score.top_pick_correct else 0.0
+             for score in scores
+             if score.top_pick_correct is not None]
         ),
     )
 

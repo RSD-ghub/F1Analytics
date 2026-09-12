@@ -89,6 +89,13 @@ class PredictionScore(BaseModel):
     #: that missed half the field is not comparable to one that covered it.
     predicted_not_raced: List[str] = Field(default_factory=list)
     raced_not_predicted: List[str] = Field(default_factory=list)
+    #: Did the forecast's most likely winner actually win?
+    #:
+    #: ``None`` where the window published no win probability — a pre-quali
+    #: forecast makes no claim about who wins, and counting that as a miss would
+    #: report a 0% hit rate for a question it deliberately declined to answer.
+    #: Absent is not wrong, the same distinction ``p_win = None`` draws.
+    top_pick_correct: Optional[bool] = None
 
     def market(self, market: Market) -> Optional[MarketScore]:
         return next((m for m in self.markets if m.market is market), None)
