@@ -441,6 +441,19 @@ class FastF1Source:
                 "qualifying for {} returned no classification; treating as a "
                 "failed fetch rather than an empty session".format(expected.key)
             )
+        # An entry list is not a classification. In the hours between a session
+        # finishing and its results publishing, upstream returns every driver
+        # with Position NaN — twenty-two rows that look like a successful fetch
+        # and carry no order at all. Storing them is worse than storing nothing:
+        # the grid-aware lock windows would see a non-empty grid, model every
+        # car from P999, and write that forecast down permanently.
+        if not any(row.position < 999 for row in rows):
+            raise SessionFetchError(
+                "qualifying for {} returned {} entries but no classified "
+                "positions; the session's results have not published yet".format(
+                    expected.key, len(rows)
+                )
+            )
         return rows
 
     @staticmethod

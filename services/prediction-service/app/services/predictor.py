@@ -121,6 +121,17 @@ class Predictor:
                     season, round_number
                 )
             )
+        # Belt and braces on an irreversible write. Upstream can serve an entry
+        # list with no classified positions, and a grid where nobody has a
+        # starting slot is not a grid — locking on it would model every car from
+        # last and the resulting forecast could never be corrected.
+        if grid and not any(slot.effective < 999 for slot in grid):
+            raise GridRequired(
+                "grid for {}-{} has {} entries but no classified positions; "
+                "qualifying results have not published yet".format(
+                    season, round_number, len(grid)
+                )
+            )
         if window is LockWindow.FINAL_GRID and not all(
             slot.confirmed for slot in grid
         ):

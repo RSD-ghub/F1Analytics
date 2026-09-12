@@ -20,7 +20,7 @@ service look dead during a backfill.
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from app.models.schemas import (
     CompletenessSummary,
@@ -60,6 +60,24 @@ def _scheduled_start(expected: ExpectedSession) -> Optional[datetime]:
     if start is None:
         return None
     return start if start.tzinfo else start.replace(tzinfo=timezone.utc)
+
+
+def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
+    """Has a scheduled session's start time passed?
+
+    False when the calendar has no time for it — an unknown start is not an
+    invitation to fetch something that may not exist yet.
+    """
+    if when is None:
+        return False
+    if isinstance(when, str):
+        try:
+            when = datetime.fromisoformat(when.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) >= when
 
 
 def _due_for_retry(
@@ -224,15 +242,44 @@ class IngestRunner:
             rows = await self._store.find_rows(
                 QUALIFYING, {"season": season, "round": round_number}
             )
-            if not rows or any(QualifyingRow(**row).has_confirmed_grid for row in rows):
-                continue
-
             expected = ExpectedSession(
                 season=season,
                 round=round_number,
                 race_name=weekend.get("race_name", ""),
                 circuit=weekend.get("circuit", ""),
             )
+
+            # Nothing else will ingest this weekend's qualifying in time. The
+            # healing pass ingests qualifying inside its per-round loop, but
+            # that loop skips any round whose *race* has not run — which is
+            # every round we still care about forecasting. So qualifying would
+            # not land until after the race, and both grid-aware windows would
+            # find no grid and never fire.
+            # "No usable rows", not "no rows". A round can hold an entry list
+            # with no classified positions, which is not a grid and must not
+            # stop us fetching the real one.
+            usable = any((row.get("position") or 999) < 999 for row in rows)
+            if not usable and _has_run(weekend.get("qualifying_start_utc")):
+                try:
+                    saved = await self.ingest_qualifying(expected)
+                    logger.info(
+                        "ingested qualifying for %s-%s (%s rows) ahead of the "
+                        "grid-aware lock windows", season, round_number, saved,
+                    )
+                    rows = await self._store.find_rows(
+                        QUALIFYING, {"season": season, "round": round_number}
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "qualifying for %s-%s not ingestable yet: %s",
+                        season, round_number, exc,
+                    )
+
+            if not any((row.get("position") or 999) < 999 for row in rows):
+                continue
+            if any(QualifyingRow(**row).has_confirmed_grid for row in rows):
+                continue
+
             try:
                 result = await self.refresh_starting_grid(expected)
                 confirmed.append("{}-{} ({})".format(

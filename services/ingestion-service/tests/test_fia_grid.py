@@ -420,3 +420,66 @@ def test_a_penalised_car_missing_from_the_grid_is_caught():
     with pytest.raises(GridDocumentUnreadable) as exc:
         _parse_lines(lines)
     assert "30" in str(exc.value)
+
+
+# ── Qualifying must land before the grid-aware windows ───────────────────────
+
+
+class _StoreNoQuali(_Store):
+    """A weekend that has qualified but whose qualifying is not ingested."""
+
+    def __init__(self, quali_start, raced_rounds=()):
+        super().__init__({}, raced_rounds)
+        self._quali_start = quali_start
+        self.ingested = []
+
+    async def list_weekends(self, *_):
+        return [{"round": 1, "race_name": "One",
+                 "qualifying_start_utc": self._quali_start}]
+
+
+async def test_qualifying_is_ingested_when_the_session_has_run(monkeypatch):
+    """Nothing else does this in time.
+
+    The healing pass ingests qualifying inside a loop that skips any round whose
+    *race* has not run — which is every round still worth forecasting. Without
+    this, qualifying lands only after the race and both grid-aware windows find
+    no grid and never fire. Caught the evening before Spain, with the post-quali
+    window two hours from opening and zero qualifying rows stored.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    store = _StoreNoQuali(datetime.now(timezone.utc) - timedelta(hours=2))
+    fetched = []
+    runner = _runner(store, monkeypatch, fetched)
+
+    ingested = []
+
+    async def fake_ingest(expected):
+        ingested.append(expected.round)
+        store._quali[1] = _rows()
+        return len(store._quali[1])
+
+    runner.ingest_qualifying = fake_ingest
+    await runner.refresh_pending_grids(2026)
+
+    assert ingested == [1]
+
+
+async def test_qualifying_is_not_fetched_before_the_session_runs(monkeypatch):
+    """A weekend whose qualifying is still ahead of us must be left alone."""
+    from datetime import datetime, timedelta, timezone
+
+    store = _StoreNoQuali(datetime.now(timezone.utc) + timedelta(hours=2))
+    runner = _runner(store, monkeypatch, [])
+
+    ingested = []
+
+    async def fake_ingest(expected):
+        ingested.append(expected.round)
+        return 0
+
+    runner.ingest_qualifying = fake_ingest
+    await runner.refresh_pending_grids(2026)
+
+    assert ingested == []
