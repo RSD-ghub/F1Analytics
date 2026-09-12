@@ -39,7 +39,7 @@ from app.services.fastf1_source import (
     SessionUnavailableError,
 )
 from app.services.storage import IngestionStore
-from app.services import fia_documents, grid_resolution
+from app.services import fia_documents, grid_resolution, jolpica
 from app.services.transforms import stable_id
 from app.services.storage import DATA_COLLECTIONS, QUALIFYING
 from app.services import signals, transforms
@@ -178,7 +178,7 @@ class IngestRunner:
                 "FastF1 has no qualifying classification for %s (%s); trying "
                 "the FIA document", expected.key, exc,
             )
-            rows = await self._qualifying_from_fia(expected)
+            rows = await self._qualifying_from_fallbacks(expected)
 
         rows = await self._with_official_grid(expected, rows)
         saved = await self._store.save_qualifying(
@@ -187,28 +187,76 @@ class IngestRunner:
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
 
-    async def _qualifying_from_fia(self, expected: ExpectedSession):
-        """Build qualifying rows from the FIA's classification document.
+    async def _qualifying_from_fallbacks(self, expected: ExpectedSession):
+        """Order and times from whichever source has them; identity from FastF1.
 
-        Identity comes from FastF1's entry list, order and times from the FIA.
-        Neither source is sufficient alone here: upstream publishes who is
-        entered long before it publishes where they finished, and the FIA prints
-        names in a form our corpus does not use ("Sergio PEREZ" for "Sergio
-        Pérez"), so joining history on them would fork a driver in two.
+        Tried in order of how quickly each publishes, which is not the order of
+        how much they are trusted:
 
-        Raises rather than returning partial rows when the two cannot be
-        reconciled — a half-matched classification is a wrong grid, and a
-        forecast locked on one cannot be taken back.
+        * the **FIA**, authoritative and fastest — it had the 2026 Spanish
+          classification while the other two had nothing;
+        * **jolpica**, slower but sharing no machinery with the FIA. The FIA
+          path builds a URL from a slug rule that is known to change (the 2024
+          documents use a different scheme), and grid and qualifying documents
+          share that rule, so one change takes both down together. jolpica is
+          insurance against that, not against slowness.
+
+        Identity never comes from either. Both print names their own way, and a
+        name that does not match the corpus produces a driver with no history
+        rather than an error — damage that spreads into every future feature
+        join. So both supply (position, car number, times) and the car number is
+        joined to FastF1's entry list, which publishes long before any
+        classification does.
         """
-        document = await fia_documents.fetch_qualifying_classification(
-            expected.season, expected.round, expected.race_name
-        )
         identities = await asyncio.to_thread(
             self._source.load_qualifying_entry_list, expected
         )
+        if not identities:
+            raise SessionFetchError(
+                "no entry list for {}; cannot attribute a classification to "
+                "drivers without one".format(expected.key)
+            )
 
+        failures = []
+        for name, loader in (
+            ("FIA", self._fia_qualifying),
+            ("jolpica", self._jolpica_qualifying),
+        ):
+            try:
+                entries, provenance = await loader(expected)
+            except Exception as exc:
+                failures.append("{}: {}".format(name, exc))
+                continue
+            rows = self._rows_from_entries(expected, entries, identities, provenance)
+            if rows:
+                return rows
+
+        raise SessionFetchError(
+            "no source has a qualifying classification for {} yet ({})".format(
+                expected.key, "; ".join(failures)
+            )
+        )
+
+    async def _fia_qualifying(self, expected: ExpectedSession):
+        document = await fia_documents.fetch_qualifying_classification(
+            expected.season, expected.round, expected.race_name
+        )
+        return document.entries, "FIA {} classification (doc {})".format(
+            document.kind, document.document_number
+        )
+
+    async def _jolpica_qualifying(self, expected: ExpectedSession):
+        entries = await jolpica.fetch_qualifying(expected.season, expected.round)
+        return entries, "jolpica"
+
+    def _rows_from_entries(self, expected, entries, identities, provenance):
+        """Attribute a classification to drivers, or refuse it outright.
+
+        All-or-nothing: a half-matched classification is a wrong grid, and a
+        forecast locked on one is immutable.
+        """
         rows, unmatched = [], []
-        for entry in document.entries:
+        for entry in entries:
             known = identities.get(entry.car_number)
             if known is None:
                 unmatched.append("car {} ({})".format(entry.car_number, entry.driver_name))
@@ -232,18 +280,13 @@ class IngestRunner:
 
         if unmatched:
             raise SessionFetchError(
-                "the FIA classification for {} lists {} that the entry list does "
-                "not: {}".format(expected.key, len(unmatched), ", ".join(unmatched))
-            )
-        if not rows:
-            raise SessionFetchError(
-                "no qualifying rows could be built for {} from the FIA "
-                "document".format(expected.key)
+                "{} for {} lists {} car(s) the entry list does not: {}".format(
+                    provenance, expected.key, len(unmatched), ", ".join(unmatched)
+                )
             )
         logger.info(
-            "qualifying for %s recovered from the FIA %s classification "
-            "(doc %s): %d rows",
-            expected.key, document.kind, document.document_number, len(rows),
+            "qualifying for %s recovered from %s: %d rows",
+            expected.key, provenance, len(rows),
         )
         return rows
 

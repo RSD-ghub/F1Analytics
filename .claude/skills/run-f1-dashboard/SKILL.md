@@ -90,6 +90,18 @@ curl -X POST "localhost:8001/forward/starting-grid/2026/14"
 A forecast made before the grid document lands is still published on schedule,
 carrying `grid_is_provisional` — it is not delayed and not hidden.
 
+**Qualifying has three sources**, tried in order of how fast each publishes:
+
+| Source | Speed | Notes |
+|---|---|---|
+| FastF1 | slowest | serves an entry list with blank positions for hours after a session; refused as unusable |
+| FIA document | fastest | authoritative; URL built from a slug rule that has changed before (2024 differs) |
+| jolpica | slow | shares no machinery with the FIA, so it survives a slug-scheme change |
+
+All three supply order and times only. Driver identity always comes from
+FastF1's entry list, joined on car number — a name that does not match the
+corpus creates a driver with no history rather than an error.
+
 Check completeness at the depth you care about — they are different questions:
 
 ```bash
