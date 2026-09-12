@@ -14,7 +14,8 @@ safety car, drivers retire on lap one — and a check that flags a weird-but-rea
 race trains everyone to ignore it.
 """
 
-from typing import Dict, Iterable, List
+from datetime import datetime, timezone
+from typing import Dict, Iterable, List, Optional
 
 from app.models.schemas import (
     CompletenessSummary,
@@ -234,9 +235,38 @@ def _check_pit_stops_within_stints(payload: SessionPayload) -> IntegrityCheck:
 
 # ── Gap accounting ───────────────────────────────────────────────────────────
 
-#: States that mean the historical record is not whole. ``UNAVAILABLE`` is
-#: excluded on purpose — a race that has not run yet is not missing data.
+#: States that mean the historical record is not whole. ``UNAVAILABLE`` is not
+#: listed here because it is conditional: see ``_is_gap``.
 GAP_STATES = (SessionState.PENDING, SessionState.PARTIAL, SessionState.FAILED)
+
+
+def _is_gap(state: Optional[SessionIngestState], now: Optional[datetime] = None) -> bool:
+    """Is this session missing from the record *right now*?
+
+    An expected session with no state row has never been attempted, which is
+    indistinguishable from having failed.
+
+    ``UNAVAILABLE`` is the interesting case. It is not a gap while it means "has
+    not happened yet" and is a gap the moment that stops being true — the state
+    is a claim about upstream at a past instant, not a permanent verdict.
+    Without the expiry, a race marked unavailable hours before its start stayed
+    unavailable forever: never a gap, so never healed, so never ingested, so the
+    forecasts made about it could never be scored. Caught at Monza, where the
+    race ran and the record still reported "complete, no gaps" six days later.
+
+    A session with no ``retry_after`` is genuinely absent — a sprint weekend has
+    no FP3 and never will — and stays excluded.
+    """
+    if state is None:
+        return True
+    if state.state in GAP_STATES:
+        return True
+    if state.state is not SessionState.UNAVAILABLE or state.retry_after is None:
+        return False
+    due = state.retry_after
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) >= due
 
 
 def summarise(
@@ -267,7 +297,7 @@ def summarise(
         state = by_key.get(key)
         current = state.state if state else SessionState.PENDING
         counts[current] += 1
-        if current in GAP_STATES:
+        if _is_gap(state):
             open_gaps.append(key)
 
     return CompletenessSummary(

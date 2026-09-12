@@ -22,7 +22,7 @@ from app.models.schemas import (
     IngestDepth,
     SessionIngestState,
 )
-from app.services.completeness import GAP_STATES
+from app.services.completeness import GAP_STATES, _is_gap
 from app.services.ingest_runner import IngestRunner
 from app.services.storage import IngestionStore
 
@@ -104,7 +104,10 @@ async def open_gaps(
     """Full state records for sessions that are not whole, with failure reasons."""
     start, end = _resolve_span(settings, from_season, to_season)
     states = await store.list_states(start, end)
-    return [state for state in states if state.state in GAP_STATES]
+    # `_is_gap` rather than `state in GAP_STATES`: an UNAVAILABLE session whose
+    # race has since run is a gap again, and filtering on the raw state hid
+    # exactly the rows an operator opens this endpoint to find.
+    return [state for state in states if _is_gap(state)]
 
 
 @router.post("/backfill", response_model=BackfillAccepted, status_code=202)

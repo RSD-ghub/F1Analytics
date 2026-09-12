@@ -44,7 +44,7 @@ class SessionState(str, Enum):
     COMPLETE = "complete"        # ingested and passed every integrity check
     PARTIAL = "partial"          # ingested but at least one integrity check failed
     FAILED = "failed"            # could not be ingested at all
-    UNAVAILABLE = "unavailable"  # upstream has no data yet (future/cancelled race)
+    UNAVAILABLE = "unavailable"  # upstream has no data — see retry_after
 
 
 class ExpectedSession(BaseModel):
@@ -97,6 +97,15 @@ class SessionIngestState(BaseModel):
     reason: str = ""
     attempts: int = 0
     last_attempt_at: Optional[datetime] = None
+    #: When an ``UNAVAILABLE`` session becomes worth trying again.
+    #:
+    #: "Upstream has no data" covers two different facts that look identical at
+    #: the moment they are recorded: a session that will never exist (a sprint
+    #: weekend has no FP3) and one that simply has not happened yet. The first
+    #: is settled forever; the second stops being true at a known instant. Left
+    #: undated, a race marked unavailable seven hours before its start stays
+    #: unavailable forever — never a gap, never healed, never scored.
+    retry_after: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     row_counts: Dict[str, int] = Field(default_factory=dict)
     integrity: Optional[IntegrityReport] = None

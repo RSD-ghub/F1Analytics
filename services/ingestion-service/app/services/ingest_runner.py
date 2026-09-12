@@ -53,6 +53,40 @@ _KIND_TO_SOURCE_NAME = {
 }
 
 
+
+def _scheduled_start(expected: ExpectedSession) -> Optional[datetime]:
+    """When this session is due, in UTC, if the calendar says."""
+    start = getattr(expected, "session_start_utc", None)
+    if start is None:
+        return None
+    return start if start.tzinfo else start.replace(tzinfo=timezone.utc)
+
+
+def _due_for_retry(
+    state: SessionIngestState,
+    now: Optional[datetime] = None,
+    scheduled: Optional[datetime] = None,
+) -> bool:
+    """Has an ``UNAVAILABLE`` session's moment arrived?
+
+    ``scheduled`` is the calendar's start time, used when the stored row has no
+    ``retry_after`` of its own — rows written before that field existed. Those
+    are precisely the races that have since run, so falling back to the manifest
+    is what heals them without a migration.
+
+    Still false when neither is known: a session with no scheduled time is
+    genuinely absent rather than merely early — a sprint weekend's FP3 is not
+    going to appear later — and re-fetching those on every pass would hammer
+    upstream for data that does not exist.
+    """
+    due = state.retry_after or scheduled
+    if due is None:
+        return False
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) >= due
+
+
 class IngestRunner:
     def __init__(
         self,
@@ -329,6 +363,11 @@ class IngestRunner:
         except SessionUnavailableError as exc:
             state.state = SessionState.UNAVAILABLE
             state.reason = str(exc)
+            # A session that has not happened yet is unavailable *for now*.
+            # Dating that makes the difference between "no data" and "no data
+            # yet" survive into the gap accounting, instead of both collapsing
+            # into a permanent excuse not to look again.
+            state.retry_after = _scheduled_start(expected)
         except SessionFetchError as exc:
             # Retries are exhausted. This is now an open gap, not a warning.
             state.state = SessionState.FAILED
@@ -447,12 +486,27 @@ class IngestRunner:
 
         # Read every state once rather than per session; a 2010-2026 backfill is
         # ~350 races and the per-session query would dominate the skip path.
+        # When a session is *due* comes from the calendar, not only from the
+        # stored state. Rows written before ``retry_after`` existed carry no
+        # date, and deriving it here means they heal on the next pass instead of
+        # needing a migration — which matters because the rows in that position
+        # are exactly the races that already ran.
+        due_at = {
+            session.key: _scheduled_start(session) for session in expected
+        }
+
         settled = set()
         if only_gaps:
             settled = {
                 state.key
                 for state in await self._store.list_states(from_season, to_season)
-                if state.state in (SessionState.COMPLETE, SessionState.UNAVAILABLE)
+                if (
+                    state.state is SessionState.COMPLETE
+                    or (
+                        state.state is SessionState.UNAVAILABLE
+                        and not _due_for_retry(state, scheduled=due_at.get(state.key))
+                    )
+                )
                 # A session complete only to results depth is still a gap when a
                 # full ingest was asked for.
                 and (depth is IngestDepth.RESULTS or state.depth is IngestDepth.FULL)
