@@ -17,6 +17,12 @@ class Settings(ServiceSettings):
     # Number of buckets used when aggregating a calibration curve.
     calibration_buckets: int = 10
 
+    # How often to sweep for races that have finished and can now be scored.
+    # Thirty minutes rather than hours: results land at an unpredictable delay
+    # after the flag — Monza's took most of a day — and a forecast that is
+    # locked but unscored looks exactly like one being quietly withheld.
+    reconcile_check_minutes: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:
