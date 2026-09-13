@@ -14,7 +14,7 @@
  *    say so rather than render a silently emptier page.
  */
 
-import { getStoredToken } from '../context/token'
+import { getStoredToken, writeStoredAuth } from '../context/token'
 
 const BASE = '/api'
 
@@ -55,6 +55,14 @@ async function request(path, { auth = false, ...options } = {}) {
       ...(options.headers || {}),
     },
   })
+  if (res.status === 401 && token) {
+    // The credential we hold is no longer accepted — expired, or signed with a
+    // secret that has since been rotated. Either way it will never work again,
+    // so drop it here rather than letting every subsequent page report its own
+    // confusing failure. Without this a stale token surfaced as "Bernie is
+    // unavailable", sending the reader to look at the wrong thing entirely.
+    writeStoredAuth(null)
+  }
   if (!res.ok) throw await parseError(res)
   return res.status === 204 ? null : res.json()
 }
@@ -86,8 +94,12 @@ export const getWeekend = (season, round, { narrate = true } = {}) =>
 
 // ── Bernie ───────────────────────────────────────────────────────────────────
 
+// Authenticated since Bernie's costs were bounded — every route that can spend
+// a model call now needs an account behind it. The explanation itself is cached
+// against the prediction, so this costs one call per forecast rather than one
+// per reader.
 export const whyThisPrediction = (season, round) =>
-  request(`/bernie/why/${season}/${round}`)
+  request(`/bernie/why/${season}/${round}`, { auth: true })
 
 export const startThread = (season, round, question) =>
   post('/bernie/threads', { season, round, question }, { auth: true })

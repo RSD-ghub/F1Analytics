@@ -19,9 +19,10 @@ their qualifying slot, which is not a grid that ever existed.
 """
 
 import logging
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.models.schemas import GridSource, QualifyingRow
+from app.services.transforms import stable_id
 from app.services.fia_documents import GridEntry, StartingGridDocument, normalise_name
 
 logger = logging.getLogger(__name__)
@@ -38,18 +39,35 @@ _KIND_TO_SOURCE = {
 }
 
 
+def entry_season(document) -> int:
+    return document.season
+
+
 def _surname(name: str) -> str:
     parts = normalise_name(name).split()
     return parts[-1] if parts else ""
 
 
 def apply_starting_grid(
-    rows: Sequence[QualifyingRow], document: StartingGridDocument
+    rows: Sequence[QualifyingRow],
+    document: StartingGridDocument,
+    identities: Optional[Dict[int, tuple]] = None,
 ) -> List[QualifyingRow]:
     """Return ``rows`` with confirmed grid positions from ``document``.
 
-    Raises ``GridApplicationError`` unless every entry in the document matches
-    exactly one of our rows.
+    ``identities`` maps car number to ``(driver, team)`` and lets a driver who
+    is on the grid but absent from our rows be added rather than rejected.
+
+    That case is ordinary, not exceptional. The FIA's *classification* document
+    lists only drivers who set a time; the *starting grid* lists everyone who
+    starts. At the 2026 Spanish Grand Prix that was 20 against 22 — Stroll and
+    Bearman set no time, started from the back, and their absence from our rows
+    caused a complete and correct grid to be thrown away entirely.
+
+    Still refuses when an entry cannot be resolved at all. A partial grid mixes
+    true and assumed slots into an order that never existed, and a forecast
+    locked on one cannot be taken back — the all-or-nothing rule stands, it just
+    no longer treats "we are missing a row" as "the document is wrong".
     """
     if not rows:
         raise GridApplicationError("no qualifying rows to apply a grid to")
@@ -67,11 +85,35 @@ def apply_starting_grid(
     for row in rows:
         by_surname.setdefault(_surname(row.driver), []).append(row)
 
+    identities = identities or {}
     assignments: Dict[str, Tuple[GridEntry, str]] = {}
+    added: List[QualifyingRow] = []
     unmatched: List[str] = []
     for entry in document.entries:
         row, how = _match(entry, by_number, by_surname)
         if row is None:
+            known = identities.get(entry.car_number)
+            if known is not None:
+                driver, team = known
+                # On the grid, absent from the classification: they set no time.
+                # position 999 is exactly right — the schema already reads it as
+                # "no qualifying result" — while the grid slot is confirmed.
+                added.append(
+                    QualifyingRow(
+                        id=stable_id("quali", entry_season(document), document.round, driver),
+                        season=document.season,
+                        round=document.round,
+                        race_name=document.event_name,
+                        driver=driver,
+                        team=team,
+                        position=999,
+                        driver_number=entry.car_number,
+                        grid_position=entry.position,
+                        grid_source=source,
+                        starts_from_pit_lane=entry.from_pit_lane,
+                    )
+                )
+                continue
             unmatched.append("{} (car {})".format(entry.driver_name, entry.car_number))
             continue
         if row.id in assignments:
@@ -83,10 +125,9 @@ def apply_starting_grid(
 
     if unmatched:
         raise GridApplicationError(
-            "could not match {} of {} grid entries to our qualifying rows: {}. "
-            "Refusing to apply a partial grid.".format(
-                len(unmatched), len(document.entries), ", ".join(unmatched)
-            )
+            "could not match {} of {} grid entries to our qualifying rows, and "
+            "no entry list identifies them: {}. Refusing to apply a partial "
+            "grid.".format(len(unmatched), len(document.entries), ", ".join(unmatched))
         )
 
     applied: List[QualifyingRow] = []
@@ -106,6 +147,14 @@ def apply_starting_grid(
                     "starts_from_pit_lane": entry.from_pit_lane,
                 }
             )
+        )
+
+    applied.extend(added)
+    if added:
+        logger.info(
+            "added %d driver(s) present on the grid but absent from the "
+            "classification (no qualifying time set): %s",
+            len(added), ", ".join(row.driver for row in added),
         )
 
     by_car = sum(1 for _, how in assignments.values() if how == "car")

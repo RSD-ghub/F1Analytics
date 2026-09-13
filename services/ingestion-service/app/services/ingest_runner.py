@@ -357,7 +357,12 @@ class IngestRunner:
         document = await fia_documents.fetch_starting_grid(
             expected.season, expected.round, expected.race_name
         )
-        applied = grid_resolution.apply_starting_grid(rows, document)
+        # The entry list lets a driver on the grid but missing from our rows be
+        # added rather than sinking the whole grid — see apply_starting_grid.
+        identities = await asyncio.to_thread(
+            self._source.load_qualifying_entry_list, expected
+        )
+        applied = grid_resolution.apply_starting_grid(rows, document, identities)
         saved = await self._store.save_qualifying(
             expected.season, expected.round, applied
         )
@@ -471,7 +476,10 @@ class IngestRunner:
             document = await fia_documents.fetch_starting_grid(
                 expected.season, expected.round, expected.race_name
             )
-            return grid_resolution.apply_starting_grid(rows, document)
+            identities = await asyncio.to_thread(
+                self._source.load_qualifying_entry_list, expected
+            )
+            return grid_resolution.apply_starting_grid(rows, document, identities)
         except fia_documents.GridDocumentUnavailable as exc:
             logger.info(
                 "no official grid for %s yet; forecasts will use the qualifying "

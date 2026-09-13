@@ -83,9 +83,13 @@ def test_the_summary_reopens_a_race_that_has_run():
         expected_keys=["2026-13", "2026-14"],
         states=[
             _state(SessionState.UNAVAILABLE, retry_after=RACE, round_number=13),
-            # Next weekend, genuinely still ahead of us.
+            # A race genuinely still ahead of us. Dated relative to real
+            # "now" rather than the fixture clock: summarise() reads the system
+            # time, so a fixed future date silently becomes a past one and the
+            # test starts failing on a calendar boundary rather than on a bug.
             _state(SessionState.UNAVAILABLE,
-                   retry_after=NOW + timedelta(days=1), round_number=14),
+                   retry_after=datetime.now(timezone.utc) + timedelta(days=30),
+                   round_number=14),
         ],
     )
 

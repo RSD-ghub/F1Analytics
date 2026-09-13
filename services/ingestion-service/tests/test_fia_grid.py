@@ -483,3 +483,50 @@ async def test_qualifying_is_not_fetched_before_the_session_runs(monkeypatch):
     await runner.refresh_pending_grids(2026)
 
     assert ingested == []
+
+
+# ── Drivers on the grid but not in the classification ────────────────────────
+
+
+def test_a_starter_who_set_no_time_is_added_not_rejected():
+    """The failure that cost Spain its confirmed-grid forecast.
+
+    The FIA's classification document lists only drivers who set a time; the
+    starting grid lists everyone who starts. At the 2026 Spanish Grand Prix that
+    was 20 against 22 — Stroll and Bearman set no time and started from the
+    back. Because every grid entry had to match one of our rows, a complete and
+    correct grid was thrown away over two drivers we simply had no row for, the
+    grid stayed unconfirmed, and the final-grid window correctly refused to fire
+    on a stand-in. Three windows became two.
+    """
+    rows = [r for r in _rows() if r.driver_number not in (1, 31)]
+    identities = {1: ("Max Verstappen", "Red Bull"), 31: ("Esteban Ocon", "Haas")}
+
+    applied = grid_resolution.apply_starting_grid(rows, _document(), identities)
+
+    assert len(applied) == 20
+    added = {r.driver for r in applied} - {r.driver for r in rows}
+    assert added == {"Max Verstappen", "Esteban Ocon"}
+
+
+def test_an_added_starter_has_a_grid_slot_but_no_qualifying_result():
+    """position 999 is exactly right — the schema already reads it as "no
+    qualifying result" — while the grid position is genuinely confirmed."""
+    rows = [r for r in _rows() if r.driver_number != 1]
+    applied = grid_resolution.apply_starting_grid(
+        rows, _document(), {1: ("Max Verstappen", "Red Bull")}
+    )
+    added = next(r for r in applied if r.driver == "Max Verstappen")
+
+    assert added.position == 999
+    assert added.grid_position == 19
+    assert added.has_confirmed_grid is True
+    assert added.starts_from_pit_lane is True
+
+
+def test_an_entry_nobody_can_identify_still_sinks_the_grid():
+    """The all-or-nothing rule stands. It just no longer treats "we are missing
+    a row" as "the document is wrong"."""
+    rows = [r for r in _rows() if r.driver_number != 1]
+    with pytest.raises(grid_resolution.GridApplicationError):
+        grid_resolution.apply_starting_grid(rows, _document(), identities={})
