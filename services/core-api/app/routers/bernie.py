@@ -173,14 +173,26 @@ async def _weekend_facts(
             "/data/practice",
             {"season": season, "round": round_number, "limit": 60},
         ),
+        # The starting order. Its absence was not a gap in the data — we hold
+        # it — it was a gap in what Bernie was told. Asked who qualified on the
+        # second row at Spain he answered that the facts list probabilities and
+        # not grid slots, which was true of the facts and false of the archive.
+        qualifying=ingestion_client.get(
+            "/data/qualifying",
+            {"season": season, "round": round_number, "limit": 40},
+        ),
     )
 
     facts: Dict[str, Any] = {"race": "{} round {}".format(season, round_number)}
 
     predictions = fetched.get("predictions") or []
     if predictions:
+        # Most-informed window, not "post_quali" by name — otherwise the
+        # confirmed-grid forecast is silently ignored the moment it exists.
         preferred = next(
-            (p for p in predictions if p.get("window") == "post_quali"), predictions[0]
+            (p for p in predictions if p.get("window") == "final_grid"),
+            next((p for p in predictions if p.get("window") == "post_quali"),
+                 predictions[0]),
         )
         facts.update(why_this_prediction_facts(preferred, None))
     else:
@@ -188,6 +200,49 @@ async def _weekend_facts(
             "No forecast is locked for this race yet, so there are no "
             "probabilities to discuss."
         )
+
+    rows = [row for row in (fetched.get("qualifying") or []) if row.get("driver")]
+    if rows:
+        # Both orders, always — they answer different questions and each row
+        # carries both values. Emitting only one of them meant that once the
+        # grid was confirmed, Bernie could describe the race but had genuinely
+        # lost qualifying: asked who was on the second row he refused, and was
+        # right to, because the classification had been dropped from his facts.
+        classified = sorted(
+            (r for r in rows if (r.get("position") or 999) < 999),
+            key=lambda r: r["position"],
+        )
+        if classified:
+            facts["qualifying classification"] = [
+                "Q{} {} ({})".format(r["position"], r["driver"], r.get("team", "?"))
+                for r in classified
+            ]
+            no_time = [r["driver"] for r in rows if (r.get("position") or 999) >= 999]
+            if no_time:
+                facts["set no qualifying time"] = no_time
+
+        started = sorted(
+            (r for r in rows if (r.get("grid_position") or 0) > 0),
+            key=lambda r: r["grid_position"],
+        )
+        if started:
+            facts["confirmed starting order"] = [
+                "P{} {} ({}){}".format(
+                    r["grid_position"], r["driver"], r.get("team", "?"),
+                    "  [pit lane]" if r.get("starts_from_pit_lane") else "",
+                )
+                for r in started
+            ]
+            moved = [
+                "{}: qualified Q{}, starts P{}".format(
+                    r["driver"], r["position"], r["grid_position"]
+                )
+                for r in started
+                if (r.get("position") or 999) < 999
+                and r["position"] != r["grid_position"]
+            ]
+            if moved:
+                facts["moved between qualifying and the grid"] = moved
 
     practice = [
         row for row in (fetched.get("practice") or [])
