@@ -25,6 +25,12 @@ class Settings(ServiceSettings):
     # forecast locks shortly after, so the useful window is narrow.
     grid_check_minutes: int = 30
 
+    # Sessions per hour a long backfill is allowed to fetch. FastF1 permits 500
+    # API calls an hour and a full-depth session spends several, so 55 keeps a
+    # single pass under the ceiling instead of exhausting it in minutes and
+    # needing four passes across four hours. 0 disables pacing.
+    backfill_sessions_per_hour: int = 55
+
     # Upstream schedule/results API used alongside FastF1 for forward-looking data.
     ergast_base_url: str = "https://api.jolpi.ca/ergast"
 

@@ -51,6 +51,9 @@ async def main() -> int:
     runner = IngestRunner(
         source=FastF1Source(CACHE, load_telemetry=False),
         store=store, max_attempts=3, backoff_seconds=2.0,
+        # Paced: an unthrottled full-depth run burns FastF1's hourly quota in
+        # minutes and then stops, turning one pass into four across four hours.
+        sessions_per_hour=int(os.getenv("BACKFILL_SESSIONS_PER_HOUR", "55")),
     )
 
     if mode == "full":

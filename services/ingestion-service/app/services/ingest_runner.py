@@ -19,6 +19,7 @@ service look dead during a backfill.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -62,6 +63,37 @@ def _scheduled_start(expected: ExpectedSession) -> Optional[datetime]:
     if start is None:
         return None
     return start if start.tzinfo else start.replace(tzinfo=timezone.utc)
+
+
+class _Pacer:
+    """Spaces session loads so a long backfill stays under the hourly quota.
+
+    FastF1 allows 500 API calls an hour and a full-depth session costs several,
+    so an unpaced backfill exhausts the quota in minutes and then stops. Stopping
+    is the correct response once it happens — seconds of retry cannot clear an
+    hourly limit — but it means a 173-session run needs four passes across four
+    hours when one paced pass would do.
+
+    Paced at the *session* level rather than the request level on purpose. The
+    calls FastF1 makes internally are its business and vary by session and cache
+    state; counting them would mean reaching inside it and would break whenever
+    it changed. A conservative session interval needs no such knowledge, and the
+    rate-limit abort stays as the backstop for when the estimate is wrong.
+    """
+
+    def __init__(self, sessions_per_hour: int) -> None:
+        self._interval = 3600.0 / sessions_per_hour if sessions_per_hour > 0 else 0.0
+        self._last = 0.0
+
+    async def wait(self) -> None:
+        if self._interval <= 0:
+            return
+        elapsed = time.monotonic() - self._last
+        remaining = self._interval - elapsed
+        if self._last and remaining > 0:
+            logger.debug("pacing: sleeping %.1fs before the next session", remaining)
+            await asyncio.sleep(remaining)
+        self._last = time.monotonic()
 
 
 def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
@@ -117,6 +149,7 @@ class IngestRunner:
         sleep: Optional[Callable] = None,
         llm: Optional[LLMClient] = None,
         extract_with_llm: bool = False,
+        sessions_per_hour: int = 0,
     ) -> None:
         self._source = source
         self._store = store
@@ -126,6 +159,9 @@ class IngestRunner:
         self._sleep = sleep or asyncio.sleep
         self._llm = llm
         self._extract_with_llm = extract_with_llm
+        # 0 disables pacing, which is right for the single-session endpoints and
+        # for tests. Only long backfills need it.
+        self._sessions_per_hour = sessions_per_hour
 
     # ── Manifest ─────────────────────────────────────────────────────────────
 
@@ -678,9 +714,13 @@ class IngestRunner:
                 and (depth is IngestDepth.RESULTS or state.depth is IngestDepth.FULL)
             }
 
+        pacer = _Pacer(self._sessions_per_hour)
         for session in expected:
             if only_gaps and session.key in settled:
                 continue
+            # Only paced for work we already know we are doing; a skipped
+            # session costs no upstream calls and should not cost a wait.
+            await pacer.wait()
             try:
                 await self.ingest_session(session, depth=depth)
             except RateLimited as exc:
