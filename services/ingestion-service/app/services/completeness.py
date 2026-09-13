@@ -205,8 +205,20 @@ def _check_stint_laps_reconcile(payload: SessionPayload) -> IntegrityCheck:
 def _check_pit_stops_within_stints(payload: SessionPayload) -> IntegrityCheck:
     """A driver cannot make more stops than they have stints.
 
-    Each completed stop opens a new stint, so stops should be at most
-    ``stints - 1``. More stops than that means stops were double-counted.
+    The stricter form of this — every stop opens a *new* stint, so stops must be
+    at most ``stints - 1`` — was wrong, and failed four sessions of a 173-session
+    backfill on drivers whose data was fine.
+
+    Checked against those four rather than assumed: Grosjean (2018 R18) and
+    Leclerc (2020 R8) retired with collision damage and an accident, so the
+    stint their final stop opened never materialised. But Latifi (2022 R7) and
+    Russell (2025 R8) both finished, classified a lap down — Monaco 2022 was
+    red-flagged, and a tyre change under a red flag does not start a new stint.
+    Penalty serves behave the same way.
+
+    So ``stops == stints`` is ordinary. Only ``stops > stints`` is arithmetically
+    impossible and indicates genuine double-counting, which is what this now
+    flags.
     """
     stint_counts: Dict[str, int] = {}
     for row in payload.stints:
@@ -219,7 +231,7 @@ def _check_pit_stops_within_stints(payload: SessionPayload) -> IntegrityCheck:
     offenders = [
         "{} ({} stops, {} stints)".format(driver, stops, stint_counts.get(driver, 0))
         for driver, stops in stop_counts.items()
-        if stops > max(stint_counts.get(driver, 0) - 1, 0)
+        if stops > stint_counts.get(driver, 0)
     ]
 
     return IntegrityCheck(

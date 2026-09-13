@@ -22,6 +22,8 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence
 
+from app.services import circuits, team_lineage
+from app.training import eras
 from app.models.schemas import GRID_WINDOWS, DriverFeatures, FeatureSnapshot, LockWindow
 from app.services import practice_signal, quali_pace
 from app.services.ingestion_client import (
@@ -163,6 +165,126 @@ def _entry_list(
     }
 
 
+
+# ── Circuit archetype and regulation features ────────────────────────────────
+#
+# All three are *relative to the subject's own baseline*, and that is not a
+# stylistic choice. Plackett-Luce ranks drivers by strength differences within
+# one race, so any value identical across the field cancels out of the
+# likelihood exactly. A circuit descriptor on its own — "Monza is
+# power-sensitive = 0.87" — would train without error, fit to an arbitrary
+# weight, and change no prediction. Circuit character is only usable where it
+# interacts with something that varies between drivers.
+
+#: Below this many races at an archetype the average is noise. Shrunk toward
+#: zero rather than cut off, the same treatment calibration bands under n=5 get.
+_ARCHETYPES = None
+
+
+def _archetypes():
+    """The frozen archetype artifact, read once per process.
+
+    Loaded lazily rather than at import so a missing artifact cannot stop the
+    service starting — it degrades these three features to neutral and leaves
+    the other thirteen working, which is the right trade for an enrichment.
+    """
+    global _ARCHETYPES
+    if _ARCHETYPES is None:
+        _ARCHETYPES = circuits.CircuitArchetypes.load()
+    return _ARCHETYPES
+
+
+MIN_ARCHETYPE_RACES = 3
+SHRINKAGE_K = 4.0
+
+#: Races either side of a regulation boundary used to measure how a team
+#: handled it. Five is roughly a quarter-season: long enough to average out one
+#: bad Sunday, short enough to still be about the reset.
+TRANSITION_WINDOW = 5
+
+
+def _shrunk(delta: float, count: int, k: float = SHRINKAGE_K) -> float:
+    """Pull an average toward zero in proportion to how little supports it."""
+    if count <= 0:
+        return 0.0
+    return delta * (count / (count + k))
+
+
+def _archetype_delta(
+    rows: Sequence[RaceResult], archetype: str, archetypes
+) -> float:
+    """Mean finish at this circuit type, minus the subject's overall mean.
+
+    Positive means better than their own usual — which is the point. An
+    absolute average at an archetype would mostly restate general pace and
+    collide with ``avg_finish_recent``; the delta isolates the part that is
+    about the *kind* of circuit.
+    """
+    if not rows or archetype == circuits.UNKNOWN:
+        return 0.0
+    matching = [row for row in rows if archetypes.archetype_of(row.circuit) == archetype]
+    if len(matching) < MIN_ARCHETYPE_RACES:
+        return 0.0
+    # Finishing positions are better when lower, so overall minus at-type is
+    # positive when the subject over-performs at this kind of circuit.
+    delta = _average_finish(rows) - _average_finish(matching)
+    return _shrunk(delta, len(matching))
+
+
+def _team_archetype_delta(
+    history: Sequence[RaceResult], team: str, season: int, archetype: str, archetypes
+) -> float:
+    """The same for the car, confined to the current regulation era."""
+    lineage = team_lineage.lineage_of(team)
+    rows = [
+        row for row in history
+        if team_lineage.lineage_of(row.team) == lineage
+        and eras.same_regulation_era(row.season, season)
+    ]
+    return _archetype_delta(rows, archetype, archetypes)
+
+
+def _regulation_mastery(
+    history: Sequence[RaceResult],
+    team: str,
+    season: int,
+    target_round: int,
+    archetypes,
+) -> float:
+    """How well this organisation has historically handled a rule reset.
+
+    Read from the frozen artifact rather than computed here, because it cannot
+    be computed here. Measuring era transitions needs a decade of results and
+    serving loads two seasons — computed live it came out zero for every team on
+    every race, so the feature meant to cover the cold start of a new rulebook
+    could never fire at all.
+
+    The artifact stores one value per era, each built only from transitions
+    strictly before it, so taking the entry for the target season's era is
+    point-in-time correct by construction.
+
+    Faded by how far into the era we already are: a prior about adaptability is
+    worth a great deal when nothing is known about the new cars and almost
+    nothing once real results exist. A single linear weight cannot express
+    "matters at first, then stops mattering", so the decay lives in the feature.
+
+    Matched on organisation, not entrant name — Racing Point and Aston Martin
+    are one factory, and treating a rename as a new team leaves it with no
+    transitions to learn from.
+    """
+    era = eras.era_for(season)
+    mastery = archetypes.mastery_for(team_lineage.lineage_of(team), era)
+    if mastery == 0.0:
+        return 0.0
+
+    era_first, _ = eras.era_span(season)
+    # Races already run under this rulebook, from the point-in-time history
+    # plus the rounds completed this season before the target.
+    races_in = sum(1 for row in history if row.season >= era_first)
+    field = max(1, len({row.driver for row in history}))
+    return mastery * eras.era_maturity_discount(races_in // field)
+
+
 def _driver_features(
     driver: str,
     team: str,
@@ -175,9 +297,12 @@ def _driver_features(
     target_round: int = 0,
     use_current_quali: bool = False,
     practice_gap: float = practice_signal.NEUTRAL_GAP_PCT,
+    archetypes=None,
 ) -> DriverFeatures:
     quali_gaps = quali_gaps or {}
     quali_rows = quali_rows or []
+    archetypes = archetypes if archetypes is not None else _archetypes()
+    archetype = archetypes.archetype_of(circuit)
 
     recent_quali = quali_pace.recent_gap(quali_gaps, driver, season, target_round)
     teammate_quali = quali_pace.teammate_gap(
@@ -203,6 +328,14 @@ def _driver_features(
             quali_teammate_gap_pct=teammate_quali,
             quali_gap_pct=current_quali,
             practice_long_run_gap_pct=practice_gap,
+            # A debutant has no record anywhere, but the car they are in does.
+            driver_archetype_delta=0.0,
+            team_archetype_delta=_team_archetype_delta(
+                history, team, season, archetype, archetypes
+            ),
+            team_regulation_mastery=_regulation_mastery(
+                history, team, season, target_round, archetypes
+            ),
             grid_position=grid_position,
             is_cold_start=True,
         )
@@ -236,6 +369,13 @@ def _driver_features(
             else NEUTRAL_POSITION
         ),
         races_completed=len(ordered),
+        driver_archetype_delta=_archetype_delta(ordered, archetype, archetypes),
+        team_archetype_delta=_team_archetype_delta(
+            history, team, season, archetype, archetypes
+        ),
+        team_regulation_mastery=_regulation_mastery(
+            history, team, season, target_round, archetypes
+        ),
         grid_position=grid_position,
         is_cold_start=False,
     )

@@ -130,6 +130,21 @@ class DriverFeatures(BaseModel):
     # unlike the grid this is legitimately available to *both* windows — it is
     # the only current-weekend pace signal the pre-quali model is allowed.
     practice_long_run_gap_pct: float = 0.0
+    # How this driver does at circuits of this *type* versus their own
+    # baseline, positive meaning better than usual. Generalises
+    # ``circuit_avg_finish`` past its sparsity problem: a driver sees one
+    # circuit about once a year, but a third of their races share an archetype.
+    driver_archetype_delta: float = 0.0
+    # The same for the car, and only within the current regulation era. Circuit
+    # affinity is built into a chassis, and chassis are thrown away at a rule
+    # reset — a 2015 Ferrari says nothing about a 2026 one.
+    team_archetype_delta: float = 0.0
+    # How well this organisation has historically come out of a regulation
+    # reset, already faded by how far into the current era we are. Carries the
+    # cold start that ``team_archetype_delta`` cannot: fourteen rounds into 2026
+    # there is almost no within-era evidence about any car, but there are three
+    # prior transitions showing which teams tend to land a rule change well.
+    team_regulation_mastery: float = 0.0
     # Only populated in the post-quali window. 0 means "unknown", which is
     # exactly what it means pre-quali.
     grid_position: int = 0

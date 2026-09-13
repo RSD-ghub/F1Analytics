@@ -120,3 +120,64 @@ def era_bucket_indicators(season: int, target_season: int) -> Dict[str, float]:
     """One-hot over era buckets, for building interaction features."""
     bucket = era_bucket(season, target_season)
     return {name: 1.0 if name == bucket else 0.0 for name in ERA_BUCKETS}
+
+
+# ── Scoping a statistic to one regulation era ────────────────────────────────
+#
+# A different use of ERAS from the two above, and worth separating. Sample
+# weighting and the grid interaction both feed *fitted parameters*, which is why
+# the bucket count had to stay at two — a bucket starved of training data
+# produced a serving weight of exactly zero once already.
+#
+# What follows fits nothing. It only answers "does this past race belong to the
+# same rulebook as the race being forecast", to decide which races count toward
+# an average. There are no per-era parameters, so the starvation failure cannot
+# recur here and the full nine-era resolution is safe to use.
+
+
+def same_regulation_era(season: int, target_season: int) -> bool:
+    """Were these two seasons run to the same technical regulations?
+
+    The unit for anything that is a property of the *car*. A team's affinity for
+    a circuit type is built into a chassis, and chassis are thrown away at a
+    regulation reset — a 2015 Ferrari says nothing about a 2026 one.
+    """
+    return era_for(season) == era_for(target_season)
+
+
+def era_span(season: int) -> Tuple[int, int]:
+    """First and last season of the era containing ``season``."""
+    for first, last, _ in ERAS:
+        if first <= season <= last:
+            return first, last
+    return ERAS[0][0], ERAS[0][1]
+
+
+def previous_era(season: int) -> Optional[str]:
+    """The era immediately before this one, or None at the start of history."""
+    index = era_index(era_for(season))
+    return ERAS[index - 1][2] if index > 0 else None
+
+
+def seasons_into_era(season: int) -> int:
+    """How many seasons deep into its era a season sits. Round 1 of a reset is 0."""
+    first, _ = era_span(season)
+    return max(0, season - first)
+
+
+def era_maturity_discount(races_so_far: int, half_life: int = 12) -> float:
+    """How much a prior about regulation adaptability should still count.
+
+    Falls from 1.0 at the first race of a new rulebook toward 0 as real results
+    accumulate under it. A prior about which teams historically handle a reset
+    well is genuinely useful when nothing else is known about the new cars, and
+    steadily less so once there are actual finishes to average — but a single
+    linear weight cannot express "matters at first, then stops mattering", so
+    the decay is written into the feature instead.
+
+    ``half_life=12`` is about half a season: by mid-season one the prior carries
+    half its opening weight, and by season two it is close to silent.
+    """
+    if races_so_far <= 0:
+        return 1.0
+    return 0.5 ** (races_so_far / float(half_life))

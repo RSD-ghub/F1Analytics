@@ -75,6 +75,31 @@ BASE_FEATURES = (
     "practice_long_run_gap_pct",
 )
 
+#: Fitted, measured, and left out. Circuit archetypes, per-era team affinity and
+#: regulation-reset mastery were built, trained and evaluated against v4 on the
+#: same held-out seasons:
+#:
+#:     pre_quali   6.543% -> 6.50%
+#:     post_quali  8.292% -> 8.26%
+#:
+#: No improvement, fractionally worse on both — three extra parameters over 225
+#: training races bought variance and no signal. ``team_archetype_delta`` even
+#: fitted with the wrong sign (-0.011), which is what a feature indistinguishable
+#: from noise looks like.
+#:
+#: The features themselves are kept and tested in ``services/circuits.py``,
+#: ``services/team_lineage.py`` and ``features.py``; only their entry into the
+#: model is withdrawn. The likeliest reason they failed is that three clusters
+#: built from corner density and straight fraction are too coarse to separate
+#: what a car needs — Baku, with F1's longest straight, clusters with Budapest.
+#: Straight-line speed would separate them and is the deferred phase-2 work.
+#: Re-add these names when there is a measurement that justifies them.
+WITHHELD_FEATURES = (
+    "driver_archetype_delta",
+    "team_archetype_delta",
+    "team_regulation_mastery",
+)
+
 #: Grid position, split by era. Only one is non-zero for any given race — the
 #: bucket that race belongs to — so these act as one feature with an era-specific
 #: weight. At serving time only ``grid_modern`` is ever active.
@@ -98,6 +123,12 @@ def feature_vector(
 
     The single definition shared by training and serving. Anything added here is
     automatically used by both, which is the point.
+
+    Note this list is positionally parallel to ``BASE_FEATURES`` and must stay in
+    the same order — they are two halves of one definition, names here and
+    values there. Adding to one and not the other raises an opaque IndexError
+    deep inside standardisation, so ``test_feature_names_and_values_agree``
+    pins the correspondence.
     """
     values = [
         driver.avg_finish_recent,
