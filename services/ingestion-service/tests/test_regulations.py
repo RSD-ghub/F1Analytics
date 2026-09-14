@@ -100,3 +100,29 @@ def test_issue_is_part_of_the_record():
 def test_known_sections_are_labelled():
     assert SECTIONS["B"] == "Sporting"
     assert SECTIONS["C"] == "Technical"
+
+
+# ── Retrieval weighting ──────────────────────────────────────────────────────
+
+
+def test_body_text_outweighs_headings_in_the_search_index():
+    """Regression guard on a measured result.
+
+    The original weighting favoured headings 5:1 over body text and scored 1 of
+    6 on a small question set. "How many power unit elements before a grid
+    penalty" returned "Power Unit Dynamometer" — a heading containing the words,
+    beating the rule that answers the question. Demoting headings and promoting
+    body took the same set to 6 of 6.
+
+    Article keeps a high weight because "what does B8.2.8 say" is a lookup, not
+    a search, and should return B8.2.8.
+    """
+    import inspect
+
+    from app.services import storage
+
+    source = inspect.getsource(storage.IngestionStore.ensure_indexes)
+    assert '"heading": 1' in source, "heading weight was raised again"
+    assert '"text": 3' in source, "body weight was lowered again"
+    # The lookup case must keep priority over both.
+    assert '"article": 5' in source

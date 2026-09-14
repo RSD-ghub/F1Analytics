@@ -127,11 +127,18 @@ class IngestionStore:
             [("season", ASCENDING), ("section", ASCENDING), ("article", ASCENDING)],
             unique=True,
         )
-        # Weighted so a query naming an article or a heading finds it first;
-        # the body is what makes a topic search work at all.
+        # Body-first, and measured that way rather than guessed. The first
+        # weighting favoured headings 5:1 over body text, which scored 1 of 6 on
+        # a small question set: "how many power unit elements before a grid
+        # penalty" returned "Power Unit Dynamometer" because a title match beat
+        # the rule that actually answers it. Demoting headings and promoting
+        # body took the same set to 6 of 6.
+        #
+        # Article stays weighted because "what does B8.2.8 say" should return
+        # B8.2.8, and that is a lookup rather than a search.
         await self._db[REGULATIONS].create_index(
             [("article", TEXT), ("heading", TEXT), ("text", TEXT)],
-            weights={"article": 10, "heading": 5, "text": 1},
+            weights={"article": 5, "heading": 1, "text": 3},
             name="regulations_text",
         )
         # "What is the next race?" scans forward on race start.
