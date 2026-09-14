@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import ASCENDING, DESCENDING, DeleteMany, ReplaceOne, UpdateOne
+from pymongo import ASCENDING, DESCENDING, TEXT, DeleteMany, ReplaceOne, UpdateOne
 
 from app.models.schemas import (
     ExpectedSession,
@@ -77,6 +77,12 @@ WEEKENDS = "race_weekends"
 #: second opinion about them.
 DRIVER_REGISTRY = "driver_registry"
 
+#: FIA regulations, one document per numbered article. Carries a text index so
+#: Bernie can find the rule that answers a question and quote it with its
+#: article number — retrieval without a citation would be worse here than no
+#: retrieval at all.
+REGULATIONS = "regulations"
+
 #: Structured facts extracted from race control text. Also outside
 #: ``DATA_COLLECTIONS``: extraction is best-effort enrichment that runs after a
 #: session is already stored, and must never participate in completeness.
@@ -116,6 +122,17 @@ class IngestionStore:
         )
         await self._db[DRIVER_REGISTRY].create_index(
             [("season", ASCENDING), ("driver_number", ASCENDING)], unique=True
+        )
+        await self._db[REGULATIONS].create_index(
+            [("season", ASCENDING), ("section", ASCENDING), ("article", ASCENDING)],
+            unique=True,
+        )
+        # Weighted so a query naming an article or a heading finds it first;
+        # the body is what makes a topic search work at all.
+        await self._db[REGULATIONS].create_index(
+            [("article", TEXT), ("heading", TEXT), ("text", TEXT)],
+            weights={"article": 10, "heading": 5, "text": 1},
+            name="regulations_text",
         )
         # "What is the next race?" scans forward on race start.
         await self._db[WEEKENDS].create_index([("race_start_utc", ASCENDING)])
@@ -457,6 +474,49 @@ class IngestionStore:
             int(doc["driver_number"]): (doc["driver"], doc.get("team", "Unknown"))
             async for doc in cursor
         }
+
+    async def save_regulations(self, articles: Sequence[Any]) -> int:
+        """Replace a season's articles for the sections supplied.
+
+        Scoped to the sections in the payload rather than wiping the season, so
+        re-ingesting Sporting alone does not silently delete Technical.
+        """
+        if not articles:
+            return 0
+        operations = []
+        for article in articles:
+            document = article.__dict__.copy() if hasattr(article, "__dict__") else dict(article)
+            document["_id"] = "{}-{}-{}".format(
+                document["season"], document["section"], document["article"]
+            )
+            operations.append(
+                ReplaceOne({"_id": document["_id"]}, document, upsert=True)
+            )
+        result = await self._db[REGULATIONS].bulk_write(operations, ordered=False)
+        return (result.upserted_count or 0) + (result.modified_count or 0)
+
+    async def search_regulations(
+        self, query: str, season: Optional[int] = None, limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Articles matching a question, best first.
+
+        Mongo text search rather than embeddings, for now. Regulation vocabulary
+        is precise and unusual — parc fermé, power unit element, Stop-and-Go —
+        which is where lexical matching is strongest and a paraphrasing model
+        adds least. No embedding provider, no vector store, no new dependency;
+        embeddings can be layered over these same chunks later if retrieval
+        quality turns out to be the limit.
+        """
+        criteria: Dict[str, Any] = {"$text": {"$search": query}}
+        if season is not None:
+            criteria["season"] = season
+        cursor = (
+            self._db[REGULATIONS]
+            .find(criteria, {"score": {"$meta": "textScore"}, "_id": False})
+            .sort([("score", {"$meta": "textScore"})])
+            .limit(limit)
+        )
+        return [doc async for doc in cursor]
 
     async def distinct_seasons(self) -> List[int]:
         seasons = await self._db[DATA_COLLECTIONS["results"]].distinct("season")

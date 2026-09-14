@@ -229,6 +229,13 @@ class QualifyingRow(RowBase):
     #: ``grid_position`` (the slots behind the last grid place) because that is
     #: how race results encode it, and therefore how the model was trained.
     starts_from_pit_lane: bool = False
+    #: Places lost to a grid penalty, and why, as the FIA states it. Parsed from
+    #: the starting-grid document and previously used only to validate that
+    #: document, then discarded — which threw away the answer to the question a
+    #: reader actually asks. Not "where does he start" but "why is he back
+    #: there".
+    grid_penalty_places: int = 0
+    grid_penalty_reason: str = ""
     q1_seconds: float = 0.0
     q2_seconds: float = 0.0
     q3_seconds: float = 0.0

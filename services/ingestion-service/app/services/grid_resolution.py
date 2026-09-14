@@ -72,6 +72,10 @@ def apply_starting_grid(
     if not rows:
         raise GridApplicationError("no qualifying rows to apply a grid to")
 
+    # The notes name the car, so penalties attach by number — the same stable
+    # key the grid itself joins on.
+    penalties = {p.car_number: p for p in (document.penalties or ())}
+
     source = _KIND_TO_SOURCE.get(document.kind)
     if source is None:
         raise GridApplicationError("unknown grid document kind: {}".format(document.kind))
@@ -111,6 +115,14 @@ def apply_starting_grid(
                         grid_position=entry.position,
                         grid_source=source,
                         starts_from_pit_lane=entry.from_pit_lane,
+                        grid_penalty_places=(
+                            penalties[entry.car_number].places
+                            if entry.car_number in penalties else 0
+                        ),
+                        grid_penalty_reason=(
+                            penalties[entry.car_number].reason
+                            if entry.car_number in penalties else ""
+                        ),
                     )
                 )
                 continue
@@ -139,12 +151,15 @@ def apply_starting_grid(
             applied.append(row)
             continue
         entry, _ = found
+        penalty = penalties.get(entry.car_number)
         applied.append(
             row.model_copy(
                 update={
                     "grid_position": entry.position,
                     "grid_source": source,
                     "starts_from_pit_lane": entry.from_pit_lane,
+                    "grid_penalty_places": penalty.places if penalty else 0,
+                    "grid_penalty_reason": penalty.reason if penalty else "",
                 }
             )
         )
