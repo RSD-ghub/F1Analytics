@@ -24,6 +24,7 @@ _scheduler: Optional[AsyncIOScheduler] = None
 
 JOB_ID = "heal-current-season"
 GRID_JOB_ID = "confirm-starting-grids"
+RESULTS_JOB_ID = "ingest-finished-races"
 
 
 async def heal_current_season(runner: IngestRunner) -> None:
@@ -66,6 +67,21 @@ async def confirm_starting_grids(runner: IngestRunner) -> None:
         logger.exception("scheduled grid confirmation failed for %s", season)
 
 
+async def ingest_finished_races(runner: IngestRunner) -> None:
+    """Pull results in shortly after a race, not a day later.
+
+    Shares a cadence with the grid job because it has the same shape: a narrow
+    question asked often, about a window that opens and closes within hours.
+    The season heal stays on its daily timer for what it is actually for —
+    finding old holes — rather than being sped up to cover this.
+    """
+    season = datetime.now(timezone.utc).year
+    try:
+        await runner.ingest_finished_races(season)
+    except Exception:
+        logger.exception("scheduled results ingest failed for %s", season)
+
+
 def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 30) -> Optional[AsyncIOScheduler]:
     """Start the healing job. ``interval_hours <= 0`` disables it."""
     global _scheduler
@@ -97,6 +113,17 @@ def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 3
             coalesce=True,
         )
         logger.info("grid confirmation scheduled every %smin", grid_check_minutes)
+
+        _scheduler.add_job(
+            ingest_finished_races,
+            trigger=IntervalTrigger(minutes=grid_check_minutes),
+            args=[runner],
+            id=RESULTS_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+            next_run_time=datetime.now(timezone.utc),
+        )
+        logger.info("finished-race ingest scheduled every %smin", grid_check_minutes)
 
     _scheduler.start()
     logger.info("auto-refresh scheduled every %sh", interval_hours)

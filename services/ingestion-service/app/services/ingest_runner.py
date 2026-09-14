@@ -378,6 +378,63 @@ class IngestRunner:
             ],
         }
 
+    async def ingest_finished_races(self, season: int) -> dict:
+        """Pull results for races that have run and are not yet ingested.
+
+        The counterpart to ``refresh_pending_grids``, and the last link in the
+        loop. Scoring sweeps every thirty minutes but can only score what has
+        been ingested, and the only job that ingested a finished race was the
+        season heal on a twenty-four hour timer — so a race could sit unscored
+        for a day while the fast scorer found nothing to do. A forecast that is
+        locked but unscored is indistinguishable from one being withheld, which
+        is the whole reason the record counts them.
+
+        Narrow on purpose: only rounds whose start time has passed and which
+        hold no results. Once a race is in, it is never looked at again, so
+        outside the hours after a race this costs one query.
+        """
+        ingested, waiting, failed = [], [], []
+        for weekend in await self._store.list_weekends(season, season):
+            round_number = weekend["round"]
+            if not _has_run(weekend.get("race_start_utc")):
+                continue
+            if await self._store.count_matching(
+                DATA_COLLECTIONS["results"], {"season": season, "round": round_number}
+            ):
+                continue
+
+            expected = ExpectedSession(
+                season=season,
+                round=round_number,
+                race_name=weekend.get("race_name", ""),
+                circuit=weekend.get("circuit", ""),
+            )
+            try:
+                await self.ingest_session(expected, depth=IngestDepth.RESULTS)
+            except SessionUnavailableError:
+                # Upstream publishes at an unpredictable delay after the flag —
+                # Monza's took most of a day. Not yet is the normal state here.
+                waiting.append("{}-{}".format(season, round_number))
+                continue
+            except Exception:
+                logger.exception(
+                    "could not ingest results for %s-%s", season, round_number
+                )
+                failed.append("{}-{}".format(season, round_number))
+                continue
+
+            count = await self._store.count_matching(
+                DATA_COLLECTIONS["results"], {"season": season, "round": round_number}
+            )
+            if count:
+                ingested.append("{}-{} ({} rows)".format(season, round_number, count))
+            else:
+                waiting.append("{}-{}".format(season, round_number))
+
+        if ingested:
+            logger.info("ingested finished races: %s", ", ".join(ingested))
+        return {"ingested": ingested, "waiting": waiting, "failed": failed}
+
     async def refresh_pending_grids(self, season: int) -> dict:
         """Try to confirm the grid for any round still running on a stand-in.
 
