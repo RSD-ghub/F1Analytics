@@ -104,9 +104,16 @@ carrying `grid_is_provisional` — it is not delayed and not hidden.
 | FIA document | fastest | authoritative; URL built from a slug rule that has changed before (2024 differs) |
 | jolpica | slow | shares no machinery with the FIA, so it survives a slug-scheme change |
 
-All three supply order and times only. Driver identity always comes from
-FastF1's entry list, joined on car number — a name that does not match the
-corpus creates a driver with no history rather than an error.
+All three supply order and times only. Driver identity comes from FastF1's
+entry list, joined on car number — a name that does not match the corpus creates
+a driver with no history rather than an error, so the FIA's and jolpica's own
+spellings are never used.
+
+That entry list is remembered in `driver_registry` every time it is read, so
+identity survives FastF1 being unreachable and the other two sources stay usable
+during an outage. A live entry list always wins over the stored one: the
+registry caches a fact rather than competing with it, and a driver swap served
+from memory would attribute a result to the wrong person.
 
 Check completeness at the depth you care about — they are different questions:
 

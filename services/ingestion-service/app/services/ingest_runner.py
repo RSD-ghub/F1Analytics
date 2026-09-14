@@ -224,6 +224,48 @@ class IngestRunner:
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
 
+    async def _identities_for(self, expected: ExpectedSession):
+        """Car number -> (driver, team), live if possible, remembered if not.
+
+        Live wins whenever it answers. The registry is a cache of a fact, not a
+        rival source: a driver swap we have not seen yet would otherwise be
+        served from memory and quietly attribute a result to the wrong person.
+
+        It exists because identity was the last hard dependency on FastF1.
+        Qualifying has three sources, but the FIA and jolpica supply order and
+        times only — both print names their own way, and joining history on a
+        re-cased name does not error, it invents a driver with no record. So
+        with FastF1 unreachable the other two were unusable, and a weekend could
+        be lost to an outage at one provider despite two others having the data.
+        """
+        try:
+            identities = await asyncio.to_thread(
+                self._source.load_qualifying_entry_list, expected
+            )
+        except Exception as exc:
+            logger.info(
+                "entry list unavailable for %s (%s); falling back to the stored "
+                "driver registry", expected.key, str(exc)[:80],
+            )
+            identities = {}
+
+        if identities:
+            # Free to keep warm: this is the only place a canonical entry list
+            # is read, so remembering it here needs no separate job.
+            try:
+                await self._store.remember_drivers(expected.season, identities)
+            except Exception:
+                logger.warning("could not update the driver registry", exc_info=True)
+            return identities
+
+        remembered = await self._store.recall_drivers(expected.season)
+        if remembered:
+            logger.info(
+                "using the stored driver registry for %s: %d cars",
+                expected.key, len(remembered),
+            )
+        return remembered
+
     async def _qualifying_from_fallbacks(self, expected: ExpectedSession):
         """Order and times from whichever source has them; identity from FastF1.
 
@@ -245,13 +287,12 @@ class IngestRunner:
         joined to FastF1's entry list, which publishes long before any
         classification does.
         """
-        identities = await asyncio.to_thread(
-            self._source.load_qualifying_entry_list, expected
-        )
+        identities = await self._identities_for(expected)
         if not identities:
             raise SessionFetchError(
-                "no entry list for {}; cannot attribute a classification to "
-                "drivers without one".format(expected.key)
+                "no entry list for {} from upstream or the stored registry; "
+                "cannot attribute a classification to drivers without "
+                "one".format(expected.key)
             )
 
         failures = []
@@ -359,9 +400,7 @@ class IngestRunner:
         )
         # The entry list lets a driver on the grid but missing from our rows be
         # added rather than sinking the whole grid — see apply_starting_grid.
-        identities = await asyncio.to_thread(
-            self._source.load_qualifying_entry_list, expected
-        )
+        identities = await self._identities_for(expected)
         applied = grid_resolution.apply_starting_grid(rows, document, identities)
         saved = await self._store.save_qualifying(
             expected.season, expected.round, applied
@@ -533,9 +572,7 @@ class IngestRunner:
             document = await fia_documents.fetch_starting_grid(
                 expected.season, expected.round, expected.race_name
             )
-            identities = await asyncio.to_thread(
-                self._source.load_qualifying_entry_list, expected
-            )
+            identities = await self._identities_for(expected)
             return grid_resolution.apply_starting_grid(rows, document, identities)
         except fia_documents.GridDocumentUnavailable as exc:
             logger.info(

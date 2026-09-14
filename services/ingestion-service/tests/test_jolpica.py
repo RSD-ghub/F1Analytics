@@ -141,7 +141,9 @@ async def test_an_unpublished_round_is_unavailable_not_broken(monkeypatch):
 # ── The chain ────────────────────────────────────────────────────────────────
 
 
-def _runner_with(entry_list):
+def _runner_with(entry_list, remembered=None):
+    """``remembered`` stands in for the stored driver registry — what identity
+    resolution falls back to when FastF1 cannot be reached."""
     from app.services.ingest_runner import IngestRunner
 
     runner = IngestRunner.__new__(IngestRunner)
@@ -150,7 +152,15 @@ def _runner_with(entry_list):
         def load_qualifying_entry_list(self, expected):
             return entry_list
 
+    class _Store:
+        async def remember_drivers(self, season, identities):
+            return len(identities)
+
+        async def recall_drivers(self, season):
+            return dict(remembered or {})
+
     runner._source = _Source()
+    runner._store = _Store()
     return runner
 
 
@@ -240,12 +250,60 @@ async def test_all_three_down_fails_loudly_with_every_reason(monkeypatch):
     assert "FIA" in str(exc.value) and "jolpica" in str(exc.value)
 
 
-async def test_no_entry_list_refuses_rather_than_inventing_identities():
-    """Both fallbacks supply order only. Without the entry list there is nobody
-    to attribute it to, and guessing names would create drivers with no history
-    that then poison every future feature join."""
+async def test_no_entry_list_and_no_registry_refuses_rather_than_inventing():
+    """Both fallbacks supply order only. With neither a live entry list nor a
+    remembered one there is nobody to attribute a classification to, and
+    guessing names would create drivers with no history that then poison every
+    future feature join."""
     from app.services.fastf1_source import SessionFetchError
 
     with pytest.raises(SessionFetchError) as exc:
-        await _runner_with({})._qualifying_from_fallbacks(_expected())
+        await _runner_with({}, remembered={})._qualifying_from_fallbacks(_expected())
     assert "entry list" in str(exc.value)
+
+
+async def test_the_registry_covers_fastf1_being_unreachable(monkeypatch):
+    """The point of the registry.
+
+    Identity was the last hard dependency on FastF1. The FIA and jolpica supply
+    order and times only, so with FastF1 down the other two sources could not be
+    used at all and a weekend was lost to one provider's outage despite two
+    others holding the data.
+    """
+    from app.services import fia_documents, jolpica as jolpica_module
+
+    async def fia_up(*a, **k):
+        from app.services.fia_documents import QualifyingDocument, QualifyingEntry
+
+        return QualifyingDocument(
+            season=2026, round=14, event_name="Spanish Grand Prix",
+            kind="final", url="x", document_number=44,
+            entries=tuple(
+                QualifyingEntry(position=i + 1, car_number=i + 1, driver_name="X")
+                for i in range(20)
+            ),
+        )
+
+    monkeypatch.setattr(fia_documents, "fetch_qualifying_classification", fia_up)
+    monkeypatch.setattr(jolpica_module, "fetch_qualifying",
+                        lambda *a, **k: (_ for _ in ()).throw(JolpicaUnavailable("no")))
+
+    # FastF1 gives nothing; the registry remembers the season's cars.
+    runner = _runner_with({}, remembered=_identities())
+    rows = await runner._qualifying_from_fallbacks(_expected())
+
+    assert len(rows) == 20
+    # Names came from the registry, which stores the corpus's own spellings.
+    assert rows[0].driver == "Driver Name0"
+
+
+async def test_a_live_entry_list_beats_the_registry():
+    """The registry caches a fact; it does not compete with one. A driver swap
+    we have not seen yet would otherwise be served from memory and attribute a
+    result to the wrong person."""
+    live = {1: ("Live Driver", "Live Team")}
+    stale = {1: ("Stale Driver", "Stale Team")}
+    runner = _runner_with(live, remembered=stale)
+
+    resolved = await runner._identities_for(_expected())
+    assert resolved == live

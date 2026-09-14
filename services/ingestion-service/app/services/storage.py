@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import ASCENDING, DESCENDING, DeleteMany, ReplaceOne
+from pymongo import ASCENDING, DESCENDING, DeleteMany, ReplaceOne, UpdateOne
 
 from app.models.schemas import (
     ExpectedSession,
@@ -62,6 +62,21 @@ PRACTICE = "practice_pace"
 #: Forward-looking session timetables.
 WEEKENDS = "race_weekends"
 
+#: Car number -> who drives it, per season. The last standing dependency on
+#: FastF1 being reachable at all.
+#:
+#: Qualifying has three sources, but two of them supply order and times only —
+#: the FIA and jolpica both print names their own way ("Sergio PEREZ" for
+#: "Sergio Pérez"), and joining history on a re-cased name does not fail, it
+#: silently invents a driver with no record and poisons every feature join after
+#: it. So identity always came from FastF1's entry list, and if FastF1 was down
+#: the other two sources could not be used at all.
+#:
+#: This is that entry list, remembered. It is written whenever FastF1 answers,
+#: so the names in it are the corpus's own canonical spellings rather than a
+#: second opinion about them.
+DRIVER_REGISTRY = "driver_registry"
+
 #: Structured facts extracted from race control text. Also outside
 #: ``DATA_COLLECTIONS``: extraction is best-effort enrichment that runs after a
 #: session is already stored, and must never participate in completeness.
@@ -98,6 +113,9 @@ class IngestionStore:
 
         await self._db[WEEKENDS].create_index(
             [("season", ASCENDING), ("round", ASCENDING)], unique=True
+        )
+        await self._db[DRIVER_REGISTRY].create_index(
+            [("season", ASCENDING), ("driver_number", ASCENDING)], unique=True
         )
         # "What is the next race?" scans forward on race start.
         await self._db[WEEKENDS].create_index([("race_start_utc", ASCENDING)])
@@ -393,6 +411,52 @@ class IngestionStore:
     async def count_matching(self, collection: str, query: Dict[str, Any]) -> int:
         """How many rows match. Used for cheap existence checks."""
         return await self._db[collection].count_documents(query)
+
+    async def remember_drivers(self, season: int, identities: Dict[int, Any]) -> int:
+        """Record who drives which car this season.
+
+        Called on every successful entry-list read, so the registry stays warm
+        without a separate job. Upserts rather than replaces the season: a
+        mid-season driver change should add an entry, not erase the drivers who
+        have not changed.
+        """
+        if not identities:
+            return 0
+        operations = [
+            UpdateOne(
+                {"season": season, "driver_number": int(number)},
+                {"$set": {
+                    "season": season,
+                    "driver_number": int(number),
+                    "driver": driver,
+                    "team": team,
+                    "last_seen": datetime.now(timezone.utc),
+                }},
+                upsert=True,
+            )
+            for number, (driver, team) in identities.items()
+            if int(number) > 0 and driver
+        ]
+        if not operations:
+            return 0
+        result = await self._db[DRIVER_REGISTRY].bulk_write(operations, ordered=False)
+        return (result.upserted_count or 0) + (result.modified_count or 0)
+
+    async def recall_drivers(self, season: int) -> Dict[int, Any]:
+        """The stored entry list for a season, as ``{car_number: (driver, team)}``.
+
+        Only ever consulted when the live one cannot be read. It is a cache of a
+        fact, not a source of truth: if FastF1 is answering, its answer wins,
+        because a driver swap we have not yet seen would otherwise be served
+        from memory.
+        """
+        cursor = self._db[DRIVER_REGISTRY].find(
+            {"season": season}, projection={"_id": False}
+        )
+        return {
+            int(doc["driver_number"]): (doc["driver"], doc.get("team", "Unknown"))
+            async for doc in cursor
+        }
 
     async def distinct_seasons(self) -> List[int]:
         seasons = await self._db[DATA_COLLECTIONS["results"]].distinct("season")
