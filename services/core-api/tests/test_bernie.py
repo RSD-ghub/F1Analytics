@@ -16,9 +16,11 @@ import pytest
 from app.models.conversation import Role, Thread, Turn
 from app.services.bernie import (
     DISCLAIMER,
+    REGULATIONS_KEY,
     SYSTEM_PROMPT,
     Bernie,
     BernieUnavailable,
+    regulation_facts,
     why_this_prediction_facts,
 )
 from app.services.conversation import (
@@ -365,3 +367,115 @@ def test_the_whole_field_is_given_to_bernie():
 
     assert len(facts["full field with probabilities"]) == 20
     assert any("D19" in row for row in facts["full field with probabilities"])
+
+
+# ── Regulations retrieval ────────────────────────────────────────────────────
+#
+# Bernie is allowed to quote the rules because the rule text is handed to him as
+# a fact, the same way probabilities are. What these guard is the gap between
+# "the search returned something" and "the something is an answer": lexical
+# retrieval always returns its best match, including for questions that are not
+# about the rules at all.
+
+
+def _hit(article, text="The relevant rule text.", score=5.0, heading="Heading"):
+    return {
+        "article": article, "heading": heading, "text": text, "score": score,
+        "season": 2026, "section": "B", "issue": 8,
+    }
+
+
+def test_a_passage_arrives_with_the_citation_that_identifies_it():
+    """Chunking by article exists so a claim can be traced. A passage rendered
+    without its number throws that away at the last step."""
+    facts = regulation_facts([_hit("B5.13.1", heading="Deployment of Safety Car")])
+
+    passage = facts[REGULATIONS_KEY][0]
+    assert "B5.13.1" in passage
+    assert "Deployment of Safety Car" in passage
+    assert "2026 Section B, issue 8" in passage
+
+
+def test_the_weak_tail_is_dropped_relative_to_the_best_hit():
+    """Every query returns its best match. What matters is whether the rest are
+    in the same class as it or noise trailing behind it."""
+    facts = regulation_facts(
+        [_hit("B5.13.1", score=10.0), _hit("B1.8.4", score=6.0),
+         _hit("C2.1.1", score=1.0)],
+        limit=5,
+    )
+
+    rendered = " ".join(facts[REGULATIONS_KEY])
+    assert "B5.13.1" in rendered and "B1.8.4" in rendered
+    assert "C2.1.1" not in rendered
+
+
+def test_no_hits_means_no_regulations_section_at_all():
+    """An empty heading is an invitation to fill it. A question about practice
+    pace should carry no rules section rather than an empty one."""
+    assert regulation_facts([]) == {}
+
+
+def test_a_hit_missing_its_text_is_not_rendered_as_a_rule():
+    assert regulation_facts([{"article": "B1.1", "score": 9.0}]) == {}
+
+
+def test_a_long_article_is_marked_where_it_is_cut():
+    """A silently truncated rule reads exactly like a complete one that happens
+    to stop early — which is how half a rule gets quoted as the whole of it."""
+    facts = regulation_facts([_hit("B12.1", text="word " * 2000)])
+
+    passage = facts[REGULATIONS_KEY][0]
+    assert "[truncated]" in passage
+    assert len(passage) < 2200
+
+
+def test_a_short_article_is_not_marked_truncated():
+    facts = regulation_facts([_hit("B12.1", text="A short rule.")])
+    assert "[truncated]" not in facts[REGULATIONS_KEY][0]
+
+
+def test_sub_points_stay_on_one_line_with_their_article():
+    """Inside a bulleted facts list, an article broken across lines reads as
+    several separate facts rather than one rule."""
+    facts = regulation_facts([_hit("B2.1", text="Either:\na) one thing\nb) another")])
+
+    passages = facts[REGULATIONS_KEY]
+    assert len(passages) == 1
+    assert "\n" not in passages[0]
+    assert "a) one thing" in passages[0] and "b) another" in passages[0]
+
+
+def test_only_the_top_few_passages_are_carried():
+    """The forecast is the substance of the prompt; the rulebook must not crowd
+    it out."""
+    facts = regulation_facts([_hit("B%d.1" % i, score=9.0) for i in range(10)])
+    assert len(facts[REGULATIONS_KEY]) == 3
+
+
+async def test_regulation_text_reaches_the_model_as_a_fact():
+    llm = RecordingLLM()
+    facts = {"race": "2026 round 5"}
+    facts.update(regulation_facts([_hit("B5.13.1", text="The safety car may be deployed.")]))
+
+    await Bernie(llm).converse("When does the safety car come out?", facts)
+
+    prompt = llm.calls[0]["prompt"]
+    assert "B5.13.1" in prompt
+    assert "The safety car may be deployed." in prompt
+
+
+def test_the_system_prompt_requires_the_article_to_be_named():
+    assert "name its article" in SYSTEM_PROMPT
+
+
+def test_the_system_prompt_permits_ignoring_irrelevant_passages():
+    """Retrieval hands Bernie its best match for every question, including the
+    ones that are not about the rules. Without this he would be under pressure
+    to use whatever arrived."""
+    assert "do not bear on the question" in SYSTEM_PROMPT
+    assert "ignore them without comment" in SYSTEM_PROMPT
+
+
+def test_the_system_prompt_forbids_extending_a_rule_past_its_text():
+    assert "do not extend a rule past its text" in SYSTEM_PROMPT

@@ -55,6 +55,21 @@ comparing, arithmetic and grouping are all fair — if you are given a grid you 
 may work out who is ahead of whom, the gap between two drivers, or who is on a \
 given row. Refusing to do the arithmetic is as unhelpful as making the numbers up.
 
+The FIA regulations:
+- Some facts arrive as passages from the FIA regulations, found by keyword \
+search against the question. They are the text of the rules themselves and are \
+facts like any other — you may quote and reason from them.
+- That search is imperfect and returns whatever matched the words. Passages \
+that do not bear on the question are not answers; ignore them without comment \
+rather than working them into a reply.
+- When you rely on a regulation, name its article — "Article B5.13.1 says" — so \
+the reader can check it. Stay inside what the passage actually says: do not \
+extend a rule past its text, and do not state a rule no passage supports.
+- A passage marked "[truncated]" is only the opening of a longer article. Say \
+so rather than implying you have read the whole of it.
+- Regulations describe what is permitted, not what will happen. A rule allowing \
+something is not a prediction that anyone will do it.
+
 Reading a Formula 1 grid:
 - The grid is two cars per row. Row 1 is P1 and P2, row 2 is P3 and P4, row 3 \
 is P5 and P6, and so on — row N holds P(2N-1) and P(2N).
@@ -179,6 +194,87 @@ class Bernie:
         if not (answer or "").strip():
             raise BernieUnavailable("empty response", reason="empty")
         return answer.strip(), reasoning
+
+
+# ── The regulations ──────────────────────────────────────────────────────────
+
+#: Where regulation passages sit in the facts pack. Named as a hedge on purpose:
+#: lexical search returns what matched the words, which is not the same as what
+#: answers the question, and the label should not promise more than retrieval
+#: delivers.
+REGULATIONS_KEY = "possibly relevant FIA regulation passages"
+
+#: Keep a hit only if it scores at least this fraction of the best hit.
+#:
+#: A backstop, and honestly a weak one. Against the real corpus the top six hits
+#: for a question cluster tightly — 15.3 down to 13.5 for "how many power unit
+#: elements before a grid penalty" — so this floor almost never fires. It is
+#: kept for the outlier case, not because it is doing the work.
+#:
+#: What it cannot do at all is notice that the *whole* result set is irrelevant.
+#: Lexical search always returns its best match: asked who was quickest in
+#: practice it confidently produced "Practice Starts on the Grid". That case is
+#: handled in the system prompt, which tells Bernie to pass over passages that
+#: do not bear on the question, and it is the real defence here.
+#:
+#: An absolute floor might do better and is not adopted yet. The separation
+#: exists in the measurements — rules questions scored 13-17, the practice-pace
+#: question 4-6 — but calibrating a constant on five questions I wrote myself is
+#: the same weak instrument that made two of the last eval's four "failures"
+#: turn out to be the ruler rather than the retrieval. It wants real questions
+#: first.
+RELATIVE_SCORE_FLOOR = 0.4
+
+#: Characters of article text per passage before truncation.
+#:
+#: Articles are chunked whole so that a citation covers a complete rule, and
+#: cutting one is a real loss — but a handful of long articles would otherwise
+#: crowd out the forecast in the same prompt. So: generous, and when it does
+#: bite, marked, because a silently truncated rule reads exactly like a complete
+#: one that happens to stop early.
+MAX_PASSAGE_CHARS = 1500
+
+
+def regulation_facts(
+    hits: Sequence[Dict[str, Any]], limit: int = 3
+) -> Dict[str, Any]:
+    """Render regulation search hits as facts, best first.
+
+    Returns ``{}`` when nothing survives, so the caller can merge
+    unconditionally and a question that is not about the rules simply carries no
+    regulations section rather than an empty heading inviting Bernie to fill it.
+    """
+    scored = [hit for hit in hits if hit.get("article") and hit.get("text")]
+    if not scored:
+        return {}
+
+    best = max((hit.get("score") or 0.0) for hit in scored)
+    if best > 0:
+        scored = [
+            hit for hit in scored
+            if (hit.get("score") or 0.0) >= best * RELATIVE_SCORE_FLOOR
+        ]
+
+    passages: List[str] = []
+    for hit in scored[:limit]:
+        # Collapsed to one line per article. Regulation text carries its
+        # sub-points on separate lines, and inside a bulleted facts list those
+        # would read as separate facts; on one line the "a)" markers survive and
+        # the passage boundaries stay unambiguous.
+        body = " ".join((hit.get("text") or "").split())
+        if len(body) > MAX_PASSAGE_CHARS:
+            body = body[:MAX_PASSAGE_CHARS].rstrip() + " […] [truncated]"
+        passages.append(
+            "Article {} — {} ({} Section {}, issue {}): {}".format(
+                hit["article"],
+                hit.get("heading") or "untitled",
+                hit.get("season", "?"),
+                hit.get("section", "?"),
+                hit.get("issue", "?"),
+                body,
+            )
+        )
+    return {REGULATIONS_KEY: passages}
 
 
 def why_this_prediction_facts(

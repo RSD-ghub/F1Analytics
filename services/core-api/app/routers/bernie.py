@@ -31,6 +31,7 @@ from app.services.bernie import (
     DISCLAIMER,
     Bernie,
     BernieUnavailable,
+    regulation_facts,
     why_this_prediction_facts,
 )
 from app.services.conversation import (
@@ -271,6 +272,59 @@ async def _weekend_facts(
 
 
 
+async def _regulation_facts(
+    settings: Settings, question: str, season: int
+) -> Dict[str, Any]:
+    """Look up rules text for **this** question, on every turn.
+
+    Retrieval is driven by the question rather than the weekend, which is why it
+    lives here instead of in ``_weekend_facts``: "who is quickest in practice"
+    and "how many power unit elements before a penalty" want the same weekend
+    and completely different passages.
+
+    Searched unconditionally rather than behind a keyword gate. Any gate would
+    have to guess which questions are about the rules, and "how many engines can
+    they use" contains none of the words one would think to list. Cheaper to let
+    the search run and let Bernie pass over what does not bear on the question —
+    which the system prompt tells him to do — than to decide in advance that a
+    question is not a regulations question and be wrong.
+    """
+    question = clamp_question(question)
+    if not question:
+        return {}
+
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    try:
+        # Scoped to the race's own season. The FIA reissues sections constantly
+        # and a 2026 rule is not evidence about a 2024 race, so a season we hold
+        # no corpus for correctly yields nothing rather than the wrong rulebook.
+        hits = await ingestion_client.get(
+            "/data/regulations/search",
+            {"q": question, "season": season, "limit": 6},
+        )
+    except Exception as exc:
+        # Enrichment, not substance: a turn about practice pace does not need
+        # the rulebook. Stated rather than swallowed, because the alternative is
+        # Bernie saying he has no rule on a subject the corpus covers, with
+        # nothing on the page to say why.
+        logger.warning("regulation search unavailable: %s", exc)
+        return {
+            "note on the regulations": (
+                "The FIA regulations could not be searched for this question, "
+                "so no rule text is available here. Say so if asked about the "
+                "rules rather than answering from memory."
+            )
+        }
+
+    # Over-fetch six, render at most three. The relative score floor decides
+    # how many of the six are in the same class as the best hit, so asking for
+    # exactly three would throw away the evidence that decision needs.
+    return regulation_facts(hits or [])
+
+
 async def _charge(usage: UsageStore, settings: Settings, user) -> None:
     """Spend one unit of this caller's daily allowance, or 429.
 
@@ -307,6 +361,7 @@ async def start_thread(
 
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, request.season, request.round)
+    facts.update(await _regulation_facts(settings, request.question, request.season))
     thread = await store.create(user["_id"], request.season, request.round)
     return await _turn(bernie, store, thread, request.question, facts)
 
@@ -335,6 +390,7 @@ async def continue_thread(
 
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, thread.season, thread.round)
+    facts.update(await _regulation_facts(settings, request.question, thread.season))
     return await _turn(bernie, store, thread, request.question, facts)
 
 

@@ -59,6 +59,19 @@ DEFAULT_SECTIONS = ("A", "B", "C", "F")
 #: article number, which is why a bare-digit pattern finds nothing here.
 _ARTICLE = re.compile(r"^([A-F]\d+(?:\.\d+)*)\s+(.*)$")
 
+#: What follows the number, when the line is not an article header at all.
+#:
+#: An article opens with a heading or a sentence, so it begins with a capital.
+#: A lowercase word — or a bracketed sub-point — means the "number" is a
+#: cross-reference that a line wrap happened to push to the start of a line.
+_REST_CONTINUES = re.compile(r"^[a-z(),]")
+
+#: A line that has not finished its sentence: it ends on a comma or on one of
+#: the words that introduce a cross-reference, which is where the wrap lands.
+_PREV_CONTINUES = re.compile(
+    r"(,|;|\b(and|or|in|of|to|under|with|from|Articles?|Appendix|Appendices)\b)$"
+)
+
 #: Running headers and footers repeated on every page. They carry no rule text
 #: and, left in, attach a copyright line to whichever article spans the break.
 _PAGE_FURNITURE = re.compile(
@@ -185,6 +198,29 @@ async def fetch_articles(
     return articles
 
 
+def _is_cross_reference(previous: str, rest: str) -> bool:
+    """Is this "article number" really a reference that a line wrap moved?
+
+    The regulations cite themselves constantly, and ``pdfplumber`` returns the
+    PDF's visual lines, so a wrap inside "prescribed in Articles B8.2.2, B8.2.3
+    and B8.2.4" puts B8.2.3 at the start of a line looking exactly like a
+    header. Left unguarded that truncated B8.2.8 — the rule imposing grid
+    penalties for extra power unit elements — and stored its tail under B8.2.3.
+
+    Two conditions, and both are needed. The text after the number must be
+    unable to open an article: articles begin with a heading or a sentence, so a
+    lowercase word or a bracketed sub-point means the number is being cited
+    rather than declared. And the previous line must not have finished its
+    sentence.
+
+    Requiring both is what keeps C15.8.8 — whose text genuinely begins "exhaust
+    insulation may not use..." in the FIA's own prose — while still rejecting
+    every real wrap. Measured across all four 2026 sections, this drops 21
+    false boundaries and no true ones.
+    """
+    return bool(_REST_CONTINUES.match(rest)) and bool(_PREV_CONTINUES.search(previous))
+
+
 def _split(text: str, document: RegulationDocument) -> List[Article]:
     """Break a section into numbered articles.
 
@@ -211,15 +247,22 @@ def _split(text: str, document: RegulationDocument) -> List[Article]:
             )
         )
 
+    previous = ""
     for raw in text.splitlines():
         line = raw.strip()
         if not line or len(line) == 1 or _PAGE_FURNITURE.search(line):
             continue
+        # The line before this one, skipped furniture ignored, so that a wrap
+        # across a page break still reads as the wrap it is. Rebound here rather
+        # than at each exit so a later `continue` cannot silently stale it.
+        previous, line_before = line, previous
         match = _ARTICLE.match(line)
         # The article letter must be this document's section. Without that check
         # the literal "F1" in "F1 Car" opens a Section F article inside the
         # Sporting regulations — the phrase appears on nearly every page.
         if match and match.group(1)[0] != document.section:
+            match = None
+        if match and _is_cross_reference(line_before, match.group(2).strip()):
             match = None
         if match:
             flush()
@@ -254,16 +297,34 @@ def _drop_contents_entries(articles: Sequence[Article]) -> List[Article]:
     numbers with text that is a heading and a page number, so a search for "pit
     lane" could return the contents entry rather than the rule.
 
-    Both problems are solved by keeping, for each article number, the longest
+    Both problems are solved by keeping, for each article number, the fullest
     version seen: the real article always carries more text than its own
-    contents line.
+    contents line. See ``preference`` for why that is ordered on prose before
+    length.
     """
+    def preference(article: Article):
+        # Prose first, then length.
+        #
+        # Length alone is usually right — a real article carries more text than
+        # its own contents line — but it loses when a page of multi-column
+        # tables extracts as interleaved fragments, which can run longer than
+        # the rule itself. C6.6.6 was stored as "pressurisation system if
+        # including any fitted. pressurisation system, any local electrical..."
+        # while its actual text, "The pressure of the fuel inside the collector
+        # may be increased...", sat a hundred characters shorter and lost.
+        #
+        # A rule opens with a capital; column salad starts wherever the column
+        # was cut. That is enough to separate them when both versions exist. It
+        # does not repair table extraction, and where every version of an
+        # article is garbled this changes nothing.
+        return (article.text[:1].isupper(), len(article.text))
+
     longest: Dict[str, Article] = {}
     for article in articles:
         if len(article.text) <= 40:
             continue
         current = longest.get(article.article)
-        if current is None or len(article.text) > len(current.text):
+        if current is None or preference(article) > preference(current):
             longest[article.article] = article
 
     def sort_key(article: Article):
