@@ -24,5 +24,16 @@
     ],
     "decided_at": "2026-08-09T03:08:13.254313+00:00",
     "champion_version": "race-plackett-luce-v3"
+  },
+  {
+    "promote": false,
+    "reason": "only 13 unseen race(s); need 15 before a promotion decision carries any weight",
+    "champion_score": 0.0,
+    "challenger_score": 0.0,
+    "baseline_score": 0.0,
+    "relative_gain": 0.0,
+    "evaluation_races": 13,
+    "evaluated_seasons": [],
+    "decided_at": "2026-09-20T07:42:48.289428+00:00"
   }
 ]
