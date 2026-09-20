@@ -204,6 +204,13 @@ def extract_laps(
                 lap_time_seconds=to_seconds(lap.get("LapTime")),
                 compound=safe_text(lap.get("Compound"), "Unknown"),
                 stint=safe_int(lap.get("Stint"), 0),
+                speed_trap_kph=safe_float(lap.get("SpeedST")),
+                speed_finish_kph=safe_float(lap.get("SpeedFL")),
+                speed_i1_kph=safe_float(lap.get("SpeedI1")),
+                speed_i2_kph=safe_float(lap.get("SpeedI2")),
+                sector1_seconds=to_seconds(lap.get("Sector1Time")),
+                sector2_seconds=to_seconds(lap.get("Sector2Time")),
+                sector3_seconds=to_seconds(lap.get("Sector3Time")),
             )
         )
     return rows

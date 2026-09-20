@@ -89,9 +89,14 @@ reasoning-trace markers.
 # Practice long-run pace (2018+ only).
 .venv/bin/python services/ingestion-service/scripts/backfill.py practice 2018 2026
 
-# Laps, stints, pit stops, weather, race control. 2018+ only — the first season
-# with lap data.
+# Laps, stints, pit stops, weather, race control, speed traps and sector times.
+# 2018+ only — the first season with lap data.
 .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2025
+
+# Re-read sessions already marked complete — after a schema change, which makes
+# "complete" mean something new with no gap left to heal.
+BACKFILL_SESSIONS_PER_HOUR=0 \
+  .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2026 --refresh
 
 # The FIA regulations, chunked by article. Re-run when a section is reissued.
 .venv/bin/python services/ingestion-service/scripts/ingest_regulations.py 2026

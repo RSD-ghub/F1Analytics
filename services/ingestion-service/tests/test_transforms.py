@@ -240,3 +240,80 @@ def test_extract_stints_counts_laps_per_compound():
     assert by_stint[2].laps == 1
     assert by_stint[2].compound == "HARD"
     assert all(row.driver == "Max Verstappen" for row in rows)
+
+
+# ── Speeds and sector times ──────────────────────────────────────────────────
+#
+# FastF1 serves these on every lap frame and ingestion discarded them for a
+# year, which put a full re-ingest between the corpus and any feature needing
+# speed. The speed trap is the one that prompted capturing them: corner geometry
+# cannot tell Monza from a high-downforce circuit with one long straight, and
+# how fast the cars actually go can.
+
+
+def test_a_lap_frame_yields_its_speeds_and_sector_times():
+    laps = pd.DataFrame(
+        [
+            {
+                "Driver": "VER",
+                "LapNumber": 12,
+                "LapTime": pd.Timedelta(seconds=80.1),
+                "Compound": "HARD",
+                "Stint": 2,
+                "SpeedST": 341.0,
+                "SpeedFL": 312.5,
+                "SpeedI1": 288.0,
+                "SpeedI2": 264.0,
+                "Sector1Time": pd.Timedelta(seconds=26.4),
+                "Sector2Time": pd.Timedelta(seconds=29.3),
+                "Sector3Time": pd.Timedelta(seconds=24.4),
+            }
+        ]
+    )
+    row = extract_laps(SESSION, laps, {"VER": "Max Verstappen"})[0]
+
+    assert row.speed_trap_kph == pytest.approx(341.0)
+    assert row.speed_finish_kph == pytest.approx(312.5)
+    assert row.speed_i1_kph == pytest.approx(288.0)
+    assert row.speed_i2_kph == pytest.approx(264.0)
+    assert row.sector1_seconds == pytest.approx(26.4)
+    assert row.sector2_seconds == pytest.approx(29.3)
+    assert row.sector3_seconds == pytest.approx(24.4)
+
+
+def test_a_lap_with_no_speeds_recorded_is_zero_not_an_error():
+    """In-laps, out-laps and laps where the trap did not register come through
+    with the fields empty. Readers must be able to tell that from slow, which is
+    why 0.0 means absent and the row still stores."""
+    laps = pd.DataFrame(
+        [
+            {
+                "Driver": "VER",
+                "LapNumber": 1,
+                "LapTime": pd.Timedelta(seconds=95.0),
+                "Compound": "MEDIUM",
+                "Stint": 1,
+                "SpeedST": float("nan"),
+                "Sector1Time": pd.NaT,
+            }
+        ]
+    )
+    row = extract_laps(SESSION, laps, {"VER": "Max Verstappen"})[0]
+
+    assert row.speed_trap_kph == 0.0
+    assert row.sector1_seconds == 0.0
+    assert row.lap_time_seconds == pytest.approx(95.0)
+
+
+def test_lap_frames_predating_these_columns_still_ingest():
+    """The 2018 frames in the cache do not all carry every column. A missing
+    column must not cost us the lap."""
+    laps = pd.DataFrame(
+        [{"Driver": "VER", "LapNumber": 3, "LapTime": pd.Timedelta(seconds=91.0),
+          "Compound": "SOFT", "Stint": 1}]
+    )
+    row = extract_laps(SESSION, laps, {"VER": "Max Verstappen"})[0]
+
+    assert row.speed_trap_kph == 0.0
+    assert row.sector2_seconds == 0.0
+    assert row.compound == "SOFT"

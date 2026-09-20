@@ -9,6 +9,7 @@ guarantee — which is exactly what the ad-hoc pull scripts this replaces did no
     python scripts/backfill.py results 2010 2025
     python scripts/backfill.py practice 2018 2025
     python scripts/backfill.py full 2018 2025
+    python scripts/backfill.py full 2018 2025 --refresh   # re-read, after a schema change
 
 ``full`` adds laps, stints, pit stops, weather and race control on top of
 ``results``. It is much slower — lap frames are the bulk of what FastF1 serves —
@@ -45,6 +46,19 @@ CACHE = os.getenv("FASTF1_CACHE", "fastf1-data/cache")
 
 async def main() -> int:
     mode, first, last = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+
+    # ``--refresh`` re-reads sessions already marked complete.
+    #
+    # Normally the opposite is wanted: a backfill heals gaps and skips what it
+    # already has, which is what makes a scheduled re-run cheap. But a schema
+    # change makes "complete" mean something new, and every stored session is
+    # then complete at the old shape and stale at the new one, with no gap to
+    # heal. Capturing speed traps and sector times was exactly that case.
+    #
+    # Cheap when the FastF1 cache is warm, since nothing then goes to the
+    # network; set BACKFILL_SESSIONS_PER_HOUR=0 to drop the quota pacing that
+    # only exists to protect API calls that are not being made.
+    refresh = "--refresh" in sys.argv[4:]
     client = create_client(MONGO_URI, 5000)
     store = IngestionStore(get_database(client, DATABASE))
     await store.ensure_indexes()
@@ -61,7 +75,7 @@ async def main() -> int:
         # stays off (see FastF1Source above): it is a derived per-lap summary,
         # it multiplies the cost several times over, and nothing scores on it.
         summary = await runner.run_backfill(
-            first, last, only_gaps=True, depth=IngestDepth.FULL
+            first, last, only_gaps=not refresh, depth=IngestDepth.FULL
         )
         logger.info(
             "full %s-%s: expected=%s complete=%s gaps=%s",

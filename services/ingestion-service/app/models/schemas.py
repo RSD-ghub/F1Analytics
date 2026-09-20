@@ -280,11 +280,31 @@ class PracticePaceRow(RowBase):
 
 
 class LapRow(RowBase):
+    #: Speeds are km/h and sector times seconds, both as FastF1 serves them.
+    #:
+    #: These were fetched and discarded for a year. Capturing them is cheap once
+    #: the lap frame is already in hand, and the cost of *not* having them was a
+    #: full re-ingest standing between the corpus and any feature that needs
+    #: speed — which is why all six land together rather than only the speed trap
+    #: that prompted it. Zero means the frame carried no value: FastF1 leaves
+    #: speeds empty on in-laps, out-laps and any lap where the trap did not
+    #: register, so readers must treat 0.0 as absent rather than slow.
     driver: str
     lap: int
     lap_time_seconds: float = 0.0
     compound: str = "Unknown"
     stint: int = 0
+    #: Speed trap, on the longest straight. The one that separates a power
+    #: circuit from a high-downforce circuit with a straight attached.
+    speed_trap_kph: float = 0.0
+    #: Speed crossing the finish line.
+    speed_finish_kph: float = 0.0
+    #: Intermediate speeds at the two sector splits.
+    speed_i1_kph: float = 0.0
+    speed_i2_kph: float = 0.0
+    sector1_seconds: float = 0.0
+    sector2_seconds: float = 0.0
+    sector3_seconds: float = 0.0
 
 
 class StintRow(RowBase):

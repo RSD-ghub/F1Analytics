@@ -84,6 +84,12 @@ own pipeline so it inherits the completeness guarantee.
 # after the hour rolls over; completed sessions are not re-fetched.
 .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2025
 
+# Re-read sessions already marked complete. Needed after a schema change, which
+# makes "complete" mean something new with no gap to heal. Cheap when the
+# FastF1 cache is warm; drop the pacing, which only guards API calls.
+BACKFILL_SESSIONS_PER_HOUR=0 \
+  .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2026 --refresh
+
 # Forward calendar — needed before the scheduler can place anything.
 curl -X POST "localhost:8001/forward/refresh-calendar?from_season=2026&to_season=2027"
 
