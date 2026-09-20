@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from app import db
 from app.config import get_settings
 from app.dependencies import get_runner
+from app.regulations import RegulationStore
+from app.regulations import router as regulations_router
 from app.routers import data, forward, ingest
 from app.services import scheduler
 from app.services.storage import IngestionStore
@@ -31,6 +33,7 @@ async def lifespan(_: FastAPI):
     # reporting itself as degraded on /health.
     try:
         await IngestionStore(db.db()).ensure_indexes()
+        await RegulationStore(db.db()).ensure_indexes()
     except Exception:
         logger.exception("index creation failed; continuing without it")
 
@@ -57,3 +60,4 @@ app.include_router(
 app.include_router(ingest.router)
 app.include_router(forward.router)
 app.include_router(data.router)
+app.include_router(regulations_router.router)

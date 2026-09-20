@@ -79,28 +79,6 @@ async def results(
     )
 
 
-@router.get("/regulations/search", response_model=List[Dict[str, Any]])
-async def regulations_search(
-    q: str = Query(..., min_length=2, description="Question or keywords"),
-    season: Optional[int] = Query(None),
-    limit: int = Query(5, ge=1, le=25),
-    store: IngestionStore = Depends(get_store),
-) -> List[Dict[str, Any]]:
-    """Articles matching a question, best first, each with its ``score``.
-
-    Declared ahead of the generic ``/{dataset}`` handler. It would not collide
-    today — two path segments against one — but "regulations" is also a
-    plausible dataset name, and the ordering makes the intent explicit rather
-    than dependent on that.
-
-    Returns the raw hits including the text score. Deciding which of them are
-    good enough to act on is the caller's judgement, not this service's: core-api
-    is the one that knows whether a passage is about to be handed to a language
-    model, and this service does not interpret data.
-    """
-    return await store.search_regulations(q, season=season, limit=limit)
-
-
 @router.get("/{dataset}", response_model=List[Dict[str, Any]])
 async def dataset_rows(
     dataset: str,

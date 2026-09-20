@@ -302,7 +302,7 @@ async def _regulation_facts(
         # and a 2026 rule is not evidence about a 2024 race, so a season we hold
         # no corpus for correctly yields nothing rather than the wrong rulebook.
         hits = await ingestion_client.get(
-            "/data/regulations/search",
+            "/regulations/search",
             {"q": question, "season": season, "limit": 6},
         )
     except Exception as exc:

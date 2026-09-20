@@ -65,8 +65,10 @@ rather than working them into a reply.
 - When you rely on a regulation, name its article — "Article B5.13.1 says" — so \
 the reader can check it. Stay inside what the passage actually says: do not \
 extend a rule past its text, and do not state a rule no passage supports.
-- A passage marked "[truncated]" is only the opening of a longer article. Say \
-so rather than implying you have read the whole of it.
+- "[truncated]" beside an article number means that passage is only the \
+opening of a longer article. Say so rather than implying you have read the whole \
+of it. The marker belongs to the article it sits beside and to no other — a \
+complete passage next to a truncated one is still complete.
 - Regulations describe what is permitted, not what will happen. A rule allowing \
 something is not a prediction that anyone will do it.
 
@@ -262,11 +264,22 @@ def regulation_facts(
         # would read as separate facts; on one line the "a)" markers survive and
         # the passage boundaries stay unambiguous.
         body = " ".join((hit.get("text") or "").split())
+        # The marker goes beside the article number, not at the end of the text.
+        #
+        # It used to trail the body, and with a 1,500-character article between
+        # it and its own citation — and the next citation beginning on the line
+        # below — it read as belonging to whichever article came next. Asked
+        # about B8.2.8, which is 622 characters and complete, Bernie reported it
+        # as truncated: he had picked up the marker left by B8.2.2 beneath it.
+        # A caveat that attaches to the wrong claim is worse than no caveat.
+        marker = ""
         if len(body) > MAX_PASSAGE_CHARS:
-            body = body[:MAX_PASSAGE_CHARS].rstrip() + " […] [truncated]"
+            body = body[:MAX_PASSAGE_CHARS].rstrip() + " […]"
+            marker = " [truncated]"
         passages.append(
-            "Article {} — {} ({} Section {}, issue {}): {}".format(
+            "Article {}{} — {} ({} Section {}, issue {}): {}".format(
                 hit["article"],
+                marker,
                 hit.get("heading") or "untitled",
                 hit.get("season", "?"),
                 hit.get("section", "?"),

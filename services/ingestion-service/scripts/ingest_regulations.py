@@ -15,8 +15,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services import regulations  # noqa: E402
-from app.services.storage import IngestionStore  # noqa: E402
+from app.regulations import source as regulations  # noqa: E402
+from app.regulations.store import RegulationStore  # noqa: E402
 from f1_common.mongo import create_client, get_database  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -31,7 +31,7 @@ async def main() -> int:
     )
 
     client = create_client(os.getenv("MONGO_URI", "mongodb://localhost:27017"), 5000)
-    store = IngestionStore(get_database(client, os.getenv("MONGO_DATABASE", "f1_ingestion")))
+    store = RegulationStore(get_database(client, os.getenv("MONGO_DATABASE", "f1_ingestion")))
     await store.ensure_indexes()
 
     documents = [d for d in await regulations.discover(season) if d.section in sections]

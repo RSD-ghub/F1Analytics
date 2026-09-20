@@ -479,3 +479,23 @@ def test_the_system_prompt_permits_ignoring_irrelevant_passages():
 
 def test_the_system_prompt_forbids_extending_a_rule_past_its_text():
     assert "do not extend a rule past its text" in SYSTEM_PROMPT
+
+
+def test_the_truncation_marker_sits_beside_the_article_it_describes():
+    """It used to trail the body. With a long article between it and its own
+    citation, and the next citation starting below, it read as belonging to the
+    following article: asked about B8.2.8 — complete at 622 characters — Bernie
+    reported it truncated, having picked up the marker left by B8.2.2."""
+    facts = regulation_facts(
+        [_hit("B8.2.8", text="A complete rule.", score=9.0),
+         _hit("B8.2.2", text="word " * 2000, score=8.0)],
+        limit=2,
+    )
+
+    complete, truncated = facts[REGULATIONS_KEY]
+    assert "[truncated]" not in complete
+    assert truncated.startswith("Article B8.2.2 [truncated]")
+
+
+def test_the_system_prompt_scopes_the_marker_to_its_own_article():
+    assert "belongs to the article it sits beside and to no other" in SYSTEM_PROMPT

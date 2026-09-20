@@ -9,7 +9,7 @@ to sources is the difference between usable retrieval and none.
 
 import pytest
 
-from app.services.regulations import (
+from app.regulations.source import (
     Article,
     RegulationDocument,
     SECTIONS,
@@ -118,7 +118,7 @@ def test_body_text_outweighs_headings_in_the_search_index():
     Article keeps a high weight because "what does B8.2.8 say" is a lookup, not
     a search, and should return B8.2.8.
     """
-    from app.services.storage import REGULATIONS_TEXT_WEIGHTS as weights
+    from app.regulations.store import REGULATIONS_TEXT_WEIGHTS as weights
 
     assert weights["text"] > weights["heading"], "headings outweigh body again"
     assert weights["heading"] == 1, "heading weight was raised again"
@@ -146,7 +146,7 @@ async def test_the_search_route_passes_the_question_through_untouched():
     """The corpus is lexical: the caller's exact words are the query. Anything
     this route did to them — stripping, rewriting — would change what matched
     without the caller being able to see it."""
-    from app.routers.data import regulations_search
+    from app.regulations.router import search as regulations_search
 
     store = FakeStore([{"article": "B5.13.1", "score": 9.0}])
     hits = await regulations_search(
@@ -162,7 +162,7 @@ async def test_the_search_route_passes_the_question_through_untouched():
 async def test_the_search_route_returns_the_score_it_was_given():
     """core-api decides which hits are good enough to hand a language model, and
     it cannot do that if the ranking signal is dropped on the way out."""
-    from app.routers.data import regulations_search
+    from app.regulations.router import search as regulations_search
 
     hits = await regulations_search(
         q="parc ferme", season=None, limit=5,
@@ -172,30 +172,31 @@ async def test_the_search_route_returns_the_score_it_was_given():
     assert hits[0]["score"] == 3.25
 
 
-def test_the_search_route_is_declared_before_the_generic_dataset_handler():
-    """``/{dataset}`` is a catch-all. It does not shadow this route today — two
-    segments against one — but the ordering is what keeps that true if either
-    path ever changes shape."""
-    import inspect
+def test_the_search_route_does_not_live_under_the_dataset_routes():
+    """``/data`` serves ingested F1 datasets through a ``/{dataset}`` catch-all,
+    and a corpus search is not one of them. Its own prefix is what keeps a
+    question from being routed as if it were a telemetry query — and what keeps
+    the catch-all from ever shadowing it."""
+    from app.main import app
 
-    from app.routers import data
+    paths = {route.path for route in app.routes}
 
-    source = inspect.getsource(data)
-    assert source.index("/regulations/search") < source.index('"/{dataset}"')
+    assert "/regulations/search" in paths
+    assert not any(p.startswith("/data/regulations") for p in paths)
 
 
 # ── Naming an article is a lookup, not a search ──────────────────────────────
 
 
 def test_an_article_reference_is_recognised_in_a_question():
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("what does B8.2.8 say") == ["B8.2.8"]
     assert _article_references("compare C10.7.2 and A3.3.1") == ["C10.7.2", "A3.3.1"]
 
 
 def test_a_bare_section_header_counts_as_a_reference():
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("what is in C2") == ["C2"]
 
@@ -203,26 +204,26 @@ def test_a_bare_section_header_counts_as_a_reference():
 def test_a_lowercase_reference_is_normalised():
     """Article numbers are stored upper-cased; a question is typed however the
     reader types it."""
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("what does b8.2.8 say") == ["B8.2.8"]
 
 
 def test_ordinary_prose_is_not_mistaken_for_a_reference():
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("who is quickest in practice today") == []
     assert _article_references("how many power unit elements are allowed") == []
 
 
 def test_a_reference_is_not_matched_inside_a_longer_token():
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("the VF5.2 chassis") == []
 
 
 def test_a_repeated_reference_is_asked_for_once():
-    from app.services.storage import _article_references
+    from app.regulations.store import _article_references
 
     assert _article_references("does B8.2.8 contradict B8.2.8") == ["B8.2.8"]
 
@@ -236,7 +237,7 @@ def test_the_named_article_outranks_the_fuzzy_hits():
     """
     import asyncio
 
-    from app.services.storage import IngestionStore
+    from app.regulations.store import RegulationStore
 
     fuzzy = [
         {"section": "B", "article": "B8.2.5", "score": 10.32},
@@ -299,9 +300,9 @@ class _FakeMongo:
         return _FakeCursor(rows)
 
     async def search(self, query, season=2026, limit=6):
-        from app.services.storage import IngestionStore
+        from app.regulations.store import RegulationStore
 
-        return await IngestionStore(self).search_regulations(
+        return await RegulationStore(self).search_regulations(
             query, season=season, limit=limit
         )
 
@@ -417,7 +418,7 @@ of four drivers, and any new driver may score points in the Championship.
 
 
 def test_the_guard_needs_both_halves():
-    from app.services.regulations import _is_cross_reference
+    from app.regulations.source import _is_cross_reference
 
     # A citation: unfinished line, and the remainder cannot open an article.
     assert _is_cross_reference("prescribed in Articles B8.2.2,", "and B8.2.4 of any")
@@ -474,10 +475,10 @@ async def test_an_article_the_source_no_longer_has_is_removed():
     """A chunker fix that stops emitting a phantom article must be able to
     unpublish it. Upserting alone left C3.1.1 — a cross-reference mistaken for
     a header — searchable after the re-ingest that corrected it."""
-    from app.services.storage import IngestionStore
+    from app.regulations.store import RegulationStore
 
     db = _FakeRegulations([_stored(2026, "C", "C3.1"), _stored(2026, "C", "C3.1.1")])
-    await IngestionStore(db).save_regulations([
+    await RegulationStore(db).save_regulations([
         Article(season=2026, section="C", issue=20, published="2026-08-05",
                 article="C3.1", heading="H", text="T", url="u"),
     ])
@@ -488,10 +489,10 @@ async def test_an_article_the_source_no_longer_has_is_removed():
 
 async def test_sections_absent_from_the_payload_are_untouched():
     """Re-ingesting Sporting alone must not delete Technical."""
-    from app.services.storage import IngestionStore
+    from app.regulations.store import RegulationStore
 
     db = _FakeRegulations([_stored(2026, "B", "B1.1"), _stored(2026, "C", "C3.1")])
-    await IngestionStore(db).save_regulations([
+    await RegulationStore(db).save_regulations([
         Article(season=2026, section="B", issue=8, published="2026-08-05",
                 article="B1.2", heading="H", text="T", url="u"),
     ])
@@ -503,10 +504,10 @@ async def test_sections_absent_from_the_payload_are_untouched():
 async def test_an_empty_payload_deletes_nothing():
     """A failed fetch returns no articles. Treating that as "the section is now
     empty" would wipe the corpus on an FIA outage."""
-    from app.services.storage import IngestionStore
+    from app.regulations.store import RegulationStore
 
     db = _FakeRegulations([_stored(2026, "B", "B1.1")])
-    assert await IngestionStore(db).save_regulations([]) == 0
+    assert await RegulationStore(db).save_regulations([]) == 0
     assert db.deleted == []
 
 
