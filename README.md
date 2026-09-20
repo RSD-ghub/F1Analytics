@@ -1,251 +1,184 @@
-# prompts
+# F1 Forecasting Platform
 
-Formula 1 Analytics Dashboard
+Calibrated probabilities for Formula 1 race outcomes, published with the track
+record that says how good they have been.
 
-## Build and run
+The product commitment is narrower than "predicts races": every forecast is
+**locked before the event it describes**, scored against the result afterwards,
+and shown beside its own history. A forecast that cannot be checked is not
+published, and a market the model cannot beat a base rate on is not published
+either — the pre-qualifying window deliberately carries no win probability,
+because on two held-out seasons its win-market skill was indistinguishable from
+guessing.
 
+Three surfaces sit on top of that: **forecasts** for the next race, the **track
+record** of everything forecast so far, and **Bernie**, an AI pit-wall
+strategist who may rephrase the facts he is given and may never introduce one.
 
-With JDK21
+> **Note:** this replaced a Helidon/Java + Oracle JET application in August 2026.
+> Nothing of that stack remains. If you find instructions mentioning `mvn`,
+> GraalVM or `/f1/ingest`, they are stale.
+
+---
+
+## Architecture
+
+Four FastAPI services over MongoDB, with a React frontend.
+
+| Service | Port | Database | Public | Responsibility |
+|---|---|---|---|---|
+| mongodb | 27017 | — | no | — |
+| ingestion-service | 8001 | `f1_ingestion` | no | FastF1 + FIA acquisition, completeness, the regulations corpus |
+| prediction-service | 8002 | `f1_prediction` | no | Feature snapshots, training, locked forecasts |
+| scoring-service | 8003 | `f1_scoring` | no | Reconciliation and Brier scoring against baselines |
+| core-api | 8000 | `f1_core` | **yes** | Auth, dashboard aggregation, Bernie, One Blog |
+| frontend (Vite) | 5173 | — | yes | React 18, React Router, Recharts |
+
+**Only `core-api` is publicly reachable.** The other three have no published
+host port in production compose and are reached solely over the compose network.
+That is what makes core-api the single place authentication is enforced — if an
+internal service ever starts publishing a host port, that property is quietly
+gone. `compose-preflight.sh` checks for exactly that.
+
+Shared code lives in `shared/f1_common` (settings, Mongo, health, LLM client)
+and is installed into each service as an editable dependency.
+
+---
+
+## Running it
+
+Prerequisites: MongoDB on 27017, a Python venv at `.venv`, `npm`.
+
 ```bash
-mvn package
-java -jar target/prompts.jar
+export $(grep -E '^(JWT_SECRET|TINKER_API_KEY|TINKER_BASE_URL|INKLING_MODEL)=' .env | sed 's/"//g' | xargs)
+
+.venv/bin/python -m uvicorn app.main:app --port 8001 --app-dir services/ingestion-service &
+INGESTION_SERVICE_URL=http://localhost:8001 \
+  .venv/bin/python -m uvicorn app.main:app --port 8002 --app-dir services/prediction-service &
+MONGO_DATABASE=f1_scoring INGESTION_SERVICE_URL=http://localhost:8001 PREDICTION_SERVICE_URL=http://localhost:8002 \
+  .venv/bin/python -m uvicorn app.main:app --port 8003 --app-dir services/scoring-service &
+INGESTION_SERVICE_URL=http://localhost:8001 PREDICTION_SERVICE_URL=http://localhost:8002 SCORING_SERVICE_URL=http://localhost:8003 \
+  .venv/bin/python -m uvicorn app.main:app --port 8000 --app-dir services/core-api &
+
+cd frontend/f1-react && npm run dev
 ```
 
-## Frontend Source Of Truth
+Compose hostnames do not resolve outside Docker, which is why each service is
+handed the others' URLs explicitly above.
 
-- Use `frontend/f1-ui/src` as the editable frontend source.
-- The backend serves static files from `src/main/resources/web/f1`.
-- After frontend rebuild, copy the generated web assets into `src/main/resources/web/f1` so runtime matches source.
-- Dashboard race background image source: Pexels photo `29252117` (stored locally as `images/f1-race-bg.jpg`).
+Verify the whole product path — not just liveness:
 
-## FastF1 Local Ingestion (No Docker)
-
-- The FastF1 pipeline now runs with local Python, not Docker.
-- Ingest script location: `scripts/fastf1-ingest/ingest.py`
-- Requirements file: `scripts/fastf1-ingest/requirements.txt`
-
-Install dependencies once:
 ```bash
-py -3 -m pip install -r scripts/fastf1-ingest/requirements.txt
+bash .claude/skills/run-f1-dashboard/smoke.sh
 ```
 
-Manual ingest examples:
+26 checks, each stating what it proves. It asserts the guarantees that would
+otherwise fail silently: re-locking a forecast returns 409, a pre-quali forecast
+carries no win probability, wrong-password and unknown-account responses are
+byte-identical, every blog entry cites sources, Bernie's reply contains no
+reasoning-trace markers.
+
+---
+
+## Getting data in
+
 ```bash
-curl -X POST "http://localhost:8082/f1/ingest/season/2025"
-curl -X POST "http://localhost:8082/f1/ingest/backfill?from=2010&to=2026"
-curl -X GET "http://localhost:8082/f1/ingest/status"
+# Classifications + qualifying, all seasons. What the model trains on.
+.venv/bin/python services/ingestion-service/scripts/backfill.py results 2010 2026
+
+# Practice long-run pace (2018+ only).
+.venv/bin/python services/ingestion-service/scripts/backfill.py practice 2018 2026
+
+# Laps, stints, pit stops, weather, race control. 2018+ only — the first season
+# with lap data.
+.venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2025
+
+# The FIA regulations, chunked by article. Re-run when a section is reissued.
+.venv/bin/python services/ingestion-service/scripts/ingest_regulations.py 2026
 ```
 
-Quick verification:
-- Run a season ingest.
-- Check `/f1/ingest/status` returns `state: SUCCESS`.
-- Confirm `rowCounts` has non-zero values for available domains.
+Two things come in over the running service rather than from a script — the
+forward calendar, which the scheduler needs before it can place anything, and
+the penalty-adjusted starting grid, which is normally automatic and only forced
+here when you want it early:
 
-## Predictive Race Analytics
-
-Predicts finish positions, optimal pit window, compound strategy, and lap time forecast for any ingested race.
-Trained on all years of data (2010–present) using a `RandomForestRegressor`; falls back to a weighted historical average if scikit-learn is not installed.
-
-### Install dependencies once
 ```bash
-py -3 -m pip install -r scripts/predict/requirements.txt
+curl -X POST "localhost:8001/forward/refresh-calendar?from_season=2026&to_season=2027"
+
+# 200 = applied · 409 = FIA has not published yet · 502 = published but unreadable
+curl -X POST "localhost:8001/forward/starting-grid/2026/14"
 ```
 
-### API endpoints
+FastF1 allows 500 calls per hour. A full 2018–2025 pass exceeds it and stops
+partway with the reason logged; re-run after the hour rolls over, as completed
+sessions are not re-fetched. Depth is tracked per session, so "complete" always
+means complete *at the depth requested*.
+
+Once the services are up this mostly runs itself: finished races are ingested,
+starting grids are confirmed from FIA PDFs as they publish, and forecasts are
+locked and scored on schedule.
+
+---
+
+## Forecasts
+
+Three lock windows, each conditioned on what is actually known at the time:
+
+| Window | Conditioned on | Publishes |
+|---|---|---|
+| `pre_quali` | Form and history only | podium, points |
+| `post_quali` | Qualifying classification | win, podium, points |
+| `final_grid` | Penalty-adjusted starting grid | win, podium, points |
+
+A locked forecast is immutable — re-locking returns 409 — because a forecast you
+can edit after the fact is not a forecast. Sampling is seeded on the prediction
+id, so a backtest re-run reproduces the published numbers exactly.
+
+Current model: `race-plackett-luce-v4`, 16 features, 20,000 sampled runs.
+Training and promotion live in `services/prediction-service/app/training/`;
+promotion guards against holdout burn as well as against a worse model.
+
+---
+
+## Tests
+
 ```bash
-# Get prediction for a race (cached after first run)
-curl -X GET "http://localhost:8082/f1/predict/race?season=2024&round=5"
-
-# Force recompute (evicts cache and reruns the model)
-curl -X POST "http://localhost:8082/f1/predict/race/refresh?season=2024&round=5"
+for s in ingestion-service prediction-service scoring-service core-api; do
+  (cd services/$s && ../../.venv/bin/python -m pytest tests/ -q)
+done
 ```
 
-### Response shape
-```json
-{
-  "season": 2024,
-  "round": 5,
-  "raceName": "Monaco Grand Prix",
-  "circuit": "Monte Carlo",
-  "predictions": [
-    {
-      "driver": "Max Verstappen",
-      "team": "Red Bull Racing",
-      "actualPosition": 1,
-      "predictedPosition": 1,
-      "positionConfidence": 0.87,
-      "predictedPoints": 25,
-      "historicalWinsAtCircuit": 3,
-      "historicalAvgPositionAtCircuit": 1.8,
-      "seasonAvgPosition": 1.4
-    }
-  ],
-  "strategy": {
-    "recommendedPitLap": 28,
-    "recommendedCompoundStrategy": "MEDIUM->HARD",
-    "avgPitStopsAtCircuit": 1.9
-  },
-  "lapTimeForecast": [
-    { "compound": "SOFT",   "predictedAvgLapTimeSeconds": 77.4, "sampleSize": 312 },
-    { "compound": "MEDIUM", "predictedAvgLapTimeSeconds": 78.1, "sampleSize": 489 },
-    { "compound": "HARD",   "predictedAvgLapTimeSeconds": 79.3, "sampleSize": 201 }
-  ],
-  "modelInfo": {
-    "type": "RandomForestRegressor",
-    "trainedOnSeasons": [2010, 2011, "...", 2024],
-    "totalHistoricalRaces": 285,
-    "circuitHistoricalRaces": 14
-  }
-}
-```
+522 tests. Many assert measured results rather than behaviour — the regulation
+index weights, the withheld circuit features, the market policy — so that a
+future change that quietly undoes a measurement fails loudly.
 
-### Notes
-- Past-season predictions are cached permanently; current-season predictions expire after 7 days.
-- The model is trained fresh on each cache-miss call. For large datasets this takes ~5–15 seconds.
-- Data must be ingested first via the FastF1 ingest pipeline (see above).
+---
 
-## Exercise the application
+## Deploying
 
-Basic:
-```
-curl -X GET http://localhost:8080/simple-greet
-Hello World!
-```
+See [DEPLOY.md](DEPLOY.md). One small VM running `docker-compose.prod.yml`, with
+Caddy terminating TLS as the only thing on the public interface.
 
+**The compose path has never been executed.** There is no Docker on the machine
+this was built on, so the images, the container network and the Caddy hop get
+their first real test on the host. `compose-preflight.sh` catches what can be
+caught statically — dangling service references, missing build contexts, env
+vars compose expects that `.env` does not supply — and cannot replace running it.
 
-JSON:
-```
-curl -X GET http://localhost:8080/greet
-{"message":"Hello World!"}
+---
 
-curl -X GET http://localhost:8080/greet/Joe
-{"message":"Hello Joe!"}
+## The rules this codebase keeps
 
-curl -X PUT -H "Content-Type: application/json" -d '{"greeting" : "Hola"}' http://localhost:8080/greet/greeting
-
-curl -X GET http://localhost:8080/greet/Jose
-{"message":"Hola Jose!"}
-```
-
-
-
-## Try health
-
-```
-curl -s -X GET http://localhost:8080/health
-{"outcome":"UP",...
-
-```
-
-
-## Building a Native Image
-
-The generation of native binaries requires an installation of GraalVM 22.1.0+.
-
-You can build a native binary using Maven as follows:
-
-```
-mvn -Pnative-image install -DskipTests
-```
-
-The generation of the executable binary may take a few minutes to complete depending on
-your hardware and operating system. When completed, the executable file will be available
-under the `target` directory and be named after the artifact ID you have chosen during the
-project generation phase.
-
-
-
-## Try metrics
-
-```
-# Prometheus Format
-curl -s -X GET http://localhost:8080/metrics
-# TYPE base:gc_g1_young_generation_count gauge
-. . .
-
-# JSON Format
-curl -H 'Accept: application/json' -X GET http://localhost:8080/metrics
-{"base":...
-. . .
-```
-
-
-
-## Building the Docker Image
-
-```
-docker build -t prompts .
-```
-
-## Running the Docker Image
-
-```
-docker run --rm -p 8080:8080 prompts:latest
-```
-
-Exercise the application as described above.
-                                
-
-## Run the application in Kubernetes
-
-If you don’t have access to a Kubernetes cluster, you can [install one](https://helidon.io/docs/latest/#/about/kubernetes) on your desktop.
-
-### Verify connectivity to cluster
-
-```
-kubectl cluster-info                        # Verify which cluster
-kubectl get pods                            # Verify connectivity to cluster
-```
-
-### Deploy the application to Kubernetes
-
-```
-kubectl create -f app.yaml                              # Deploy application
-kubectl get pods                                        # Wait for quickstart pod to be RUNNING
-kubectl get service  prompts                     # Get service info
-kubectl port-forward service/prompts 8081:8080   # Forward service port to 8081
-```
-
-You can now exercise the application as you did before but use the port number 8081.
-
-After you’re done, cleanup.
-
-```
-kubectl delete -f app.yaml
-```
-
-
-## Building a Custom Runtime Image
-
-Build the custom runtime image using the jlink image profile:
-
-```
-mvn package -Pjlink-image
-```
-
-This uses the helidon-maven-plugin to perform the custom image generation.
-After the build completes it will report some statistics about the build including the reduction in image size.
-
-The target/prompts-jri directory is a self contained custom image of your application. It contains your application,
-its runtime dependencies and the JDK modules it depends on. You can start your application using the provide start script:
-
-```
-./target/prompts-jri/bin/start
-```
-
-Class Data Sharing (CDS) Archive
-Also included in the custom image is a Class Data Sharing (CDS) archive that improves your application’s startup
-performance and in-memory footprint. You can learn more about Class Data Sharing in the JDK documentation.
-
-The CDS archive increases your image size to get these performance optimizations. It can be of significant size (tens of MB).
-The size of the CDS archive is reported at the end of the build output.
-
-If you’d rather have a smaller image size (with a slightly increased startup time) you can skip the creation of the CDS
-archive by executing your build like this:
-
-```
-mvn package -Pjlink-image -Djlink.image.addClassDataSharingArchive=false
-```
-
-For more information on available configuration options see the helidon-maven-plugin documentation.
-                                
+- **A forecast is locked before the event and scored after it.** No edits, no
+  retroactive windows, no scoring a forecast locked after the race started.
+- **A market is published only where skill was measured.** Pre-quali publishes
+  no win probability, and the reason is recorded next to the policy.
+- **Bernie may rephrase facts he is given; he may never introduce one.** Facts
+  are re-derived and re-injected every turn, and prior replies are explicitly
+  not a fact source.
+- **Every claim traces to a source.** Blog entries cite theirs; regulation
+  answers cite the article number, which is why the corpus is chunked on article
+  boundaries rather than by size.
+- **A measurement that did not justify a feature is recorded, not deleted.**
+  Circuit archetypes were built, evaluated and withheld; the numbers are in
+  `prediction-service/app/services/model.py`.
