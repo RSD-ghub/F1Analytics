@@ -1,212 +1,218 @@
 {
   "circuits": {
-    "Austin": "balanced",
-    "Baku": "balanced",
-    "Barcelona": "balanced",
-    "Budapest": "balanced",
-    "Hockenheim": "technical",
-    "Imola": "technical",
-    "Istanbul": "power",
-    "Jeddah": "technical",
-    "Las Vegas": "power",
-    "Le Castellet": "power",
-    "Lusail": "balanced",
-    "Marina Bay": "power",
-    "Melbourne": "power",
-    "Mexico City": "balanced",
-    "Miami": "balanced",
-    "Miami Gardens": "balanced",
-    "Monaco": "technical",
-    "Monte Carlo": "technical",
-    "Montr\u00e9al": "power",
-    "Monza": "balanced",
-    "N\u00fcrburgring": "power",
-    "Portim\u00e3o": "balanced",
-    "Sakhir": "power",
-    "Shanghai": "balanced",
-    "Silverstone": "power",
-    "Singapore": "technical",
-    "Sochi": "power",
-    "Spa-Francorchamps": "power",
-    "Spielberg": "power",
-    "Suzuka": "power",
-    "S\u00e3o Paulo": "power",
-    "Yas Island": "balanced",
-    "Yas Marina": "balanced",
-    "Zandvoort": "power"
+    "austin": "power",
+    "baku": "power",
+    "barcelona": "power",
+    "budapest": "balanced",
+    "hockenheim": "balanced",
+    "imola": "technical",
+    "istanbul": "balanced",
+    "jeddah": "technical",
+    "las vegas": "power",
+    "le castellet": "balanced",
+    "lusail": "power",
+    "marina bay": "balanced",
+    "melbourne": "balanced",
+    "mexico city": "power",
+    "miami": "power",
+    "monte carlo": "technical",
+    "montr\u00e9al": "balanced",
+    "monza": "power",
+    "n\u00fcrburgring": "balanced",
+    "portim\u00e3o": "power",
+    "sakhir": "balanced",
+    "shanghai": "power",
+    "silverstone": "balanced",
+    "sochi": "balanced",
+    "spa-francorchamps": "balanced",
+    "spielberg": "balanced",
+    "suzuka": "balanced",
+    "s\u00e3o paulo": "balanced",
+    "yas island": "power",
+    "zandvoort": "balanced"
   },
   "clusters": 3,
   "fitted_to_season": 2025,
   "metrics": {
-    "Austin": {
+    "austin": {
       "corners_per_minute": 11.7958,
       "longest_straight_pct": 22.392,
-      "median_lap_seconds": 101.731
+      "median_lap_seconds": 101.731,
+      "median_speed_trap_kph": 301.0
     },
-    "Baku": {
+    "baku": {
       "corners_per_minute": 11.0936,
       "longest_straight_pct": 21.685,
-      "median_lap_seconds": 108.17
+      "median_lap_seconds": 108.17,
+      "median_speed_trap_kph": 318.0
     },
-    "Barcelona": {
+    "barcelona": {
       "corners_per_minute": 10.0987,
       "longest_straight_pct": 26.259,
-      "median_lap_seconds": 83.179
+      "median_lap_seconds": 83.179,
+      "median_speed_trap_kph": 305.0
     },
-    "Budapest": {
+    "budapest": {
       "corners_per_minute": 11.4507,
       "longest_straight_pct": 21.215,
-      "median_lap_seconds": 83.838
+      "median_lap_seconds": 83.838,
+      "median_speed_trap_kph": 290.0
     },
-    "Hockenheim": {
+    "hockenheim": {
       "corners_per_minute": 12.51,
       "longest_straight_pct": 13.408,
-      "median_lap_seconds": 81.535
+      "median_lap_seconds": 81.535,
+      "median_speed_trap_kph": 304.0
     },
-    "Imola": {
+    "imola": {
       "corners_per_minute": 13.911,
       "longest_straight_pct": 12.957,
-      "median_lap_seconds": 81.95
+      "median_lap_seconds": 81.95,
+      "median_speed_trap_kph": 285.0
     },
-    "Istanbul": {
+    "istanbul": {
       "corners_per_minute": 8.4414,
       "longest_straight_pct": 15.104,
-      "median_lap_seconds": 99.509
+      "median_lap_seconds": 99.509,
+      "median_speed_trap_kph": 282.0
     },
-    "Jeddah": {
+    "jeddah": {
       "corners_per_minute": 17.0569,
       "longest_straight_pct": 17.96,
-      "median_lap_seconds": 94.976
+      "median_lap_seconds": 94.976,
+      "median_speed_trap_kph": 307.0
     },
-    "Las Vegas": {
+    "las vegas": {
       "corners_per_minute": 10.3945,
       "longest_straight_pct": 19.437,
-      "median_lap_seconds": 98.129
+      "median_lap_seconds": 98.129,
+      "median_speed_trap_kph": 313.0
     },
-    "Le Castellet": {
+    "le castellet": {
       "corners_per_minute": 9.0797,
       "longest_straight_pct": 19.669,
-      "median_lap_seconds": 99.122
+      "median_lap_seconds": 99.122,
+      "median_speed_trap_kph": 303.0
     },
-    "Lusail": {
+    "lusail": {
       "corners_per_minute": 10.9202,
       "longest_straight_pct": 23.088,
-      "median_lap_seconds": 87.91
+      "median_lap_seconds": 87.91,
+      "median_speed_trap_kph": 305.0
     },
-    "Marina Bay": {
-      "corners_per_minute": 11.4548,
+    "marina bay": {
+      "corners_per_minute": 11.0527,
       "longest_straight_pct": 11.359,
-      "median_lap_seconds": 99.522
+      "median_lap_seconds": 103.142,
+      "median_speed_trap_kph": 284.0
     },
-    "Melbourne": {
+    "melbourne": {
       "corners_per_minute": 9.515,
       "longest_straight_pct": 19.973,
-      "median_lap_seconds": 88.282
+      "median_lap_seconds": 88.282,
+      "median_speed_trap_kph": 289.0
     },
-    "Mexico City": {
+    "mexico city": {
       "corners_per_minute": 12.2495,
       "longest_straight_pct": 32.612,
-      "median_lap_seconds": 83.269
+      "median_lap_seconds": 83.269,
+      "median_speed_trap_kph": 328.0
     },
-    "Miami": {
-      "corners_per_minute": 12.1849,
+    "miami": {
+      "corners_per_minute": 12.2164,
       "longest_straight_pct": 25.23,
-      "median_lap_seconds": 93.559
+      "median_lap_seconds": 93.317,
+      "median_speed_trap_kph": 314.0
     },
-    "Miami Gardens": {
-      "corners_per_minute": 12.3057,
-      "longest_straight_pct": 25.23,
-      "median_lap_seconds": 92.64
-    },
-    "Monaco": {
-      "corners_per_minute": 14.3896,
+    "monte carlo": {
+      "corners_per_minute": 14.4755,
       "longest_straight_pct": 15.96,
-      "median_lap_seconds": 79.224
+      "median_lap_seconds": 78.754,
+      "median_speed_trap_kph": 279.0
     },
-    "Monte Carlo": {
-      "corners_per_minute": 14.5458,
-      "longest_straight_pct": 15.96,
-      "median_lap_seconds": 78.373
-    },
-    "Montr\u00e9al": {
+    "montr\u00e9al": {
       "corners_per_minute": 10.7901,
       "longest_straight_pct": 17.079,
-      "median_lap_seconds": 77.849
+      "median_lap_seconds": 77.849,
+      "median_speed_trap_kph": 308.0
     },
-    "Monza": {
+    "monza": {
       "corners_per_minute": 7.6617,
       "longest_straight_pct": 25.032,
-      "median_lap_seconds": 86.143
+      "median_lap_seconds": 86.143,
+      "median_speed_trap_kph": 322.0
     },
-    "N\u00fcrburgring": {
+    "n\u00fcrburgring": {
       "corners_per_minute": 9.6553,
       "longest_straight_pct": 18.196,
-      "median_lap_seconds": 93.213
+      "median_lap_seconds": 93.213,
+      "median_speed_trap_kph": 293.0
     },
-    "Portim\u00e3o": {
+    "portim\u00e3o": {
       "corners_per_minute": 10.8429,
       "longest_straight_pct": 26.255,
-      "median_lap_seconds": 83.004
+      "median_lap_seconds": 83.004,
+      "median_speed_trap_kph": 296.0
     },
-    "Sakhir": {
+    "sakhir": {
       "corners_per_minute": 9.228,
       "longest_straight_pct": 21.556,
-      "median_lap_seconds": 97.529
+      "median_lap_seconds": 97.529,
+      "median_speed_trap_kph": 298.0
     },
-    "Shanghai": {
+    "shanghai": {
       "corners_per_minute": 9.6252,
       "longest_straight_pct": 25.696,
-      "median_lap_seconds": 99.738
+      "median_lap_seconds": 99.738,
+      "median_speed_trap_kph": 310.0
     },
-    "Silverstone": {
+    "silverstone": {
       "corners_per_minute": 11.5623,
       "longest_straight_pct": 15.166,
-      "median_lap_seconds": 93.407
+      "median_lap_seconds": 93.407,
+      "median_speed_trap_kph": 302.0
     },
-    "Singapore": {
-      "corners_per_minute": 12.7208,
-      "longest_straight_pct": 10.818,
-      "median_lap_seconds": 108.483
-    },
-    "Sochi": {
+    "sochi": {
       "corners_per_minute": 10.6771,
       "longest_straight_pct": 13.605,
-      "median_lap_seconds": 101.151
+      "median_lap_seconds": 101.151,
+      "median_speed_trap_kph": 296.0
     },
-    "Spa-Francorchamps": {
+    "spa-francorchamps": {
       "corners_per_minute": 10.2596,
       "longest_straight_pct": 16.634,
-      "median_lap_seconds": 111.115
+      "median_lap_seconds": 111.115,
+      "median_speed_trap_kph": 309.0
     },
-    "Spielberg": {
+    "spielberg": {
       "corners_per_minute": 8.5137,
       "longest_straight_pct": 19.145,
-      "median_lap_seconds": 70.475
+      "median_lap_seconds": 70.475,
+      "median_speed_trap_kph": 295.0
     },
-    "Suzuka": {
+    "suzuka": {
       "corners_per_minute": 11.1354,
       "longest_straight_pct": 18.049,
-      "median_lap_seconds": 96.988
+      "median_lap_seconds": 96.988,
+      "median_speed_trap_kph": 299.0
     },
-    "S\u00e3o Paulo": {
+    "s\u00e3o paulo": {
       "corners_per_minute": 11.853,
       "longest_straight_pct": 18.182,
-      "median_lap_seconds": 75.93
+      "median_lap_seconds": 75.93,
+      "median_speed_trap_kph": 299.0
     },
-    "Yas Island": {
-      "corners_per_minute": 10.5562,
+    "yas island": {
+      "corners_per_minute": 10.5054,
       "longest_straight_pct": 23.585,
-      "median_lap_seconds": 90.941
+      "median_lap_seconds": 91.382,
+      "median_speed_trap_kph": 302.0
     },
-    "Yas Marina": {
-      "corners_per_minute": 11.9519,
-      "longest_straight_pct": 22.806,
-      "median_lap_seconds": 105.423
-    },
-    "Zandvoort": {
+    "zandvoort": {
       "corners_per_minute": 10.9493,
       "longest_straight_pct": 20.339,
-      "median_lap_seconds": 76.717
+      "median_lap_seconds": 76.717,
+      "median_speed_trap_kph": 297.0
     }
   },
   "team_mastery": {
@@ -274,5 +280,5 @@
       "williams": -0.3143
     }
   },
-  "version": "archetypes-v1-to2025-k3"
+  "version": "archetypes-v2-to2025-k3"
 }

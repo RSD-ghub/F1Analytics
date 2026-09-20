@@ -210,6 +210,21 @@ def _shrunk(delta: float, count: int, k: float = SHRINKAGE_K) -> float:
     return delta * (count / (count + k))
 
 
+def _same_circuit(a: Optional[str], b: Optional[str]) -> bool:
+    """Are these two names the same track?
+
+    A raw string comparison split four circuits in the corpus: a driver's
+    Monaco record under "Monte Carlo" did not count toward their record at
+    "Monaco", and the same for Singapore/Marina Bay, Miami/Miami Gardens and
+    Yas Island/Yas Marina. ``circuit_avg_finish`` is a real model feature, so
+    that was half a driver's history at four venues going quietly missing.
+
+    Shares the archetype normaliser rather than a second alias table — one rule
+    about what a circuit is called, used everywhere it is asked.
+    """
+    return circuits.normalise(a) == circuits.normalise(b)
+
+
 def _archetype_delta(
     rows: Sequence[RaceResult], archetype: str, archetypes
 ) -> float:
@@ -364,7 +379,9 @@ def _driver_features(
         dnf_rate=sum(1 for row in ordered if row.retired) / len(ordered),
         team_avg_finish=_team_average(history, team, season),
         circuit_avg_finish=(
-            _average_finish([row for row in ordered if row.circuit == circuit])
+            _average_finish(
+                [row for row in ordered if _same_circuit(row.circuit, circuit)]
+            )
             if circuit
             else NEUTRAL_POSITION
         ),

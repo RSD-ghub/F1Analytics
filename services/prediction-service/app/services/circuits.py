@@ -39,8 +39,29 @@ ARTIFACT_PATH = os.path.join(
 UNKNOWN = "unknown"
 
 
+#: The same track under two names, as the corpus actually spells it.
+#:
+#: Not cosmetic. Marina Bay and Singapore are one circuit, and splitting them
+#: split their laps: 258 rows filed under one name and 40 under the other, each
+#: half separately clustered, each landing in a different archetype. Monte Carlo
+#: and Monaco did the same, and so did Miami/Miami Gardens and Yas
+#: Island/Yas Marina — eight names for four circuits. A race then got a
+#: different archetype depending on which spelling the source happened to use.
+#:
+#: Keyed and valued in normalised form; the survivor is the spelling with more
+#: of the corpus behind it.
+_ALIASES = {
+    "singapore": "marina bay",
+    "monaco": "monte carlo",
+    "miami gardens": "miami",
+    "yas marina": "yas island",
+}
+
+
 def normalise(circuit: str) -> str:
-    return " ".join((circuit or "").split()).lower()
+    """Canonical circuit key: whitespace-collapsed, lowercased, de-aliased."""
+    key = " ".join((circuit or "").split()).lower()
+    return _ALIASES.get(key, key)
 
 
 class CircuitArchetypes:

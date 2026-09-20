@@ -75,9 +75,10 @@ BASE_FEATURES = (
     "practice_long_run_gap_pct",
 )
 
-#: Fitted, measured, and left out. Circuit archetypes, per-era team affinity and
-#: regulation-reset mastery were built, trained and evaluated against v4 on the
-#: same held-out seasons:
+#: Fitted, measured, and left out. Twice.
+#:
+#: Circuit archetypes, per-era team affinity and regulation-reset mastery were
+#: built, trained and evaluated against v4 on the held-out seasons:
 #:
 #:     pre_quali   6.543% -> 6.50%
 #:     post_quali  8.292% -> 8.26%
@@ -87,13 +88,28 @@ BASE_FEATURES = (
 #: fitted with the wrong sign (-0.011), which is what a feature indistinguishable
 #: from noise looks like.
 #:
-#: The features themselves are kept and tested in ``services/circuits.py``,
-#: ``services/team_lineage.py`` and ``features.py``; only their entry into the
-#: model is withdrawn. The likeliest reason they failed is that three clusters
-#: built from corner density and straight fraction are too coarse to separate
-#: what a car needs — Baku, with F1's longest straight, clusters with Budapest.
-#: Straight-line speed would separate them and is the deferred phase-2 work.
-#: Re-add these names when there is a measurement that justifies them.
+#: The diagnosis then was that the archetypes were too coarse: clusters built
+#: from corner density and straight fraction could not tell a power circuit from
+#: a high-downforce one, and Monza came out "balanced" while Marina Bay came out
+#: "power". Straight-line speed was named as the fix and deferred behind a lap
+#: schema change and a re-ingest.
+#:
+#: That was done. Speed traps are captured, the archetypes are re-fitted on
+#: measured top speed (v2), and they are now visibly right: Monza and Mexico City
+#: lead the power cluster, Monte Carlo and Marina Bay sit at the bottom. The
+#: features were re-measured on the better archetypes:
+#:
+#:     pre_quali   6.543% -> 6.526%
+#:     post_quali  8.290% -> 8.265%
+#:
+#: Fractionally worse again, and by almost exactly the same margin. So the
+#: archetypes were not the problem. Whatever a circuit asks of a car, a driver's
+#: average finish at circuits like this one does not carry it over 225 races —
+#: or it is already carried by ``circuit_avg_finish`` and general pace.
+#:
+#: The features are computed, tested and available; only their entry into the
+#: model is withdrawn. Re-add these names when there is a measurement that
+#: justifies them — two have now said otherwise.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",

@@ -11,7 +11,7 @@ reads the artifact — so prediction-service keeps no FastF1 dependency.
 ``--to-season`` bounds which races contribute lap times, so the artifact can be
 fitted on training seasons alone and the held-out seasons stay held out.
 
-Two metrics per circuit, both measurable:
+Three metrics per circuit, all measurable:
 
 * **corner density** — corners per minute of lap time. Monza's eleven corners
   spread over a long lap is a very different track from Monaco's nineteen over a
@@ -19,11 +19,9 @@ Two metrics per circuit, both measurable:
 * **mean lap time** — a proxy for circuit length, which separates the long
   power tracks from short technical ones.
 
-Top speed would be the most direct measure of power sensitivity and is
-deliberately absent: FastF1 serves SpeedST on every lap frame, but ingestion
-discards it, and capturing it needs a schema change plus a full re-ingest. The
-metric vector is built so it can be added as another dimension without changing
-anything downstream.
+* **median speed trap** — the most direct measure of power sensitivity, and the
+  reason the lap schema grew speed fields. Geometry can suggest a power circuit;
+  only this can confirm one.
 """
 
 import argparse
@@ -39,6 +37,20 @@ from pymongo import MongoClient  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("archetypes")
+
+def canonical(circuit):
+    """The circuit's canonical key, shared with the serving path.
+
+    Imported from ``app.services.circuits`` rather than reimplemented: the
+    artifact is keyed by whatever this returns and looked up by whatever that
+    module returns, so two copies of the rule would be two chances to disagree —
+    and a disagreement shows up as every race at one circuit silently scoring
+    ``unknown``.
+    """
+    from app.services.circuits import normalise
+
+    return normalise(circuit) if circuit else None
+
 
 ARTIFACT = os.path.join(os.path.dirname(__file__), "..", "app", "circuit_archetypes.json")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
@@ -58,7 +70,7 @@ def lap_time_by_circuit(db, to_season):
     for row in db["results"].find(
         {"season": {"$lte": to_season}}, {"season": 1, "round": 1, "circuit": 1}
     ):
-        rounds[(row["season"], row["round"])] = row.get("circuit")
+        rounds[(row["season"], row["round"])] = canonical(row.get("circuit"))
 
     times = {}
     for lap in db["laps"].find(
@@ -70,6 +82,44 @@ def lap_time_by_circuit(db, to_season):
         if circuit and 45 < seconds < 240:
             times.setdefault(circuit, []).append(seconds)
     return {c: float(np.median(v)) for c, v in times.items() if len(v) >= 200}
+
+
+def top_speed_by_circuit(db, to_season, minimum_laps=200):
+    """Median speed-trap reading per circuit, from the ingested corpus.
+
+    The direct measure of power sensitivity, and the reason the lap schema grew
+    speed fields. Corner geometry can only approximate this: ``_longest_straight``
+    says Barcelona spends more of its lap flat out than Monza, which is true of
+    the shape and false of the demand — eleven corners a minute against Monza's
+    eight. How fast the cars actually get is not a proxy for that question, it is
+    the answer to it.
+
+    Median rather than maximum: the fastest single reading of a weekend is a tow,
+    a slipstream or a DRS train, and it describes one lap rather than the circuit.
+
+    Zeros are absences, not slow laps — FastF1 leaves the trap empty on in-laps
+    and out-laps — so they are filtered rather than averaged in.
+    """
+    rounds = {}
+    for row in db["results"].find(
+        {"season": {"$lte": to_season}}, {"season": 1, "round": 1, "circuit": 1}
+    ):
+        rounds[(row["season"], row["round"])] = canonical(row.get("circuit"))
+
+    speeds = {}
+    for lap in db["laps"].find(
+        {"season": {"$lte": to_season}, "speed_trap_kph": {"$gt": 0}},
+        {"season": 1, "round": 1, "speed_trap_kph": 1},
+    ):
+        circuit = rounds.get((lap["season"], lap["round"]))
+        kph = lap.get("speed_trap_kph") or 0
+        # An F1 car does not trap below 150 or above 380 km/h; outside that is a
+        # sensor artefact rather than a reading.
+        if circuit and 150 < kph < 380:
+            speeds.setdefault(circuit, []).append(kph)
+    return {
+        c: float(np.median(v)) for c, v in speeds.items() if len(v) >= minimum_laps
+    }
 
 
 def corner_counts(circuits, to_season):
@@ -236,41 +286,52 @@ def main() -> int:
         {"season": {"$lte": args.to_season, "$gte": LAP_DATA_FROM}},
         {"season": 1, "round": 1, "circuit": 1},
     ).sort([("season", -1), ("round", -1)]):
-        circuit = row.get("circuit")
+        circuit = canonical(row.get("circuit"))
         if circuit in lap_times and circuit not in representative:
             representative[circuit] = (row["season"], row["round"])
 
     corners = corner_counts(representative, args.to_season)
+    top_speeds = top_speed_by_circuit(db, args.to_season)
+    logger.info("circuits with a usable speed trap sample: %d", len(top_speeds))
     # A failed corner fetch yields zeros, and zeros cluster: Mugello came back
     # with no geometry and was filed as the most technical circuit in the sport
     # purely because 0 corners and a 0% straight sit at one extreme of both
     # axes. Missing data must be excluded, not clustered.
     usable = sorted(
-        c for c in (set(lap_times) & set(corners))
+        c for c in (set(lap_times) & set(corners) & set(top_speeds))
         if corners[c][0] > 0 and corners[c][1] > 0
     )
     dropped = sorted((set(lap_times) & set(corners)) - set(usable))
     if dropped:
-        logger.warning("excluded %d circuit(s) with no corner geometry: %s",
+        # Now includes circuits that predate lap-level speed capture. Excluding
+        # them costs less than imputing a top speed for a circuit we have never
+        # measured one at.
+        logger.warning("excluded %d circuit(s) missing geometry or speed data: %s",
                        len(dropped), ", ".join(dropped))
-    logger.info("circuits with both lap times and corner data: %d", len(usable))
+    logger.info("circuits with geometry, lap times and speed data: %d", len(usable))
     if len(usable) < args.clusters * 3:
         logger.error("not enough circuits (%d) to fit %d clusters", len(usable), args.clusters)
         return 1
 
-    # Two dimensions, both *shape*: how often you turn, and how much of the lap
-    # is spent flat out.
+    # Three dimensions: how often you turn, how much of the lap is shaped like a
+    # straight, and how fast the cars actually get down it.
     #
-    # Lap time was a third and has been removed. It measures how big a circuit
-    # is, not what it asks of a car, and being the highest-variance axis it
-    # dominated the fit — the clusters came out sorted by lap length, with every
-    # long circuit labelled "power" and Monte Carlo grouped with Barcelona.
-    # Median lap time is still recorded in the artifact for reference; it just
-    # does not decide membership.
+    # The third is new, and is the point of capturing speed traps. The other two
+    # are geometry, and geometry can only approximate a power circuit: by
+    # straight fraction Barcelona spends more of its lap flat out than Monza,
+    # which is true of the shape and wrong about the demand. Trap speed is not a
+    # proxy for that question — it is the measurement.
+    #
+    # Lap time was a dimension once and was removed. It measures how big a
+    # circuit is rather than what it asks of a car, and being the highest-variance
+    # axis it dominated the fit: clusters came out sorted by lap length, every
+    # long circuit labelled "power", Monte Carlo grouped with Barcelona. It stays
+    # in the artifact for reference and does not decide membership.
     raw = np.array([
         [
             corners[c][0] / (lap_times[c] / 60.0),   # corners per minute
             corners[c][1] * 100.0,                   # longest straight, % of lap
+            top_speeds[c],                           # median speed trap, km/h
         ]
         for c in usable
     ], dtype=float)
@@ -278,15 +339,23 @@ def main() -> int:
 
     labels, centres = kmeans(standardised, args.clusters)
 
-    # Name clusters by how much of the lap is flat out, most first. The ordering
-    # is derived, not assumed: which circuits land in "power" is whatever the
-    # geometry says, and the label only describes the cluster that was found.
-    # Ordered by corner density, fewest first. Straight fraction was tried and
-    # mislabels: Barcelona has a longer straight than Monza as a share of the
-    # lap, but eleven corners a minute against Monza's eight — it is a
-    # high-downforce circuit with one straight attached, not a power track. How
-    # often a car has to turn is what separates the two demands.
-    order = np.argsort(centres[:, 0])
+    # Name clusters by measured top speed, fastest first.
+    #
+    # Corner density held this job while top speed was unavailable, and it was a
+    # stand-in: it asks how often a car turns, which correlates with power
+    # sensitivity without measuring it. Straight fraction was tried first and was
+    # worse — Barcelona's longest straight is a bigger share of its lap than
+    # Monza's, which makes it sound like a power circuit and it is a
+    # high-downforce one with a straight attached.
+    #
+    # Trap speed ends the argument by measuring the thing itself. The ranking it
+    # produces needs no defending: Mexico City and Monza at the top, Monte Carlo
+    # and Marina Bay at the bottom.
+    #
+    # The ordering is still derived rather than asserted — which circuits land in
+    # "power" is whatever the speeds say, and the label only describes the
+    # cluster that was found.
+    order = np.argsort(-centres[:, 2])
     naming = {int(cluster): LABEL_ORDER[rank] for rank, cluster in enumerate(order)}
 
     mapping = {circuit: naming[int(labels[i])] for i, circuit in enumerate(usable)}
@@ -297,12 +366,17 @@ def main() -> int:
         logger.info("%-18s (%d): %s", label, len(members), ", ".join(sorted(members)[:6]))
 
     payload = {
-        "version": "archetypes-v1-to{}-k{}".format(args.to_season, args.clusters),
+        # v2: clustered on measured trap speed as well as geometry, and keyed by
+        # canonical circuit name. A stored prediction cites this string, so a
+        # changed metric set has to change it — otherwise two different artifacts
+        # answer to one version and the forecast stops being reproducible.
+        "version": "archetypes-v2-to{}-k{}".format(args.to_season, args.clusters),
         "fitted_to_season": args.to_season,
         "clusters": args.clusters,
         "metrics": {
             c: {"corners_per_minute": round(raw[i][0], 4),
                 "longest_straight_pct": round(raw[i][1], 3),
+                "median_speed_trap_kph": round(raw[i][2], 1),
                 "median_lap_seconds": round(lap_times[c], 3)}
             for i, c in enumerate(usable)
         },
