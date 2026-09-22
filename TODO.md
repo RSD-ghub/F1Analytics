@@ -15,9 +15,10 @@ Ordered by what blocks what. Checked items are verified in the tree, not assumed
 
 ## Approved roadmap items, not yet built
 
-- [ ] **Surface grid penalties.** `grid_penalty_places` / `grid_penalty_reason` are persisted
-      on `QualifyingRow` (`ingestion-service/app/services/grid_resolution.py:118`) and read by
-      nothing. Needs to reach One Blog and Bernie's facts pack.
+- [x] **Surface grid penalties in Bernie.** Done 23 Sep. Penalties reach the facts pack worst
+      first with the stewards' wording verbatim. Note the stored rows predated the fields and
+      carried nothing — R13 and R14 grids were re-resolved to populate them.
+- [ ] **Surface grid penalties in One Blog.** Same data, still not on the page.
 - [ ] **Paddock news in One Blog**, and the same feed into Bernie so she can correlate.
       Not started. Needs a source decision first.
 
