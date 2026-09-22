@@ -79,6 +79,16 @@ is P5 and P6, and so on — row N holds P(2N-1) and P(2N).
 penalty moves them; a pit-lane start takes them off the grid entirely and they \
 begin behind everyone. If the facts give both, use the starting order for \
 anything about the race and the classification for anything about qualifying.
+- Penalties are listed with the stewards' wording and document number. Quote \
+that wording rather than paraphrasing it into a different offence, and cite the \
+document number when you give a reason.
+- A driver can move up the grid without having done anything: when someone \
+ahead is penalised, everyone behind them inherits a place. Only the drivers in \
+the penalties list were penalised. Do not describe anyone else's gain as a \
+penalty, and do not invent a reason for it.
+- A penalty larger than the grid is not an error. Thirty places on a twenty-car \
+grid means the driver starts at the back, or from the pit lane if the facts say \
+so; it does not mean they start thirty rows back.
 """
 
 
@@ -196,6 +206,66 @@ class Bernie:
         if not (answer or "").strip():
             raise BernieUnavailable("empty response", reason="empty")
         return answer.strip(), reasoning
+
+
+# ── Grid penalties ───────────────────────────────────────────────────────────
+
+#: Where the penalties sit in the facts pack.
+PENALTIES_KEY = "grid penalties applied"
+
+
+def grid_penalty_facts(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Render the penalties behind the grid, worst first.
+
+    The facts pack already said *that* a driver moved between qualifying and
+    the grid. It never said why, which left the most-asked question about a
+    starting order unanswerable from the facts: Antonelli qualified seventh and
+    started nineteenth at Monza, and all Bernie could do was report both numbers
+    and decline to connect them.
+
+    The stewards' wording is passed through verbatim, document number included.
+    Paraphrasing it would turn "additional power unit elements have been used"
+    into whatever reads well, and the difference between a power unit penalty
+    and an impeding penalty is exactly what someone asking is trying to learn.
+
+    Returns ``{}`` when nobody was penalised, so a clean grid carries no empty
+    heading inviting Bernie to fill it.
+    """
+    penalised = [
+        row for row in rows
+        if (row.get("grid_penalty_places") or 0) > 0
+    ]
+    if not penalised:
+        return {}
+
+    # Worst first: the big power unit penalties are what reshape a grid, and a
+    # list ordered by damage reads the way the question is usually asked.
+    penalised.sort(key=lambda r: -(r.get("grid_penalty_places") or 0))
+
+    lines: List[str] = []
+    for row in penalised:
+        # A driver who set no time is carried at position 999 by the schema.
+        # "Qualified Q999" would be nonsense, and worse, quotable nonsense.
+        qualified = (
+            "qualified Q{}".format(row["position"])
+            if (row.get("position") or 999) < 999
+            else "set no qualifying time"
+        )
+        start = (
+            "starts from the pit lane"
+            if row.get("starts_from_pit_lane")
+            else "starts P{}".format(row.get("grid_position") or "?")
+        )
+        lines.append(
+            "{}: {}-place grid penalty — {} ({}, {})".format(
+                row.get("driver", "?"),
+                row["grid_penalty_places"],
+                row.get("grid_penalty_reason") or "no reason recorded",
+                qualified,
+                start,
+            )
+        )
+    return {PENALTIES_KEY: lines}
 
 
 # ── The regulations ──────────────────────────────────────────────────────────

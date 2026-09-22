@@ -31,6 +31,7 @@ from app.services.bernie import (
     DISCLAIMER,
     Bernie,
     BernieUnavailable,
+    grid_penalty_facts,
     regulation_facts,
     why_this_prediction_facts,
 )
@@ -244,6 +245,11 @@ async def _weekend_facts(
             ]
             if moved:
                 facts["moved between qualifying and the grid"] = moved
+
+        # Built from every row, not just ``started``: a driver who set no
+        # qualifying time still carries a penalty, and Stroll took forty places
+        # at Spain having never set one.
+        facts.update(grid_penalty_facts(rows))
 
     practice = [
         row for row in (fetched.get("practice") or [])

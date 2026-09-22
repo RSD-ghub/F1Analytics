@@ -16,10 +16,12 @@ import pytest
 from app.models.conversation import Role, Thread, Turn
 from app.services.bernie import (
     DISCLAIMER,
+    PENALTIES_KEY,
     REGULATIONS_KEY,
     SYSTEM_PROMPT,
     Bernie,
     BernieUnavailable,
+    grid_penalty_facts,
     regulation_facts,
     why_this_prediction_facts,
 )
@@ -499,3 +501,103 @@ def test_the_truncation_marker_sits_beside_the_article_it_describes():
 
 def test_the_system_prompt_scopes_the_marker_to_its_own_article():
     assert "belongs to the article it sits beside and to no other" in SYSTEM_PROMPT
+
+
+# ── Grid penalties ───────────────────────────────────────────────────────────
+
+
+def _row(driver, position, grid_position, places=0, reason="", pit_lane=False):
+    return {
+        "driver": driver,
+        "position": position,
+        "grid_position": grid_position,
+        "grid_penalty_places": places,
+        "grid_penalty_reason": reason,
+        "starts_from_pit_lane": pit_lane,
+    }
+
+
+def test_a_clean_grid_carries_no_penalties_section():
+    """An empty heading invites Bernie to fill it."""
+    assert grid_penalty_facts([_row("Lando Norris", 1, 1)]) == {}
+
+
+def test_a_penalty_explains_a_move_the_facts_could_only_state():
+    """The pack already said Antonelli qualified seventh and started nineteenth.
+    Without the reason those were two numbers Bernie was not allowed to connect."""
+    facts = grid_penalty_facts([
+        _row("Kimi Antonelli", 7, 19, places=30,
+             reason="Additional power unit elements have been used - "
+                    "Stewards' document no. 19"),
+    ])
+
+    line = facts[PENALTIES_KEY][0]
+    assert "Kimi Antonelli" in line
+    assert "30-place" in line
+    assert "qualified Q7" in line
+    assert "starts P19" in line
+
+
+def test_the_stewards_wording_is_passed_through_verbatim():
+    """The difference between a power unit penalty and an impeding penalty is
+    exactly what someone asking is trying to learn."""
+    reason = "Impeding another driver - Stewards' document no. 47"
+    facts = grid_penalty_facts([_row("Oscar Piastri", 3, 6, places=3, reason=reason)])
+
+    assert reason in facts[PENALTIES_KEY][0]
+
+
+def test_a_driver_who_set_no_time_is_not_reported_as_qualifying_999th():
+    """999 is the schema's "no qualifying result". Stroll took forty places at
+    Spain having never set a time, and "qualified Q999" would be quotable
+    nonsense."""
+    facts = grid_penalty_facts([
+        _row("Lance Stroll", 999, 21, places=40,
+             reason="Additional power unit elements have been used",
+             pit_lane=True),
+    ])
+
+    line = facts[PENALTIES_KEY][0]
+    assert "999" not in line
+    assert "set no qualifying time" in line
+    assert "pit lane" in line
+
+
+def test_the_worst_penalty_comes_first():
+    """The big power unit penalties are what reshape a grid."""
+    facts = grid_penalty_facts([
+        _row("Oscar Piastri", 3, 6, places=3, reason="Impeding"),
+        _row("Liam Lawson", 14, 22, places=35, reason="Power unit"),
+        _row("Alexander Albon", 18, 20, places=20, reason="Power unit"),
+    ])
+
+    assert [line.split(":")[0] for line in facts[PENALTIES_KEY]] == [
+        "Liam Lawson", "Alexander Albon", "Oscar Piastri",
+    ]
+
+
+def test_the_system_prompt_stops_an_inherited_place_reading_as_a_penalty():
+    """When someone ahead is penalised everyone behind inherits a place. Only
+    the listed drivers were penalised."""
+    assert "inherits a place" in SYSTEM_PROMPT
+    assert "Only the drivers in" in SYSTEM_PROMPT
+
+
+def test_the_system_prompt_handles_a_penalty_bigger_than_the_grid():
+    """Thirty places on a twenty-car grid is normal, not an error."""
+    assert "larger than the grid is not an error" in SYSTEM_PROMPT
+
+
+async def test_the_penalties_reach_the_model_as_facts():
+    llm = RecordingLLM()
+    facts = {"race": "2026 round 13"}
+    facts.update(grid_penalty_facts([
+        _row("Kimi Antonelli", 7, 19, places=30,
+             reason="Additional power unit elements have been used"),
+    ]))
+
+    await Bernie(llm).converse("Why does Antonelli start so far back?", facts)
+
+    prompt = llm.calls[0]["prompt"]
+    assert "30-place" in prompt
+    assert "Additional power unit elements" in prompt
