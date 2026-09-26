@@ -19,7 +19,6 @@ from app.services.circuit_map import (
     slug,
 )
 from app.services.circuit_stats import summarise
-from app.services.fastf1_source import LOCATION_CORRECTIONS, _location
 
 
 # ── Fakes: enough shape for the geometry, no FastF1 ──────────────────────────
@@ -163,26 +162,6 @@ def test_speeds_are_carried_through_with_the_points_they_belong_to():
     assert built.speeds == sorted(built.speeds)
 
 
-# ── Upstream we do not believe ───────────────────────────────────────────────
-
-
-def test_bahrain_is_not_in_malaysia():
-    """The published 2026 schedule puts the Bahrain Grand Prix at Kuala Lumpur.
-    Left alone, Bahrain is described, characterised and drawn as Sepang."""
-    assert _location(2026, "Bahrain Grand Prix", "Kuala Lumpur") == "Sakhir"
-
-
-def test_a_correction_does_not_outlive_its_season():
-    """Keyed on the season that carried the error, so a future event that
-    legitimately races in Malaysia is left alone."""
-    assert _location(2030, "Malaysian Grand Prix", "Kuala Lumpur") == "Kuala Lumpur"
-    assert all(isinstance(key, tuple) for key in LOCATION_CORRECTIONS)
-
-
-def test_an_uncorrected_location_passes_straight_through():
-    assert _location(2026, "Italian Grand Prix", "Monza") == "Monza"
-
-
 # ── What the corpus says ─────────────────────────────────────────────────────
 
 
@@ -301,3 +280,17 @@ def test_every_alias_points_at_a_settled_name():
         assert target not in CIRCUIT_ALIASES, (
             "{} is both an alias and a target".format(target)
         )
+
+
+def test_a_race_name_does_not_fix_a_venue():
+    """The Bahrain Grand Prix runs at Sepang in 2026, and the schedule saying
+    "Kuala Lumpur" is correct rather than a mistake to be overridden.
+
+    This was a real override in this file, added on the assumption that a
+    Bahrain Grand Prix must be in Bahrain. Events move — for war, for money,
+    for a circuit rebuild — and upstream knows the current season better than
+    any table written from memory does. The slug therefore keys on where the
+    race is held and nothing else.
+    """
+    assert slug("Kuala Lumpur") == "kuala lumpur"
+    assert slug("Kuala Lumpur") != slug("Sakhir")

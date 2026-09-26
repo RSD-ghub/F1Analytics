@@ -477,6 +477,11 @@ class IngestRunner:
                 DATA_COLLECTIONS["results"], {"season": season, "round": round_number}
             )
             if count:
+                # Upstream does not always ship a grid with the results. We
+                # hold the confirmed one from before the start, so fill from
+                # that rather than leave the race unable to say who started
+                # where.
+                await self._store.backfill_result_grid(season, round_number)
                 ingested.append("{}-{} ({} rows)".format(season, round_number, count))
             else:
                 waiting.append("{}-{}".format(season, round_number))

@@ -418,6 +418,62 @@ class IngestionStore:
         """How many rows match. Used for cheap existence checks."""
         return await self._db[collection].count_documents(query)
 
+    async def backfill_result_grid(self, season: int, round_number: int) -> dict:
+        """Fill a finished race's starting grid from the grid we already hold.
+
+        Upstream does not always publish one. The 2026 Azerbaijan race came
+        back with ``GridPosition`` of -1 for all twenty-two cars, which would
+        have left that race contributing nothing to how often pole converts or
+        how many places a car changes — the two circuit statistics that need it.
+
+        We are not guessing. The qualifying rows for the same round carry the
+        confirmed starting grid, read off the FIA's own document hours before
+        the start, and that is a better source than the one that failed.
+
+        Matched on driver name, and reported rather than assumed: the two sets
+        come from the same pipeline and should agree completely, so a shortfall
+        is worth seeing in the log instead of discovering later in a statistic.
+        """
+        grid = {
+            row["driver"]: row["grid_position"]
+            async for row in self._db[QUALIFYING].find(
+                {"season": season, "round": round_number,
+                 "grid_position": {"$gt": 0}},
+                {"_id": 0, "driver": 1, "grid_position": 1},
+            )
+        }
+        if not grid:
+            return {"filled": 0, "missing": 0, "reason": "no confirmed grid held"}
+
+        operations, unmatched = [], []
+        async for row in self._db[DATA_COLLECTIONS["results"]].find(
+            {"season": season, "round": round_number},
+            {"_id": 1, "driver": 1, "grid_position": 1},
+        ):
+            if (row.get("grid_position") or 0) > 0:
+                continue
+            slot = grid.get(row.get("driver"))
+            if slot is None:
+                unmatched.append(row.get("driver"))
+                continue
+            operations.append(
+                UpdateOne({"_id": row["_id"]}, {"$set": {"grid_position": slot}})
+            )
+
+        if operations:
+            await self._db[DATA_COLLECTIONS["results"]].bulk_write(operations)
+        if unmatched:
+            logger.warning(
+                "no grid slot for %d driver(s) in %s-%s: %s",
+                len(unmatched), season, round_number, ", ".join(sorted(unmatched)),
+            )
+        if operations:
+            logger.info(
+                "filled the starting grid for %d result row(s) in %s-%s from the "
+                "confirmed grid", len(operations), season, round_number,
+            )
+        return {"filled": len(operations), "missing": len(unmatched)}
+
     async def _circuit_names(self, circuit: str) -> List[str]:
         """Every stored spelling of this circuit.
 

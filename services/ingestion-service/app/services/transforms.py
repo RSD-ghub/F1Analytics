@@ -127,7 +127,12 @@ def extract_results(
                     res.get("Position"), safe_int(res.get("ClassifiedPosition"), 999)
                 ),
                 points=safe_float(res.get("Points"), 0.0),
-                grid_position=safe_int(res.get("GridPosition"), 0),
+                # Zero means "we do not know", and a negative reading means
+                # the same thing said differently. FastF1 returned -1 for every
+                # car in the 2026 Azerbaijan race; stored as-is it sorts ahead
+                # of pole and reads like a measurement. Normalised here so the
+                # rest of the system has one way to express an absent grid.
+                grid_position=max(safe_int(res.get("GridPosition"), 0), 0),
                 classified_position=safe_text(res.get("ClassifiedPosition")),
                 status=safe_text(res.get("Status")),
             )

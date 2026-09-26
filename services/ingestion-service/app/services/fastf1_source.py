@@ -174,34 +174,6 @@ def _named_session(
     return None
 
 
-#: Upstream circuit locations we do not believe.
-#:
-#: The published 2026 schedule places the Bahrain Grand Prix at "Kuala
-#: Lumpur". It is at Sakhir, and has been since 2004. Left alone this is not
-#: cosmetic: the circuit name is the key for the archetype artifact, for a
-#: circuit's race history and for its stored layout, so Bahrain would have
-#: been described, characterised and drawn as Sepang.
-#:
-#: Keyed on (season, event name) rather than on the wrong location, so the
-#: correction expires with the season that carried the error instead of
-#: silently rewriting any future event that legitimately races in Malaysia.
-LOCATION_CORRECTIONS = {
-    (2026, "Bahrain Grand Prix"): "Sakhir",
-}
-
-
-def _location(season: int, event_name: str, raw: Any) -> str:
-    """The circuit an event is actually held at."""
-    corrected = LOCATION_CORRECTIONS.get((season, safe_text(event_name, "")))
-    if corrected:
-        logger.info(
-            "correcting %s %s location to %s (upstream said %r)",
-            season, event_name, corrected, safe_text(raw, ""),
-        )
-        return corrected
-    return safe_text(raw, "")
-
-
 class FastF1Source:
     """Fetches schedules and race sessions from FastF1."""
 
@@ -258,9 +230,7 @@ class FastF1Source:
                     race_name=safe_text(
                         event.get("EventName"), "Round {}".format(round_number)
                     ),
-                    circuit=_location(
-                        season, event.get("EventName"), event.get("Location")
-                    ),
+                    circuit=safe_text(event.get("Location"), ""),
                     race_date=start.strftime("%Y-%m-%d") if start else "",
                     session_start_utc=start,
                 )
@@ -315,9 +285,7 @@ class FastF1Source:
                     race_name=safe_text(
                         event.get("EventName"), "Round {}".format(round_number)
                     ),
-                    circuit=_location(
-                        season, event.get("EventName"), event.get("Location")
-                    ),
+                    circuit=safe_text(event.get("Location"), ""),
                     country=safe_text(event.get("Country"), ""),
                     sessions=sessions,
                     race_start_utc=_named_session(sessions, ("Race",)),
