@@ -261,3 +261,30 @@ async def test_the_scheduler_ticks_at_startup_not_a_full_interval_later():
         assert delay < 60, "first tick is {}s away; it should be immediate".format(delay)
     finally:
         lock_scheduler.shutdown()
+
+
+async def test_a_lock_tick_missed_while_the_host_slept_still_runs():
+    """The companion to the startup tick, and the same failure in slow motion.
+
+    APScheduler's default grace is one second, so a tick whose moment passed
+    while the process was frozen is logged as "missed" and never run. The
+    final-grid window is 45 minutes wide; two dropped ticks close it.
+
+    Safe to run late because ``should_lock`` re-reads the clock and refuses
+    once the race has started — a late tick re-evaluates the world rather than
+    replaying an old decision, so it cannot place a forecast after the flag.
+    """
+    from app.services import scheduler as lock_scheduler
+
+    class _Stub:
+        async def tick(self, now=None):
+            return []
+
+    started = lock_scheduler.start(_Stub(), interval_minutes=5)
+    try:
+        job = started.get_job(lock_scheduler.JOB_ID)
+        assert job.misfire_grace_time is None, (
+            "a late tick will be dropped, and a dropped tick can lose a window"
+        )
+    finally:
+        lock_scheduler.shutdown()

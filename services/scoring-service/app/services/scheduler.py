@@ -122,6 +122,12 @@ def start(reconciler: Reconciler, interval_minutes: int) -> Optional[AsyncIOSche
         # other into the same score document.
         max_instances=1,
         coalesce=True,
+        # Run a late tick rather than dropping it. APScheduler's default
+        # grace is one second, so a job whose moment passed while the host
+        # was asleep is logged as missed and never run — which looks exactly
+        # like a healthy scheduler. Safe because the work is idempotent and
+        # re-reads the clock rather than replaying an old decision.
+        misfire_grace_time=None,
         # Fire at startup rather than one interval later. A restart shortly
         # after a race would otherwise leave that race unscored for the whole
         # interval, and the same omission cost a live lock window earlier in

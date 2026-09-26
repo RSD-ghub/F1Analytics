@@ -119,3 +119,18 @@ async def test_it_does_not_retry_a_real_failure():
 
     assert len(reconciler.seasons) == 1
     assert clock.waits == []
+
+
+async def test_a_tick_missed_while_the_host_slept_still_runs():
+    """APScheduler's default grace is one second, so a job whose moment passed
+    while the process was frozen is logged as "missed" and never run — which
+    is indistinguishable from a healthy scheduler. Four consecutive sweeps
+    were lost that way on the day of the 2026 Azerbaijan race."""
+    started = reconcile_scheduler.start(_Reconciler(), interval_minutes=30)
+    try:
+        job = started.get_job(reconcile_scheduler.JOB_ID)
+        assert job.misfire_grace_time is None, (
+            "a late sweep will be dropped instead of run"
+        )
+    finally:
+        reconcile_scheduler.shutdown()

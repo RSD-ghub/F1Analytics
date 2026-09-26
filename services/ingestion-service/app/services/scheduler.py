@@ -99,6 +99,12 @@ def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 3
         # the same sessions and double the upstream load for no benefit.
         max_instances=1,
         coalesce=True,
+        # Run a late tick rather than dropping it. APScheduler's default
+        # grace is one second, so a job whose moment passed while the host
+        # was asleep is logged as missed and never run — which looks exactly
+        # like a healthy scheduler. Safe because the work is idempotent and
+        # re-reads the clock rather than replaying an old decision.
+        misfire_grace_time=None,
     )
     if grid_check_minutes > 0:
         _scheduler.add_job(
@@ -111,6 +117,12 @@ def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 3
             next_run_time=datetime.now(timezone.utc),
             max_instances=1,
             coalesce=True,
+            # Run a late tick rather than dropping it. APScheduler's default
+            # grace is one second, so a job whose moment passed while the host
+            # was asleep is logged as missed and never run — which looks exactly
+            # like a healthy scheduler. Safe because the work is idempotent and
+            # re-reads the clock rather than replaying an old decision.
+            misfire_grace_time=None,
         )
         logger.info("grid confirmation scheduled every %smin", grid_check_minutes)
 
@@ -121,6 +133,12 @@ def start(runner: IngestRunner, interval_hours: int, grid_check_minutes: int = 3
             id=RESULTS_JOB_ID,
             max_instances=1,
             coalesce=True,
+            # Run a late tick rather than dropping it. APScheduler's default
+            # grace is one second, so a job whose moment passed while the host
+            # was asleep is logged as missed and never run — which looks exactly
+            # like a healthy scheduler. Safe because the work is idempotent and
+            # re-reads the clock rather than replaying an old decision.
+            misfire_grace_time=None,
             next_run_time=datetime.now(timezone.utc),
         )
         logger.info("finished-race ingest scheduled every %smin", grid_check_minutes)

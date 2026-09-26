@@ -226,6 +226,12 @@ def start(scheduler_service: LockScheduler, interval_minutes: int) -> Optional[A
         # overlapping runs would race each other into the unique index.
         max_instances=1,
         coalesce=True,
+        # Run a late tick rather than dropping it. APScheduler's default
+        # grace is one second, so a job whose moment passed while the host
+        # was asleep is logged as missed and never run — which looks exactly
+        # like a healthy scheduler. Safe because the work is idempotent and
+        # re-reads the clock rather than replaying an old decision.
+        misfire_grace_time=None,
     )
     _scheduler.start()
     logger.info("lock scheduler running every %s minutes", interval_minutes)
