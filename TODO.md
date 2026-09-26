@@ -18,9 +18,16 @@ Ordered by what blocks what. Checked items are verified in the tree, not assumed
 - [x] **Surface grid penalties in Bernie.** Done 23 Sep. Penalties reach the facts pack worst
       first with the stewards' wording verbatim. Note the stored rows predated the fields and
       carried nothing — R13 and R14 grids were re-resolved to populate them.
-- [ ] **Surface grid penalties in One Blog.** Same data, still not on the page.
+- [x] **Surface grid penalties in One Blog.** Done 26 Sep. The panel was inferring penalties
+      from position movement and published one Stroll never received; it now reads the
+      stewards' data. Two React key collisions fixed alongside it.
+- [ ] **Paddock news is the remaining half of roadmap item 1.** Penalties are done in both
+      Bernie and One Blog; news is not started.
 - [ ] **Paddock news in One Blog**, and the same feed into Bernie so she can correlate.
       Not started. Needs a source decision first.
+- [ ] **The Vite dev server had been serving a pre-proxy config for 20 days**, so every
+      /api call returned index.html and the whole frontend was broken against core-api.
+      Restarted. Worth a startup check that catches this rather than a person noticing.
 
 ## Verification owed
 
