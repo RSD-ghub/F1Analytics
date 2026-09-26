@@ -1,7 +1,9 @@
 import { useParams } from 'react-router-dom'
-import { getWeekend } from '../api/f1Api'
+import { getWeekend, getCircuit } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable } from '../components/Panel'
+import TrackMap from '../components/TrackMap'
+import CircuitBrief from '../components/CircuitBrief'
 
 /**
  * One Blog — a race weekend as an append-only timeline.
@@ -26,6 +28,9 @@ const KIND_LABEL = {
 export default function Weekend() {
   const { season, round } = useParams()
   const state = useAsync(() => getWeekend(season, round), [season, round])
+  // Fetched separately so a circuit we have no geometry for costs this panel
+  // and not the timeline, which is the part of the page that matters.
+  const track = useAsync(() => getCircuit(season, round), [season, round])
 
   if (state.status === 'loading') return <Loading what="Loading the weekend" />
   if (state.status === 'error')
@@ -40,6 +45,19 @@ export default function Weekend() {
         <h1>{blog.race_name || `Round ${blog.round}`}</h1>
         {blog.circuit && <p className="muted">{blog.circuit}</p>}
       </header>
+
+      {track.status === 'ready' && track.data && (
+        <Panel
+          title={track.data.circuit}
+          subtitle={[track.data.country, 'the track this weekend was run on']
+            .filter(Boolean).join(' · ')}
+        >
+          <div className="weekend-hero">
+            <TrackMap map={track.data.map} />
+            <CircuitBrief circuit={track.data} />
+          </div>
+        </Panel>
+      )}
 
       {blog.entries.length === 0 && (
         <Panel title="Nothing to report yet">

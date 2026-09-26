@@ -9,6 +9,7 @@ names what is missing instead of quietly omitting it.
 
 import logging
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -41,6 +42,10 @@ class NextRaceView(BaseModel):
     weekend: Optional[Dict[str, Any]] = None
     predictions: List[Dict[str, Any]] = Field(default_factory=list)
     qualifying_freshness: Optional[Dict[str, Any]] = None
+    #: The track itself: shape, corners, and what our corpus knows about it.
+    #: Optional on purpose — a circuit whose geometry was never derived still
+    #: has a race history worth showing, and a brand-new venue has neither.
+    circuit: Optional[Dict[str, Any]] = None
     unavailable: Unavailable = Field(default_factory=Unavailable)
 
 
@@ -81,6 +86,44 @@ async def status(settings: Settings = Depends(get_settings)) -> SystemStatus:
     )
 
 
+async def _with_character(clients, circuit):
+    """Attach the model's archetype to a circuit from ingestion.
+
+    Two services on purpose: ingestion owns the track's shape and its race
+    record because it owns the data they come from, and prediction owns the
+    label because the label is a modelling artifact. Merged here so a page
+    makes one request — and merged loosely, so a circuit the artifact has
+    never heard of keeps its map and its stats.
+    """
+    if not circuit or not circuit.get("circuit"):
+        return circuit
+    character = await gather_optional(
+        character=clients["prediction"].get(
+            "/circuits/{}".format(quote(circuit["circuit"], safe=""))
+        )
+    )
+    return dict(circuit, character=character.get("character"))
+
+
+@router.get("/circuit/{season}/{round_number}", response_model=Dict[str, Any])
+async def circuit(
+    season: int,
+    round_number: int,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """Any round's circuit. Public, like the rest of the weekend record."""
+    clients = _clients(settings)
+    fetched = await gather_optional(
+        circuit=clients["ingestion"].get(
+            "/circuits/{}/{}".format(season, round_number)
+        )
+    )
+    found = fetched.get("circuit")
+    if not found:
+        raise HTTPException(status_code=404, detail="no circuit for that round")
+    return await _with_character(clients, found)
+
+
 @router.get("/next-race", response_model=NextRaceView)
 async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
     """The upcoming weekend, with whatever forecasts are already locked."""
@@ -99,11 +142,18 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         freshness=clients["ingestion"].get(
             "/forward/qualifying-freshness/{}/{}".format(season, round_number)
         ),
+        circuit=clients["ingestion"].get(
+            "/circuits/{}/{}".format(season, round_number)
+        ),
     )
+
+    circuit = await _with_character(clients, fetched.get("circuit"))
+
     return NextRaceView(
         weekend=weekend,
         predictions=fetched.get("predictions") or [],
         qualifying_freshness=fetched.get("freshness"),
+        circuit=circuit,
         unavailable=Unavailable(panels=fetched["_unavailable"]),
     )
 

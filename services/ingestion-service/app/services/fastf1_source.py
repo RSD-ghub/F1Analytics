@@ -15,7 +15,7 @@ the caller must classify and record.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -174,6 +174,34 @@ def _named_session(
     return None
 
 
+#: Upstream circuit locations we do not believe.
+#:
+#: The published 2026 schedule places the Bahrain Grand Prix at "Kuala
+#: Lumpur". It is at Sakhir, and has been since 2004. Left alone this is not
+#: cosmetic: the circuit name is the key for the archetype artifact, for a
+#: circuit's race history and for its stored layout, so Bahrain would have
+#: been described, characterised and drawn as Sepang.
+#:
+#: Keyed on (season, event name) rather than on the wrong location, so the
+#: correction expires with the season that carried the error instead of
+#: silently rewriting any future event that legitimately races in Malaysia.
+LOCATION_CORRECTIONS = {
+    (2026, "Bahrain Grand Prix"): "Sakhir",
+}
+
+
+def _location(season: int, event_name: str, raw: Any) -> str:
+    """The circuit an event is actually held at."""
+    corrected = LOCATION_CORRECTIONS.get((season, safe_text(event_name, "")))
+    if corrected:
+        logger.info(
+            "correcting %s %s location to %s (upstream said %r)",
+            season, event_name, corrected, safe_text(raw, ""),
+        )
+        return corrected
+    return safe_text(raw, "")
+
+
 class FastF1Source:
     """Fetches schedules and race sessions from FastF1."""
 
@@ -230,7 +258,9 @@ class FastF1Source:
                     race_name=safe_text(
                         event.get("EventName"), "Round {}".format(round_number)
                     ),
-                    circuit=safe_text(event.get("Location"), ""),
+                    circuit=_location(
+                        season, event.get("EventName"), event.get("Location")
+                    ),
                     race_date=start.strftime("%Y-%m-%d") if start else "",
                     session_start_utc=start,
                 )
@@ -285,7 +315,9 @@ class FastF1Source:
                     race_name=safe_text(
                         event.get("EventName"), "Round {}".format(round_number)
                     ),
-                    circuit=safe_text(event.get("Location"), ""),
+                    circuit=_location(
+                        season, event.get("EventName"), event.get("Location")
+                    ),
                     country=safe_text(event.get("Country"), ""),
                     sessions=sessions,
                     race_start_utc=_named_session(sessions, ("Race",)),
@@ -504,6 +536,75 @@ class FastF1Source:
                 )
             )
         return rows
+
+    #: Visits tried before giving up on a circuit.
+    #:
+    #: Two session loads each, and upstream answers a missing telemetry set
+    #: with DataNotLoadedError rather than anything a rate-limit check can
+    #: recognise — so a circuit with no position data anywhere burned
+    #: thirty-two calls against a 500-an-hour budget before failing. Four
+    #: visits is enough: if the last four years of a circuit have no telemetry,
+    #: a fifth will not either.
+    MAX_VISITS = 4
+
+    def load_circuit_map(self, circuit: str, visits: Sequence[Tuple[int, str]]):
+        """The circuit's shape, from the most recent visit that has telemetry.
+
+        ``visits`` is (season, event name), newest first. It walks back through
+        them because the current weekend is the least likely to work: upstream
+        publishes position data late, and the Baku qualifying session of 2026
+        still answered "Failed to load telemetry data" the morning of the race.
+        A track's shape is the same every year, so last season's lap draws this
+        season's map perfectly well.
+
+        Qualifying is preferred over the race at each visit — a qualifying lap
+        is the cleanest trace of the racing line — but either will do.
+
+        This is the one place telemetry is loaded on purpose. It is the
+        heaviest call this service makes, and it is paid once per circuit,
+        ever.
+        """
+        from app.services.circuit_map import CircuitMapUnavailable, build_map
+
+        fastf1 = self._fastf1()
+        tried: List[str] = []
+        for season, event in list(visits)[: self.MAX_VISITS]:
+            for session_name in ("Q", "R"):
+                label = "{} {} {}".format(season, event, session_name)
+                try:
+                    session = fastf1.get_session(season, event, session_name)
+                    session.load(
+                        laps=True, telemetry=True, weather=False, messages=False
+                    )
+                    lap = session.laps.pick_fastest()
+                    if lap is None:
+                        raise CircuitMapUnavailable("no laps")
+                    # get_telemetry raises rather than returning empty when the
+                    # load quietly failed, which it does often for a session
+                    # that ran hours ago. That is the case this loop exists for.
+                    telemetry = lap.get_telemetry()
+                    info = session.get_circuit_info()
+                    return build_map(
+                        circuit=circuit,
+                        season=season,
+                        session_name=session_name,
+                        telemetry=telemetry,
+                        corners=None if info is None else info.corners,
+                        rotation=0.0 if info is None else float(info.rotation),
+                    )
+                except Exception as exc:
+                    if _is_rate_limit(exc):
+                        raise RateLimited(
+                            "rate limited deriving the map for {}".format(circuit)
+                        ) from exc
+                    tried.append("{}: {}".format(label, type(exc).__name__))
+                    logger.debug("no circuit map from %s: %s", label, exc)
+
+        raise CircuitMapUnavailable(
+            "no position data for {} in {} attempt(s): {}".format(
+                circuit, len(tried), "; ".join(tried[:6])
+            )
+        )
 
     def load_qualifying_entry_list(self, expected: ExpectedSession):
         """Car number -> (driver, team), without requiring a classification.

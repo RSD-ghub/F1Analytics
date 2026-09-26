@@ -82,6 +82,12 @@ DRIVER_REGISTRY = "driver_registry"
 #: session is already stored, and must never participate in completeness.
 SIGNALS = "extracted_signals"
 
+#: Track geometry, one document per circuit. Outside ``DATA_COLLECTIONS``
+#: because it is not a session: a circuit is derived once, keyed by the track
+#: rather than by season and round, and a missing map must never make a
+#: weekend look incompletely ingested.
+CIRCUITS = "circuits"
+
 #: Everything the read API may serve.
 READABLE_COLLECTIONS = dict(
     DATA_COLLECTIONS, qualifying=QUALIFYING, signals=SIGNALS, practice=PRACTICE
@@ -411,6 +417,93 @@ class IngestionStore:
     async def count_matching(self, collection: str, query: Dict[str, Any]) -> int:
         """How many rows match. Used for cheap existence checks."""
         return await self._db[collection].count_documents(query)
+
+    async def _circuit_names(self, circuit: str) -> List[str]:
+        """Every stored spelling of this circuit.
+
+        Queries by circuit name have to go through this. The stored rows keep
+        whatever name upstream used at the time — "Abu Dhabi", then "Yas
+        Marina", then "Yas Island" — so matching on one of them finds a
+        fraction of the races and reports it as the circuit's whole history.
+        Resolved against the database rather than a list, so a spelling nobody
+        anticipated still lands in the right place.
+        """
+        from app.services.circuit_map import slug
+
+        wanted = slug(circuit)
+        stored = await self._db[DATA_COLLECTIONS["results"]].distinct("circuit")
+        names = [name for name in stored if slug(name) == wanted]
+        return names or [circuit]
+
+    async def circuit_visits(self, circuit: str) -> List[Tuple[int, str]]:
+        """Every (season, event name) we hold at a circuit, newest first.
+
+        Newest first because a map derived from last year is as good as one
+        from this year, and the current weekend is the visit least likely to
+        have telemetry published yet.
+        """
+        names = await self._circuit_names(circuit)
+        rows = await self._db[DATA_COLLECTIONS["results"]].distinct(
+            "season", {"circuit": {"$in": names}}
+        )
+        visits: List[Tuple[int, str]] = []
+        for season in sorted(rows, reverse=True):
+            name = await self._db[DATA_COLLECTIONS["results"]].find_one(
+                {"circuit": {"$in": names}, "season": season},
+                {"_id": 0, "race_name": 1},
+            )
+            if name and name.get("race_name"):
+                visits.append((int(season), name["race_name"]))
+        return visits
+
+    async def circuit_history(self, circuit: str) -> Dict[str, Any]:
+        """Every race and lap we hold at a circuit, for the stats summary.
+
+        Laps are matched by race name rather than circuit because the lap rows
+        do not carry one — the race names come from the results, so the two
+        sets cannot disagree about which events count.
+        """
+        names = await self._circuit_names(circuit)
+        results = [
+            row async for row in
+            self._db[DATA_COLLECTIONS["results"]].find(
+                {"circuit": {"$in": names}}, {"_id": 0}
+            )
+        ]
+        names = sorted({row["race_name"] for row in results if row.get("race_name")})
+        laps: List[Dict[str, Any]] = []
+        if names:
+            laps = [
+                row async for row in self._db[DATA_COLLECTIONS["laps"]].find(
+                    {"race_name": {"$in": names}},
+                    {"_id": 0, "lap_time_seconds": 1, "speed_trap_kph": 1,
+                     "driver": 1, "season": 1},
+                )
+            ]
+        return {"results": results, "laps": laps}
+
+    async def save_circuit_map(self, document: Dict[str, Any]) -> None:
+        """Store a circuit's geometry, replacing any earlier derivation.
+
+        Keyed on the circuit rather than the weekend. Twenty seasons of Monza
+        are one shape, and deriving it per visit would pay the telemetry cost
+        every year to redraw the same track.
+        """
+        await self._db[CIRCUITS].replace_one(
+            {"id": document["id"]}, document, upsert=True
+        )
+
+    async def circuit_map(self, circuit: str) -> Optional[Dict[str, Any]]:
+        """A circuit's stored geometry, or None if it was never derived."""
+        from app.services.circuit_map import slug
+
+        return await self._db[CIRCUITS].find_one(
+            {"id": slug(circuit)}, {"_id": 0}
+        )
+
+    async def circuits_with_maps(self) -> List[str]:
+        """Slugs of every circuit that has one. Used to skip derivation."""
+        return await self._db[CIRCUITS].distinct("id")
 
     async def remember_drivers(self, season: int, identities: Dict[int, Any]) -> int:
         """Record who drives which car this season.

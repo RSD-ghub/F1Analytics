@@ -368,6 +368,17 @@ class IngestRunner:
         )
         return rows
 
+    async def derive_circuit_map(self, circuit: str, visits):
+        """Trace a circuit's shape from session telemetry.
+
+        Off the event loop like every other FastF1 call: position data for a
+        full session is the heaviest load this service performs, and running it
+        inline would stall the lock-window scheduler behind it.
+        """
+        return await asyncio.to_thread(
+            self._source.load_circuit_map, circuit, visits
+        )
+
     async def refresh_starting_grid(self, expected: ExpectedSession) -> dict:
         """Re-read the official grid for a round we already have qualifying for.
 

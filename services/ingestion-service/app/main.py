@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.dependencies import get_runner
 from app.regulations import RegulationStore
 from app.regulations import router as regulations_router
+from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
 from app.services import scheduler
 from app.services.storage import IngestionStore
@@ -61,3 +62,4 @@ app.include_router(ingest.router)
 app.include_router(forward.router)
 app.include_router(data.router)
 app.include_router(regulations_router.router)
+app.include_router(circuits_router.router)

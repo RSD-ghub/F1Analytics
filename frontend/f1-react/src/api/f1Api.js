@@ -110,3 +110,6 @@ export const continueThread = (threadId, question) =>
 export const listThreads = () => request('/bernie/threads', { auth: true })
 export const readThread = (threadId) =>
   request(`/bernie/threads/${threadId}`, { auth: true })
+
+export const getCircuit = (season, round) =>
+  request(`/circuit/${season}/${round}`)

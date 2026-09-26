@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from app import db
 from app.config import get_settings
 from app.dependencies import get_client, get_predictor
+from app.routers import circuits as circuits_router
 from app.routers import predictions
 from app.services import scheduler as lock_scheduler
 from app.services.scheduler import LockScheduler
@@ -67,3 +68,4 @@ app.include_router(
 )
 app.include_router(predictions.router)
 app.include_router(predictions.championship_router)
+app.include_router(circuits_router.router)

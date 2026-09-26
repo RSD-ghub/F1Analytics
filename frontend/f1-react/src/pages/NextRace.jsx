@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { getNextRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Probability, Bar, Caveats } from '../components/Panel'
+import TrackMap from '../components/TrackMap'
+import CircuitBrief from '../components/CircuitBrief'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -19,7 +21,9 @@ export default function NextRace() {
   if (state.status === 'error')
     return <Unavailable what="The next race" reason={state.error.message} />
 
-  const { weekend, predictions = [], qualifying_freshness: freshness, unavailable } = state.data
+  const {
+    weekend, predictions = [], qualifying_freshness: freshness, circuit, unavailable,
+  } = state.data
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
 
@@ -38,6 +42,18 @@ export default function NextRace() {
         )}
       </header>
 
+      {circuit && (
+        <Panel
+          title={circuit.circuit}
+          subtitle={[circuit.country, weekend.race_name].filter(Boolean).join(' · ')}
+        >
+          <div className="weekend-hero">
+            <TrackMap map={circuit.map} />
+            <CircuitBrief circuit={circuit} />
+          </div>
+        </Panel>
+      )}
+
       {freshness?.is_stale && (
         <div className="notice warn">
           Qualifying has run but its results have not been ingested yet, so no
@@ -48,8 +64,9 @@ export default function NextRace() {
       {predictions.length === 0 && (
         <Panel title="No forecast locked yet">
           <p className="muted">
-            Forecasts lock at two points: roughly three days before the race, and
-            again once the grid is set. Both are permanent once published.
+            Forecasts lock at three points: roughly three days out, again after
+            qualifying, and once more on the confirmed grid forty-five minutes
+            before the start. All three are permanent once published.
           </p>
         </Panel>
       )}

@@ -161,3 +161,41 @@ a { color: var(--accent); }
   opacity: 0.62;
   max-width: 62ch;
 }
+
+/* ── The weekend's circuit ────────────────────────────────────────────────── */
+/* Map beside brief on a wide screen, stacked below one. The map wants to be
+   square-ish and the brief is a column of numbers, so they do not share a
+   ratio — hence explicit columns rather than equal fractions. */
+.weekend-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; align-items: start; }
+
+.trackmap svg { display: block; overflow: visible; }
+.trackmap svg path { transition: stroke-width 90ms ease; }
+.trackmap svg g:last-of-type path:hover { stroke-width: 21; }
+.trackmap-key { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.trackmap-ramp {
+  flex: 0 0 120px; height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, rgb(59,110,165), rgb(214,178,74), rgb(232,68,58));
+}
+/* Reserves its own space so the row does not reflow as the pointer moves. */
+.trackmap-readout { margin-left: auto; color: var(--muted); min-width: 13ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+.brief-character { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+.tag {
+  display: inline-block; margin-right: 9px; padding: 2px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em;
+  border: 1px solid var(--line); color: var(--text);
+}
+.tag-power { border-color: #e8443a; color: #f0857c; }
+.tag-technical { border-color: #3b6ea5; color: #7fa9d8; }
+.tag-balanced { border-color: #d6b24a; color: #e0c777; }
+
+.brief-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
+.brief-stat { display: flex; flex-direction: column; gap: 1px; }
+.brief-value { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.brief-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.brief-note { font-size: 12px; color: var(--muted); }
+.brief-source { margin: 20px 0 0; }
+
+@media (max-width: 820px) {
+  .weekend-hero { grid-template-columns: 1fr; gap: 20px; }
+}
