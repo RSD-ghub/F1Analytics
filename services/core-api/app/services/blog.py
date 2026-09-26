@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 TOP_N = 6
 
+#: Penalties listed on the qualifying panel before it stops being a panel.
+#: Monza 2026 had four, which is a busy weekend rather than an unusual one.
+MAX_PENALTIES = 5
+
 
 def _entry_id(season: int, round_number: int, kind: EntryKind) -> str:
     return "{}-{}-{}".format(season, round_number, kind.value)
@@ -193,29 +197,65 @@ def qualifying_entry(
             )
         )
 
-    # Penalties: qualifying classification vs the confirmed starting grid.
-    penalised = [
-        (row, row["grid_position"] - row["position"])
-        for row, _ in timed
-        if (row.get("grid_position") or 0) > 0
-        and row["grid_position"] != row["position"]
-    ]
-    for row, drop in sorted(penalised, key=lambda pair: -abs(pair[1]))[:3]:
+    # Penalties come from the stewards, not from arithmetic.
+    #
+    # This panel used to call any movement between the classification and the
+    # grid a penalty. It is the obvious inference and it is wrong: when someone
+    # ahead is penalised, everyone behind inherits a place. The page therefore
+    # published "Grid penalty — Lance Stroll, qualified P22, starts P18" at
+    # Monza, where Stroll had *gained* four places and been penalised for
+    # nothing. Worse, the list was capped at three and ordered by how far a
+    # driver moved, so that invention displaced Albon's real twenty-place drop.
+    #
+    # ``grid_penalty_places`` is written off the FIA document by grid
+    # resolution and says who was actually penalised, which is the only thing
+    # that can be printed under this label.
+    penalised = sorted(
+        (row for row in quali_rows if (row.get("grid_penalty_places") or 0) > 0),
+        key=lambda row: -row["grid_penalty_places"],
+    )
+    for row in penalised[:MAX_PENALTIES]:
+        # Read from ``quali_rows`` rather than ``timed`` because a penalty does
+        # not require a lap: Stroll took forty places at Spain having set no
+        # qualifying time at all, and ``timed`` excludes him by construction.
+        where = (
+            "starts from the pit lane"
+            if row.get("starts_from_pit_lane")
+            else "starts P{}".format(row.get("grid_position") or "?")
+        )
+        qualified = (
+            "qualified P{}".format(row["position"])
+            if (row.get("position") or 999) < 999
+            else "set no time"
+        )
         facts.append(
             BlogFact(
                 label="Grid penalty",
-                value=row.get("driver", "?"),
-                detail="qualified P{}, starts P{}".format(
-                    row["position"], row["grid_position"]
+                value="{} −{}".format(row.get("driver", "?"), row["grid_penalty_places"]),
+                # The stewards' own wording, unedited. A penalty for using extra
+                # power unit elements and one for impeding are different events,
+                # and a tidied-up summary is where that distinction goes missing.
+                detail="{}, {} — {}".format(
+                    qualified, where,
+                    row.get("grid_penalty_reason") or "no reason recorded",
                 ),
             )
         )
+
     if not penalised:
         facts.append(
             BlogFact(
                 label="Grid",
                 value="As qualified",
                 detail="No grid penalties applied.",
+            )
+        )
+    elif len(penalised) > MAX_PENALTIES:
+        facts.append(
+            BlogFact(
+                label="Grid penalty",
+                value="{} more".format(len(penalised) - MAX_PENALTIES),
+                detail="Smaller penalties not listed.",
             )
         )
 
@@ -450,8 +490,18 @@ def forecast_entry(
     else:
         label = "with the grid set"
     return BlogEntry(
-        entry_id=_entry_id(
-            prediction.get("season", 0), prediction.get("round", 0), EntryKind.FORECAST
+        # The window belongs in the id. A weekend produces up to three
+        # forecasts — pre-quali, post-quali and the confirmed grid — and
+        # without it all three answered to "2026-13-forecast". React keys the
+        # timeline on this, warns about the collision, and is free to drop the
+        # duplicates: the final-grid forecast, the best one we make, was the
+        # one at risk of never reaching the page.
+        entry_id="{}-{}".format(
+            _entry_id(
+                prediction.get("season", 0), prediction.get("round", 0),
+                EntryKind.FORECAST,
+            ),
+            prediction.get("window") or "unknown",
         ),
         season=prediction.get("season", 0),
         round=prediction.get("round", 0),

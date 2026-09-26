@@ -87,7 +87,10 @@ function Entry({ entry }) {
       {entry.facts?.length > 0 && (
         <dl className="facts">
           {entry.facts.map((fact) => (
-            <div className="fact" key={fact.label}>
+            // Keyed on label + value: a weekend with four grid penalties has
+            // four facts sharing the label, and React reconciles duplicate
+            // keys by dropping siblings.
+            <div className="fact" key={`${fact.label}-${fact.value}`}>
               <dt>{fact.label}</dt>
               <dd>
                 <strong>{fact.value}</strong>

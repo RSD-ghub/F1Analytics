@@ -270,3 +270,121 @@ def test_a_forecast_on_the_official_grid_does_say_the_grid_was_set():
     )
 
     assert entry.headline.endswith("with the grid set")
+
+
+# ── Qualifying, and who was actually penalised ───────────────────────────────
+
+
+def _quali(driver, position, best, grid=None, places=0, reason="", pit_lane=False):
+    return {
+        "driver": driver,
+        "team": "Team {}".format(driver),
+        "position": position,
+        "q1_seconds": best,
+        "q2_seconds": best,
+        "q3_seconds": best,
+        "grid_position": position if grid is None else grid,
+        "grid_penalty_places": places,
+        "grid_penalty_reason": reason,
+        "starts_from_pit_lane": pit_lane,
+    }
+
+
+#: Monza 2026, reduced to the part that matters. Antonelli and Albon were
+#: penalised; Stroll was not, and moved up because they moved down.
+MONZA = [
+    _quali("Gasly", 1, 81.786),
+    _quali("Russell", 2, 81.846),
+    _quali("Antonelli", 7, 82.4, grid=19, places=30,
+           reason="Additional power unit elements have been used - "
+                  "Stewards' document no. 19"),
+    _quali("Albon", 18, 83.1, grid=20, places=20,
+           reason="Additional power unit elements have been used - "
+                  "Stewards' document no. 20"),
+    _quali("Stroll", 22, 83.9, grid=18),
+]
+
+
+def _penalty_facts(entry):
+    return [f for f in entry.facts if f.label == "Grid penalty"]
+
+
+def test_a_driver_who_gained_places_is_not_reported_as_penalised():
+    """The bug this panel shipped with.
+
+    Calling any movement a penalty is the obvious inference and it is wrong:
+    when someone ahead is penalised, everyone behind inherits a place. The page
+    published "Grid penalty — Lance Stroll, qualified P22, starts P18" at
+    Monza, where Stroll had gained four places and been penalised for nothing.
+    """
+    entry = builder.qualifying_entry(2026, 13, "Italian Grand Prix", MONZA)
+
+    assert "Stroll" not in " ".join(f.value for f in _penalty_facts(entry))
+
+
+def test_a_real_penalty_is_not_displaced_by_an_invented_one():
+    """The list was capped and ordered by distance moved, so Stroll's four
+    inherited places competed with Albon's twenty real ones for the space."""
+    entry = builder.qualifying_entry(2026, 13, "Italian Grand Prix", MONZA)
+
+    named = " ".join(f.value for f in _penalty_facts(entry))
+    assert "Antonelli" in named and "Albon" in named
+
+
+def test_the_penalty_carries_the_stewards_wording_and_document():
+    """A power unit penalty and an impeding penalty are different events, and a
+    tidied-up summary is where that distinction goes missing."""
+    entry = builder.qualifying_entry(2026, 13, "Italian Grand Prix", MONZA)
+
+    detail = next(f.detail for f in _penalty_facts(entry) if "Antonelli" in f.value)
+    assert "Additional power unit elements have been used" in detail
+    assert "document no. 19" in detail
+
+
+def test_the_worst_penalty_is_listed_first():
+    entry = builder.qualifying_entry(2026, 13, "Italian Grand Prix", MONZA)
+
+    assert "Antonelli" in _penalty_facts(entry)[0].value
+
+
+def test_a_penalty_without_a_lap_is_still_a_penalty():
+    """Stroll took forty places at Spain having set no qualifying time. The
+    timed classification excludes him by construction."""
+    rows = [
+        _quali("Gasly", 1, 81.786),
+        _quali("Russell", 2, 81.846),
+        _quali("Norris", 3, 81.9),
+        {"driver": "Stroll", "team": "Aston Martin", "position": 999,
+         "q1_seconds": 0.0, "q2_seconds": 0.0, "q3_seconds": 0.0,
+         "grid_position": 21, "grid_penalty_places": 40,
+         "grid_penalty_reason": "Additional power unit elements have been used",
+         "starts_from_pit_lane": True},
+    ]
+    entry = builder.qualifying_entry(2026, 14, "Spanish Grand Prix", rows)
+
+    fact = next(f for f in _penalty_facts(entry) if "Stroll" in f.value)
+    assert "−40" in fact.value
+    assert "set no time" in fact.detail
+    assert "pit lane" in fact.detail
+    assert "999" not in fact.detail
+
+
+def test_a_clean_grid_says_so():
+    rows = [_quali("Gasly", 1, 81.786), _quali("Russell", 2, 81.846),
+            _quali("Norris", 3, 81.9)]
+    entry = builder.qualifying_entry(2026, 1, "Season Opener", rows)
+
+    assert _penalty_facts(entry) == []
+    assert any(f.value == "As qualified" for f in entry.facts)
+
+
+def test_each_forecast_window_gets_its_own_entry_id():
+    """A weekend produces up to three forecasts. They shared one id, React keys
+    the timeline on it, and duplicate keys let it drop siblings — putting the
+    final-grid forecast, the best one we make, at risk of never rendering."""
+    windows = ["pre_quali", "post_quali", "final_grid"]
+    ids = {
+        builder.forecast_entry(_prediction(window=w)).entry_id for w in windows
+    }
+
+    assert len(ids) == len(windows), "forecast entries collide: {}".format(ids)
