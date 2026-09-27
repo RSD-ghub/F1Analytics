@@ -38,6 +38,7 @@ from app.training import dataset, promotion  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(__file__))
 from train_model import load_results, train_once  # noqa: E402
+from train_model import TRAINING_FROM_SEASON  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("retrain")
@@ -86,7 +87,11 @@ def archive(champion: Dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("results")
-    parser.add_argument("--from-season", type=int, default=2010)
+    # Kept in step with train_model: a challenger fitted on a different
+    # span than the champion is not a comparison of models.
+    parser.add_argument(
+        "--from-season", type=int, default=TRAINING_FROM_SEASON
+    )
     parser.add_argument("--validation-seasons", default="2018,2019,2021,2022,2023")
     parser.add_argument("--target-season", type=int, default=2026)
     parser.add_argument("--decay", type=float, default=0.6)

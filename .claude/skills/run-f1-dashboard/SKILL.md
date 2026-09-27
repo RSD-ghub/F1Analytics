@@ -134,18 +134,35 @@ curl "localhost:8001/ingest/status?from_season=2026&to_season=2026&depth=results
 ```bash
 cd services/prediction-service
 ../../.venv/bin/python scripts/train_model.py --from-api \
-  --from-season 2010 --validation-seasons 2022,2023 --write
+  --validation-seasons 2022,2023 --write
 ```
 
 Reads the corpus through ingestion-service and **refuses to train if it has
 gaps**. Weights land in `app/model_weights.json`; the service will not start
 serving forecasts without it.
 
-Retraining later goes through the champion/challenger gate:
+The corpus starts at 2014, the turbo-hybrid reset — `TRAINING_FROM_SEASON` in
+`scripts/train_model.py`, with the cutoff sweep that chose it. Ingestion still
+holds everything back to 2010; this is a training cutoff, not a deletion.
+
+Retraining later goes through the champion/challenger gate. It takes the
+corpus as a file rather than from the API, so export it first:
 
 ```bash
-../../.venv/bin/python scripts/retrain.py --apply
+../../.venv/bin/python -c "import asyncio,json,sys; sys.path.insert(0,'.'); \
+from app.services.ingestion_client import IngestionClient; \
+from app.training import corpus; \
+r,_=asyncio.run(corpus.load(IngestionClient('http://localhost:8001'),2010,2026,require_complete=False)); \
+open('/tmp/results.jsonl','w').writelines(json.dumps(x.model_dump(mode='json'))+chr(10) for x in r)"
 ```
+
+```bash
+../../.venv/bin/python scripts/retrain.py /tmp/results.jsonl --apply
+```
+
+Without `--apply` it reports the decision and changes nothing. It refuses to
+decide at all on fewer than 15 races neither model has seen, which is the
+normal answer for most of a season.
 
 ---
 

@@ -37,6 +37,32 @@ logger = logging.getLogger("train")
 
 ARTIFACT = os.path.join(os.path.dirname(__file__), "..", "app", "model_weights.json")
 
+#: First season the model is fitted on.
+#:
+#: 2014 is the turbo-hybrid reset — new power units, new aerodynamics, and the
+#: start of the sport the current cars descend from. A 2010 or 2011 car tells
+#: us very little about how a 2026 one behaves.
+#:
+#: Measured rather than asserted, on 2024-2025 held out:
+#:
+#:     from   races   test LL   improvement
+#:     2010     267   -37.686        7.3%
+#:     2014     194   -37.656        7.4%
+#:     2018     119   -37.664        7.4%
+#:     2021      63   -37.607        7.5%
+#:
+#: Later cutoffs keep nudging upward, and 2021 looks nominally best — on
+#: sixty-three races, which is far too few to believe over a 0.2% margin. 2014
+#: is the last cutoff that is both a real regulation boundary and backed by
+#: enough races to mean something. The sweep is in train_model.py
+#: (--sweep-cutoffs) and should be re-run rather than trusted from here.
+#:
+#: This is a training cutoff, not an ingestion one. The corpus keeps everything
+#: back to 2010; the era sample weighting already discounts old races smoothly,
+#: and throwing the data away would foreclose ever measuring this again.
+TRAINING_FROM_SEASON = 2014
+
+
 
 def load_results(path: str) -> List[RaceResult]:
     allowed = set(RaceResult.model_fields)
@@ -143,7 +169,9 @@ def main() -> int:
                         help="Held out from weight fitting; used only to fit temperature.")
     parser.add_argument("--target-season", type=int, default=2026)
     parser.add_argument("--decay", type=float, default=0.6)
-    parser.add_argument("--from-season", type=int, default=1990)
+    parser.add_argument(
+        "--from-season", type=int, default=TRAINING_FROM_SEASON
+    )
     parser.add_argument("--sweep-cutoffs", action="store_true")
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
