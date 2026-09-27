@@ -45,18 +45,18 @@ export function OddsBar({ win, podium, points }) {
 }
 
 /**
- * A hundred races, and how many of them this driver wins.
+ * A hundred outcomes, and how many of them go one way.
  *
  * The plainest honest device for a single probability, and the one that stops
  * a favourite reading as a certainty. Thirty-one filled squares out of a
  * hundred is unambiguous in a way "31%" is not — you can see the empty ones.
  */
-export function HundredRaces({ probability, label }) {
+export function HundredRaces({ probability, label, unit = 'races' }) {
   const wins = Math.round((probability ?? 0) * 100)
   return (
     <div className="hundred">
       <div className="hundred-grid" role="img"
-           aria-label={`${wins} of every 100 races`}>
+           aria-label={`${wins} of every 100 ${unit}`}>
         {Array.from({ length: 100 }, (_, i) => (
           <span key={i} className={i < wins ? 'pip pip-on' : 'pip'} />
         ))}

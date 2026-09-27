@@ -85,7 +85,11 @@ export default function TrackMap({ map, height = 380 }) {
       const speed = speeds[i] || bottom
       built.push({
         d: `M${outline[i - 1][0]},${outline[i - 1][1]}L${outline[i][0]},${outline[i][1]}`,
-        colour: coloured ? colourFor((speed - bottom) / range) : 'var(--accent)',
+        // Not the accent. A speed-coloured lap is data and earns the ramp;
+        // a bare outline is a shape, and painting it in the brand colour made
+        // the largest object on the page the one carrying the least
+        // information.
+        colour: coloured ? colourFor((speed - bottom) / range) : 'var(--data)',
         speed: coloured ? speed : null,
         index: i,
       })
