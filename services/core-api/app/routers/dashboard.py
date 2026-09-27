@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.models.schemas import HealthSummary, SystemStatus
+from app.routers.blog import WINDOW_PREFERENCE
 from app.services.downstream import ServiceClient, gather_optional
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,110 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         qualifying_freshness=fetched.get("freshness"),
         circuit=circuit,
         unavailable=Unavailable(panels=fetched["_unavailable"]),
+    )
+
+
+class LastRaceView(BaseModel):
+    """The race that just happened, and how the forecast held up.
+
+    The front page spends most of the week between races. Without this it
+    showed a circuit and "no forecast locked yet" for five days out of seven,
+    while the thing the product actually claims — that it publishes first and
+    is scored afterwards — had just been demonstrated and was nowhere on the
+    page.
+    """
+
+    season: int
+    round: int
+    race_name: str = ""
+    winner: str = ""
+    winner_team: str = ""
+    podium: List[Dict[str, Any]] = Field(default_factory=list)
+    #: What the best-informed forecast said about the driver who actually won.
+    called_winner: Optional[str] = None
+    called_winner_probability: Optional[float] = None
+    winner_probability: Optional[float] = None
+    window: str = ""
+    markets: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/last-race", response_model=Optional[LastRaceView])
+async def last_race(settings: Settings = Depends(get_settings)):
+    """The most recent scored race. ``null`` when nothing has been scored yet.
+
+    Driven from the scored record rather than from the calendar: a race that
+    has run but not yet reconciled has nothing to say about accuracy, and a
+    panel claiming otherwise would be the one place on the site where a result
+    appears before it has been marked.
+    """
+    clients = _clients(settings)
+    # /scores, not /track-record. The record is the aggregate across windows
+    # and carries no individual races; the scores are the rows themselves.
+    fetched = await gather_optional(
+        scores=clients["scoring"].get("/scores", {"limit": 20})
+    )
+    scores = fetched.get("scores") or []
+    if not scores:
+        return None
+
+    latest = max((s["season"], s["round"]) for s in scores)
+    season, round_number = latest
+    for_race = [s for s in scores if (s["season"], s["round"]) == latest]
+    # The most-informed window that was actually scored, by the same
+    # preference the rest of the product uses.
+    best = next(
+        (s for w in WINDOW_PREFERENCE for s in for_race if s["window"] == w),
+        for_race[0],
+    )
+
+    detail = await gather_optional(
+        results=clients["ingestion"].get(
+            "/data/results", {"season": season, "round": round_number, "limit": 30}
+        ),
+        predictions=clients["prediction"].get(
+            "/predictions/{}/{}".format(season, round_number)
+        ),
+    )
+    results = sorted(
+        [r for r in (detail.get("results") or []) if (r.get("position") or 0) > 0],
+        key=lambda r: r["position"],
+    )
+    if not results:
+        return None
+
+    winner = results[0]
+    forecast = next(
+        (p for p in (detail.get("predictions") or [])
+         if p.get("window") == best["window"]),
+        None,
+    )
+    called, called_p, winner_p = None, None, None
+    if forecast:
+        rows = forecast.get("driver_probabilities") or []
+        ranked = sorted(rows, key=lambda r: -(r.get("p_win") or 0))
+        if ranked and ranked[0].get("p_win") is not None:
+            called = ranked[0]["driver"]
+            called_p = ranked[0]["p_win"]
+        match = next((r for r in rows if r["driver"] == winner["driver"]), None)
+        if match:
+            winner_p = match.get("p_win")
+
+    return LastRaceView(
+        season=season,
+        round=round_number,
+        race_name=winner.get("race_name", ""),
+        winner=winner.get("driver", ""),
+        winner_team=winner.get("team", ""),
+        podium=[
+            {"position": r["position"], "driver": r.get("driver", ""),
+             "team": r.get("team", "")}
+            for r in results[:3]
+        ],
+        called_winner=called,
+        called_winner_probability=called_p,
+        winner_probability=winner_p,
+        window=best["window"],
+        markets=best.get("markets") or [],
     )
 
 

@@ -49,8 +49,10 @@ export default function Weekend() {
       {track.status === 'ready' && track.data && (
         <Panel
           title={track.data.circuit}
-          subtitle={[track.data.country, 'the track this weekend was run on']
-            .filter(Boolean).join(' · ')}
+          subtitle={[track.data.country, blog.entries.length > 0
+            ? 'the track this weekend was run on'
+            : 'the track this weekend will be run on'
+          ].filter(Boolean).join(' · ')}
         >
           <div className="weekend-hero">
             <TrackMap map={track.data.map} />

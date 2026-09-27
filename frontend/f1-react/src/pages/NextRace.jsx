@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
-import { getNextRace } from '../api/f1Api'
+import { getNextRace, getLastRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Probability, Bar, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
+import LastRace from '../components/LastRace'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -17,6 +18,9 @@ import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
  */
 export default function NextRace() {
   const state = useAsync(() => getNextRace(), [])
+  // Fetched separately so a scoring outage costs this panel and not the
+  // forecast the page exists for.
+  const last = useAsync(() => getLastRace(), [])
 
   if (state.status === 'loading') return <Loading what="Loading the next race" />
   if (state.status === 'error')
@@ -76,6 +80,8 @@ export default function NextRace() {
         <Forecast key={prediction.prediction_id} prediction={prediction} />
       ))}
 
+      {last.status === 'ready' && last.data && <LastRace race={last.data} />}
+
       {unavailable?.panels?.length > 0 && (
         <Unavailable
           what={unavailable.panels.join(' and ')}
@@ -83,9 +89,17 @@ export default function NextRace() {
         />
       )}
 
-      <Link className="link" to={`/weekend/${weekend.season}/${weekend.round}`}>
-        Read the weekend in full →
-      </Link>
+      {/* Only once the weekend has something on it. Before a race there is no
+          practice, no qualifying and no result to read, so this was the only
+          call to action on the front page and it led to "nothing to report
+          yet" for about five days in every seven. The last-race panel carries
+          its own link to the weekend it describes, so there is no gap to
+          fill here. */}
+      {predictions.length > 0 && (
+        <Link className="link" to={`/weekend/${weekend.season}/${weekend.round}`}>
+          Read the weekend in full →
+        </Link>
+      )}
     </div>
   )
 }

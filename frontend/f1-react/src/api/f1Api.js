@@ -113,3 +113,5 @@ export const readThread = (threadId) =>
 
 export const getCircuit = (season, round) =>
   request(`/circuit/${season}/${round}`)
+
+export const getLastRace = () => request('/last-race')

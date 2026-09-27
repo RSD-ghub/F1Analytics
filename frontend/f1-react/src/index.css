@@ -226,3 +226,15 @@ a { color: var(--accent); }
 @media (max-width: 720px) {
   .forecast-head { grid-template-columns: 1fr; }
 }
+
+/* ── Last time out ────────────────────────────────────────────────────────── */
+/* Three rows, weighted so the winner reads first without needing a medal or a
+   colour that would clash with the accent. */
+.podium { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.podium li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 9px 12px; background: #1b2029; border-radius: 7px; border-left: 3px solid var(--line); }
+.podium-1 { border-left-color: var(--accent); }
+.podium-2 { border-left-color: #6f7688; }
+.podium-3 { border-left-color: #4a5160; }
+.podium-pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.podium-1 .podium-driver { font-weight: 650; }
+.podium-team { color: var(--muted); font-size: 13px; text-align: right; }
