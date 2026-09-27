@@ -105,6 +105,21 @@ async def qualifying_freshness(
     )
 
 
+@router.get("/calendar/{season}", response_model=List[RaceWeekend])
+async def calendar(
+    season: int,
+    store: IngestionStore = Depends(get_store),
+) -> List[RaceWeekend]:
+    """Every round of a season, in order.
+
+    ``/upcoming`` answers "what is next"; this answers "what is there". An
+    index over the weekend record needs the rounds that have already happened,
+    which is most of them, and there was no way to ask for those.
+    """
+    weekends = await store.list_weekends(season, season)
+    return [RaceWeekend(**w) for w in weekends]
+
+
 @router.get("/standings/{season}", response_model=StandingsSnapshot)
 async def current_standings(
     season: int,

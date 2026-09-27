@@ -65,7 +65,7 @@ export default function LastRace({ race }) {
           On the winner market that forecast scored{' '}
           <strong>{(win.skill_vs_baseline * 100).toFixed(0)}% better</strong>{' '}
           than treating all {win.drivers_scored} cars as equally likely.{' '}
-          <Link className="link" to={`/weekend/${race.season}/${race.round}`}>
+          <Link className="link" to={`/blog/${race.season}/${race.round}`}>
             See the full weekend →
           </Link>
         </p>

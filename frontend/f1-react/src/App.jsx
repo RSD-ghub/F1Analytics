@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import Layout from './components/Layout'
 import Bernie from './pages/Bernie'
 import Championship from './pages/Championship'
@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import NextRace from './pages/NextRace'
 import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
+import Blog from './pages/Blog'
 
 /**
  * Routing.
@@ -22,7 +23,11 @@ export default function App() {
         <Route path="/" element={<NextRace />} />
         <Route path="/track-record" element={<TrackRecord />} />
         <Route path="/championship" element={<Championship />} />
-        <Route path="/weekend/:season/:round" element={<Weekend />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/:season/:round" element={<Weekend />} />
+        {/* The entries moved under /blog when One Blog got a front door.
+            Old links stay working. */}
+        <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
         <Route path="/bernie" element={<Bernie />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login mode="register" />} />
@@ -30,4 +35,11 @@ export default function App() {
       </Routes>
     </Layout>
   )
+}
+
+
+/** Old /weekend/... links, kept working after One Blog got its own path. */
+function WeekendRedirect() {
+  const { season, round } = useParams()
+  return <Navigate to={`/blog/${season}/${round}`} replace />
 }

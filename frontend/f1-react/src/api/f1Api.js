@@ -115,3 +115,6 @@ export const getCircuit = (season, round) =>
   request(`/circuit/${season}/${round}`)
 
 export const getLastRace = () => request('/last-race')
+
+export const getBlogIndex = (season) =>
+  request(season ? `/blog?season=${season}` : '/blog')

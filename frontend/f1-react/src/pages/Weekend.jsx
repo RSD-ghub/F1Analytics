@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getWeekend, getCircuit } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
@@ -27,7 +28,33 @@ const KIND_LABEL = {
 
 export default function Weekend() {
   const { season, round } = useParams()
-  const state = useAsync(() => getWeekend(season, round), [season, round])
+  /*
+   * Two requests, not one, because they cost three orders of magnitude apart.
+   *
+   * The facts are assembled from stored data and come back in about twenty
+   * milliseconds. The narration asks a language model to write prose over
+   * every entry and takes thirteen seconds warm, considerably longer cold —
+   * and while it ran, this page showed "Loading the weekend…" and nothing
+   * else. Ninety-nine per cent of the content was ready almost immediately
+   * and was being withheld to wait for the last one per cent.
+   *
+   * So the facts render at once and the prose arrives underneath them when it
+   * is ready. Nothing waits for Bernie, and a narration that fails or times
+   * out costs its paragraphs rather than the whole page.
+   */
+  const state = useAsync(
+    () => getWeekend(season, round, { narrate: false }), [season, round],
+  )
+  const [narrated, setNarrated] = useState(null)
+
+  useEffect(() => {
+    let current = true
+    setNarrated(null)
+    getWeekend(season, round, { narrate: true })
+      .then((data) => { if (current) setNarrated(data) })
+      .catch(() => { /* the facts are already on the page */ })
+    return () => { current = false }
+  }, [season, round])
   // Fetched separately so a circuit we have no geometry for costs this panel
   // and not the timeline, which is the part of the page that matters.
   const track = useAsync(() => getCircuit(season, round), [season, round])
@@ -36,7 +63,20 @@ export default function Weekend() {
   if (state.status === 'error')
     return <Unavailable what="This weekend" reason={state.error.message} />
 
-  const blog = state.data
+  // Prose is merged in by entry id, so an entry the narrator skipped keeps
+  // its facts rather than disappearing when the narrated copy lands.
+  const prose = new Map(
+    (narrated?.entries || []).filter(Boolean).map((e) => [e.entry_id, e.narrative]),
+  )
+  const blog = {
+    ...state.data,
+    entries: (state.data.entries || []).map((entry) =>
+      entry && prose.get(entry.entry_id)
+        ? { ...entry, narrative: prose.get(entry.entry_id) }
+        : entry,
+    ),
+  }
+  const narrating = narrated === null
 
   return (
     <div className="stack">
@@ -78,7 +118,15 @@ export default function Weekend() {
         ))}
       </ol>
 
-      {!blog.narration_available && blog.entries.length > 0 && (
+      {narrating && blog.entries.length > 0 && (
+        <p className="muted small narrating">
+          <span className="spark" aria-hidden="true" />
+          Bernie is writing the commentary. Everything above is already
+          computed from the stored data and will not change.
+        </p>
+      )}
+
+      {!narrating && !blog.narration_available && blog.entries.length > 0 && (
         <p className="muted small">
           Written commentary is switched off on this deployment. Everything
           above is computed directly from the stored data.

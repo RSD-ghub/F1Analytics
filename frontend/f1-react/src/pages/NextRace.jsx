@@ -96,7 +96,7 @@ export default function NextRace() {
           its own link to the weekend it describes, so there is no gap to
           fill here. */}
       {predictions.length > 0 && (
-        <Link className="link" to={`/weekend/${weekend.season}/${weekend.round}`}>
+        <Link className="link" to={`/blog/${weekend.season}/${weekend.round}`}>
           Read the weekend in full →
         </Link>
       )}

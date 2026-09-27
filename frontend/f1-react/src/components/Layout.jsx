@@ -3,6 +3,7 @@ import { useAuth } from '../context/useAuth'
 
 const LINKS = [
   { to: '/', label: 'Next race', end: true },
+  { to: '/blog', label: 'One Blog' },
   { to: '/track-record', label: 'Track record' },
   { to: '/championship', label: 'Championship' },
   { to: '/bernie', label: 'Bernie' },

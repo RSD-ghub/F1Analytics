@@ -238,3 +238,30 @@ a { color: var(--accent); }
 .podium-pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .podium-1 .podium-driver { font-weight: 650; }
 .podium-team { color: var(--muted); font-size: 13px; text-align: right; }
+
+/* ── One Blog ─────────────────────────────────────────────────────────────── */
+.section-head { margin: 4px 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 650; }
+.weekend-list { list-style: none; margin: 0 0 26px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.weekend-card {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 14px;
+  align-items: center; padding: 13px 16px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text); text-decoration: none;
+}
+a.weekend-card:hover { border-color: #3a4150; background: #191d25; }
+/* Upcoming rounds render as plain divs, not links — nothing to read yet. */
+.weekend-card-soon { opacity: 0.55; }
+.weekend-round { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.weekend-name { display: flex; flex-direction: column; gap: 2px; font-weight: 550; }
+.weekend-circuit { color: var(--muted); font-size: 13px; font-weight: 400; }
+.weekend-when { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.chip { padding: 2px 8px; border-radius: 20px; border: 1px solid var(--line); font-size: 11px; }
+.chip-on { border-color: var(--good); color: var(--good); }
+.season-pick { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
+.season-pick select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 14px; }
+
+/* The prose arrives after the facts, so say so rather than leaving a gap. */
+.narrating { display: flex; align-items: center; gap: 9px; }
+.spark { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .spark { animation: none; opacity: 0.7; } }
