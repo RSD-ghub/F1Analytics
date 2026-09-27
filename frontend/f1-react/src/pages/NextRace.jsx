@@ -4,6 +4,7 @@ import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Probability, Bar, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
+import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -91,33 +92,54 @@ export default function NextRace() {
 
 function Forecast({ prediction }) {
   const publishes = new Set(prediction.published_markets || [])
+  const callsWinner = publishes.has('win')
   const rows = [...(prediction.driver_probabilities || [])].sort(
     (a, b) => (b.p_podium ?? 0) - (a.p_podium ?? 0),
   )
+  // Ranked by the market being led with, so the sentence and the frequency
+  // grid describe the same driver the table puts first.
+  const leader = callsWinner
+    ? [...rows].sort((a, b) => (b.p_win ?? 0) - (a.p_win ?? 0))[0]
+    : rows[0]
 
   return (
     <Panel
-      title={publishes.has('win') ? 'Forecast — grid set' : 'Forecast — before qualifying'}
+      title={callsWinner ? 'Forecast — grid set' : 'Forecast — before qualifying'}
       subtitle={`Locked ${new Date(prediction.locked_at).toLocaleString()} · model ${prediction.model_version}`}
       footer={<Caveats quality={prediction.data_quality} />}
     >
-      {!publishes.has('win') && (
-        <p className="notice">
-          <strong>No winner call before qualifying.</strong> Measured across two
-          held-out seasons, this window's win-market accuracy was no better than
-          guessing — so we publish podium and points probabilities and make no
-          claim about the winner.
-        </p>
-      )}
+      <div className="forecast-head">
+        <div>
+          <InPlainWords
+            leader={leader?.driver}
+            win={callsWinner ? leader?.p_win : null}
+            podium={leader?.p_podium}
+          />
+          <p className="small muted">
+            Each bar below is one driver&rsquo;s chances, nested: the pale band
+            is a points finish, the middle band a podium, the bright tip a win.
+            Every win is a podium and every podium scores, which is why they
+            sit inside one another rather than side by side.
+          </p>
+        </div>
+        {leader && (
+          <HundredRaces
+            probability={callsWinner ? leader.p_win : leader.p_podium}
+            label={callsWinner
+              ? `Races out of 100 that ${leader.driver} wins`
+              : `Races out of 100 that ${leader.driver} finishes on the podium`}
+          />
+        )}
+      </div>
 
       <table className="grid">
         <thead>
           <tr>
             <th>Driver</th>
+            <th className="viz">Chances</th>
             <th className="num">Win</th>
             <th className="num">Podium</th>
             <th className="num">Points</th>
-            <th className="viz" />
           </tr>
         </thead>
         <tbody>
@@ -127,10 +149,15 @@ function Forecast({ prediction }) {
                 <span className="driver">{row.driver}</span>
                 <span className="team">{row.team}</span>
               </td>
+              <td className="viz">
+                <OddsBar win={row.p_win} podium={row.p_podium} points={row.p_points} />
+              </td>
+              {/* The numbers stay. The bar is for reading the shape of the
+                  field at a glance; anyone checking a specific claim against
+                  the scored record still needs the figure. */}
               <td className="num"><Probability value={row.p_win} /></td>
               <td className="num"><Probability value={row.p_podium} /></td>
               <td className="num"><Probability value={row.p_points} /></td>
-              <td className="viz"><Bar value={row.p_podium ?? 0} /></td>
             </tr>
           ))}
         </tbody>
