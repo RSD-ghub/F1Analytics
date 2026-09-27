@@ -127,3 +127,78 @@ async def test_a_downstream_outage_does_not_take_the_index_with_it(monkeypatch):
 
     assert [w.round for w in index.weekends] == [15]
     assert index.weekends[0].scored is False
+
+
+# ── The feed ─────────────────────────────────────────────────────────────────
+
+
+async def test_the_feed_leads_with_the_most_recent_race(monkeypatch):
+    """The index lists weekends; the feed lists what happened inside them. A
+    reader arriving at a blog wants to see what there is to read."""
+    from app.models.blog import BlogEntry, EntryKind
+
+    def _entry(name):
+        return BlogEntry(
+            entry_id="2026-{}-result".format(name), season=2026, round=name,
+            race_name="Round {}".format(name), kind=EntryKind.RESULT,
+            headline="Round {} result".format(name), summary="",
+            sources=["results"],
+        )
+
+    calendar = [_weekend(14, -21), _weekend(15, -1), _weekend(16, +7)]
+    monkeypatch.setattr(blog, "_clients", lambda settings: (
+        _Client({"/forward/calendar": calendar, "/circuits": {"imagery": []}}),
+        _Client({}),
+    ))
+
+    async def _assemble(settings, season, round_number):
+        return [_entry(round_number)], "Round {}".format(round_number), "Circuit"
+
+    monkeypatch.setattr(blog, "_assemble", _assemble)
+
+    items = await blog.feed(limit=10, settings=Settings())
+
+    assert [i.round for i in items] == [15, 14]
+
+
+async def test_a_race_that_has_not_run_is_not_in_the_feed(monkeypatch):
+    """There is nothing to read about it yet, and a card that opens onto
+    nothing is worse than no card."""
+    monkeypatch.setattr(blog, "_clients", lambda settings: (
+        _Client({"/forward/calendar": [_weekend(16, +7)], "/circuits": {}}),
+        _Client({}),
+    ))
+
+    async def _assemble(settings, season, round_number):
+        raise AssertionError("should not assemble a race that has not run")
+
+    monkeypatch.setattr(blog, "_assemble", _assemble)
+
+    assert await blog.feed(limit=10, settings=Settings()) == []
+
+
+async def test_one_broken_weekend_does_not_empty_the_feed(monkeypatch):
+    """A weekend whose data will not assemble costs its own cards and nothing
+    else."""
+    from app.models.blog import BlogEntry, EntryKind
+
+    calendar = [_weekend(14, -21), _weekend(15, -1)]
+    monkeypatch.setattr(blog, "_clients", lambda settings: (
+        _Client({"/forward/calendar": calendar, "/circuits": {"imagery": []}}),
+        _Client({}),
+    ))
+
+    async def _assemble(settings, season, round_number):
+        if round_number == 15:
+            raise RuntimeError("upstream is confused about this one")
+        return [BlogEntry(
+            entry_id="2026-14-result", season=2026, round=14,
+            race_name="Round 14", kind=EntryKind.RESULT,
+            headline="Round 14 result", summary="", sources=["results"],
+        )], "Round 14", "Circuit"
+
+    monkeypatch.setattr(blog, "_assemble", _assemble)
+
+    items = await blog.feed(limit=10, settings=Settings())
+
+    assert [i.round for i in items] == [14]

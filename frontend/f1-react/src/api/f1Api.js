@@ -121,3 +121,6 @@ export const getBlogIndex = (season) =>
 
 export const getBackdrop = (limit = 10) =>
   request(`/backdrop?limit=${limit}`)
+
+export const getBlogFeed = (limit = 24) =>
+  request(`/blog/feed?limit=${limit}`)
