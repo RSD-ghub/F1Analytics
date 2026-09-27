@@ -2,60 +2,36 @@ import { useEffect, useMemo, useState } from 'react'
 import { getBackdrop } from '../api/f1Api'
 
 /**
- * A slow carousel behind the page.
+ * A slow carousel behind the page, showing where they are racing next.
  *
- * Two sources, in order of preference.
+ * It is keyed off the upcoming weekend rather than chosen at random, so the
+ * backdrop is about something — and it rolls over on its own once that race
+ * is done and the next one becomes upcoming. Nothing schedules that; it
+ * follows from asking which race is next.
  *
- * **Photographs**, if any are present. Drop files into `public/backgrounds/`
- * and list them in `public/backgrounds/manifest.json` as
- * `[{ "src": "car.jpg", "credit": "…", "href": "…" }]`. The credit is
- * rendered — which is the point of requiring the manifest rather than
- * globbing a directory. Race photography is licensed aggressively, so
- * anything put here needs to be yours or openly licensed, and the page has to
- * say whose it is.
+ * The photographs come from Wikimedia Commons and are filtered server-side to
+ * licences that permit reuse. Each one carries the attribution its licence
+ * requires and that credit is rendered, which is a condition of using them
+ * rather than a courtesy.
  *
- * **Circuit outlines** otherwise, which is what ships. They are drawn from
- * the same telemetry and OpenStreetMap geometry as the track maps, so they
- * cost nothing, belong to the project, and are recognisably about this sport
- * rather than being stock texture.
+ * Where a venue has no freely licensed photograph — several circuits have
+ * none — it falls back to circuit outlines drawn from our own geometry.
  *
- * Kept deliberately faint. This sits under tables of numbers that people are
- * meant to read and check, and a backdrop that competes with them would undo
- * the point of the product.
+ * Kept faint throughout. This sits under tables of numbers that people are
+ * meant to read and check.
  */
 
 const HOLD_MS = 11000
 
 export default function Backdrop() {
-  const [slides, setSlides] = useState([])
+  const [backdrop, setBackdrop] = useState(null)
   const [index, setIndex] = useState(0)
 
   useEffect(() => {
     let live = true
-    async function load() {
-      // Photographs first, if someone has supplied any.
-      try {
-        const res = await fetch('/backgrounds/manifest.json')
-        if (res.ok) {
-          const listed = await res.json()
-          if (live && Array.isArray(listed) && listed.length) {
-            setSlides(listed.map((item) => ({ kind: 'photo', ...item })))
-            return
-          }
-        }
-      } catch {
-        /* no manifest is the normal case */
-      }
-      try {
-        const outlines = await getBackdrop(10)
-        if (live) {
-          setSlides(outlines.map((o) => ({ kind: 'circuit', ...o })))
-        }
-      } catch {
-        /* decoration: a page with no backdrop is a page */
-      }
-    }
-    load()
+    getBackdrop()
+      .then((data) => { if (live) { setBackdrop(data); setIndex(0) } })
+      .catch(() => { /* decoration: a page with no backdrop is a page */ })
     return () => { live = false }
   }, [])
 
@@ -63,6 +39,10 @@ export default function Backdrop() {
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     [],
   )
+
+  const slides = backdrop?.kind === 'venue'
+    ? (backdrop.images || [])
+    : (backdrop?.outlines || [])
 
   useEffect(() => {
     if (slides.length < 2 || still) return undefined
@@ -73,19 +53,20 @@ export default function Backdrop() {
   }, [slides.length, still])
 
   if (!slides.length) return null
+  const venue = backdrop.kind === 'venue'
   const current = slides[index]
 
   return (
     <div className="backdrop" aria-hidden="true">
       {slides.map((slide, i) => (
         <div
-          key={slide.src || slide.slug || i}
+          key={slide.url || slide.slug || i}
           className={`backdrop-slide${i === index ? ' is-on' : ''}`}
         >
-          {slide.kind === 'photo' ? (
+          {venue ? (
             <div
               className="backdrop-photo"
-              style={{ backgroundImage: `url(/backgrounds/${slide.src})` }}
+              style={{ backgroundImage: `url("${slide.url}")` }}
             />
           ) : (
             <CircuitGlyph outline={slide.outline} />
@@ -93,11 +74,19 @@ export default function Backdrop() {
         </div>
       ))}
 
-      {current?.credit && (
+      {/* Rendered, not optional. Every one of these licences requires
+          attribution, and the credit is the price of the photograph. */}
+      {venue && current && (
         <p className="backdrop-credit">
-          {current.href
-            ? <a href={current.href} target="_blank" rel="noreferrer noopener">{current.credit}</a>
+          {backdrop.circuit}
+          {' — '}
+          {current.source
+            ? <a href={current.source} target="_blank" rel="noreferrer noopener">{current.credit}</a>
             : current.credit}
+          {current.licence_url
+            ? <> · <a href={current.licence_url} target="_blank" rel="noreferrer noopener">{current.licence}</a></>
+            : <> · {current.licence}</>}
+          {' · Wikimedia Commons'}
         </p>
       )}
     </div>

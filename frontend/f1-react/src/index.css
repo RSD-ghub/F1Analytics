@@ -289,7 +289,15 @@ a { color: var(--accent); }
 .backdrop-photo {
   position: absolute; inset: 0;
   background-size: cover; background-position: center;
-  opacity: 0.16;
+  /* Measured, and lower than it looks like it should be.
+     
+     A photograph carries far more contrast than a line drawing, and the text
+     that sits directly on the page ground — the ledes, the section heads, the
+     colophon — has no panel between it and this. Against the worst case, a
+     black region of a photograph, muted text falls to 3.98:1 at 13% and clears
+     4.5:1 only at 6%. The first attempt shipped at 13% with a comment claiming
+     it had been checked. It had not. */
+  opacity: 0.06;
 }
 /* A photograph carries far more contrast than a line drawing, so it gets a
    wash of the page colour over it to keep body text legible. */
@@ -298,9 +306,15 @@ a { color: var(--accent); }
   background: linear-gradient(to bottom, var(--bg) 0%, transparent 40%, var(--bg) 100%);
 }
 .backdrop-credit {
-  position: fixed; right: 12px; bottom: 8px; margin: 0;
-  font-size: 11px; color: var(--dim); pointer-events: auto;
+  position: fixed; right: 14px; bottom: 10px; margin: 0; max-width: 60vw;
+  font-size: 11px; line-height: 1.4; text-align: right;
+  /* Muted rather than dim: this is the one piece of text that sits directly
+     over a photograph, and dim has too little headroom to survive being
+     darkened by one. */
+  color: var(--muted); pointer-events: auto;
 }
+.backdrop-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.backdrop-credit a:hover { color: var(--text); }
 
 /* Everything the reader interacts with sits above it. */
 .app { position: relative; z-index: 1; }

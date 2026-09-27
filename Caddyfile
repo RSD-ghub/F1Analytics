@@ -20,7 +20,13 @@
 	}
 
 	header {
-		# Belt and braces on a site that serves only its own assets.
+		# No longer a site that serves only its own assets: the typefaces come
+		# from Google Fonts and the venue photographs from Wikimedia Commons.
+		# A Content-Security-Policy would be worth adding, and would have to
+		# admit fonts.googleapis.com, fonts.gstatic.com and
+		# upload.wikimedia.org. It is left out here rather than guessed at —
+		# a CSP that is wrong fails silently and takes the page's images and
+		# fonts with it, and this config has never been run.
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin

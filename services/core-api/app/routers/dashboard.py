@@ -183,21 +183,57 @@ class LastRaceView(BaseModel):
     markets: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-@router.get("/backdrop", response_model=List[Dict[str, Any]])
-async def backdrop(
-    limit: int = Query(12, ge=1, le=30),
-    settings: Settings = Depends(get_settings),
-) -> List[Dict[str, Any]]:
-    """Circuit shapes for the page background. Empty rather than failing.
+class Backdrop(BaseModel):
+    """What sits behind the page, and who it belongs to."""
 
-    Decoration, so it degrades to nothing: a backdrop that 500s would take a
-    page down to draw a watermark.
+    kind: str = "circuits"
+    race_name: str = ""
+    circuit: str = ""
+    images: List[Dict[str, Any]] = Field(default_factory=list)
+    outlines: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/backdrop", response_model=Backdrop)
+async def backdrop(settings: Settings = Depends(get_settings)) -> Backdrop:
+    """Photographs of the venue the next race is at.
+
+    Keyed off the upcoming weekend rather than chosen at random, so the
+    backdrop is about something: it shows where they are racing next, and
+    rolls over on its own when that race is done and the next one becomes
+    upcoming. Nothing schedules that — it follows from asking which race is
+    next on every load.
+
+    Falls back to circuit outlines, which are ours and always available. A
+    venue with no freely licensed photograph on Commons is common enough —
+    several circuits have none — and is not a failure.
+
+    Decoration throughout, so every step degrades rather than raising.
     """
     clients = _clients(settings)
-    fetched = await gather_optional(
-        outlines=clients["ingestion"].get("/circuits/outlines", {"limit": limit})
+    upcoming = await gather_optional(weekend=clients["ingestion"].get("/forward/next"))
+    weekend = upcoming.get("weekend") or {}
+
+    images: List[Dict[str, Any]] = []
+    if weekend.get("season") and weekend.get("round"):
+        found = await gather_optional(
+            circuit=clients["ingestion"].get(
+                "/circuits/{}/{}".format(weekend["season"], weekend["round"])
+            )
+        )
+        images = ((found.get("circuit") or {}).get("imagery")) or []
+
+    if images:
+        return Backdrop(
+            kind="venue",
+            race_name=weekend.get("race_name", ""),
+            circuit=weekend.get("circuit", ""),
+            images=images,
+        )
+
+    fallback = await gather_optional(
+        outlines=clients["ingestion"].get("/circuits/outlines", {"limit": 10})
     )
-    return fetched.get("outlines") or []
+    return Backdrop(kind="circuits", outlines=fallback.get("outlines") or [])
 
 
 @router.get("/last-race", response_model=Optional[LastRaceView])

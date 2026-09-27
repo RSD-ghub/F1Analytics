@@ -565,6 +565,21 @@ class IngestionStore:
         ).limit(max(1, min(limit, 30)))
         return [doc async for doc in cursor]
 
+    async def save_circuit_imagery(
+        self, slug: str, images: List[Dict[str, Any]]
+    ) -> None:
+        """Store freely licensed photographs of a venue, with their credits.
+
+        Written into the same record as the geometry and the official figures,
+        and independently of both — three jobs on three schedules, none of
+        which may erase another's work.
+        """
+        await self._db[CIRCUITS].update_one(
+            {"id": slug},
+            {"$set": {"id": slug, "imagery": images}},
+            upsert=True,
+        )
+
     async def save_circuit_official(self, slug: str, facts: Dict[str, Any]) -> None:
         """Store the figures a circuit's official page states about itself.
 

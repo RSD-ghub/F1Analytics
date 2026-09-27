@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_runner, get_store
 from app.services.circuit_map import CircuitMapUnavailable, slug as circuit_slug
 from app.services.circuit_stats import summarise
-from app.services import f1_site, osm_circuit
+from app.services import commons, f1_site, osm_circuit
 from app.services.ingest_runner import IngestRunner
 from app.services.storage import IngestionStore
 
@@ -46,6 +46,45 @@ async def _weekend(store: IngestionStore, season: int, round_number: int):
 # candidate for a path parameter named ``season`` — declared after them, this
 # route was unreachable and the request failed trying to parse "official" as
 # an integer.
+@router.post("/imagery/{season}", response_model=Dict[str, Any])
+async def refresh_imagery(
+    season: int,
+    store: IngestionStore = Depends(get_store),
+) -> Dict[str, Any]:
+    """Find a freely licensed photograph of each venue and store it.
+
+    Searched by the circuit's official name where we have one, which is far
+    more precise than the schedule's location: "Kuala Lumpur" returns a city,
+    "Sepang International Circuit" returns the track.
+
+    Only licences we recognise as permissive are kept, and each image is
+    stored with the attribution its licence requires. A venue with nothing
+    usable simply keeps no photograph — the page falls back to its outline.
+    """
+    weekends = await store.list_weekends(season, season)
+    stored, skipped = [], []
+    for weekend in weekends:
+        name = weekend.get("circuit") or ""
+        if not name:
+            continue
+        record = await store.circuit_map(name) or {}
+        official = (record.get("official") or {}).get("official_name")
+        query = official or "{} circuit".format(name)
+        try:
+            images = await asyncio.to_thread(commons.search_venue, query, 4)
+        except commons.CommonsUnavailable as exc:
+            logger.info("no imagery for %s: %s", name, exc)
+            skipped.append(name)
+            continue
+        await store.save_circuit_imagery(circuit_slug(name), images)
+        stored.append({"circuit": name, "images": len(images),
+                       "licences": sorted({i["licence"] for i in images})})
+        # Commons is a volunteer service and this is a once-a-season job.
+        await asyncio.sleep(1.0)
+
+    return {"season": season, "stored": stored, "skipped": sorted(set(skipped))}
+
+
 @router.get("/outlines", response_model=List[Dict[str, Any]])
 async def outlines(
     limit: int = 12,
@@ -123,6 +162,7 @@ async def circuit(
     history = await store.circuit_history(name)
     stored = await store.circuit_map(name) or {}
     official = stored.pop("official", None)
+    imagery = stored.pop("imagery", None)
     # Geometry only counts as a map when it has geometry. A document holding
     # nothing but official facts is a circuit we could not draw, and saying
     # ``map: null`` lets the page render the record without one instead of
@@ -137,6 +177,7 @@ async def circuit(
         "country": weekend.get("country", ""),
         "map": stored if has_layout else None,
         "official": official,
+        "imagery": imagery or [],
         "stats": summarise(name, history["results"], history["laps"]),
     }
 
