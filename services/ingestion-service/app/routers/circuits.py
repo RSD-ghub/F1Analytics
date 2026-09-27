@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_runner, get_store
 from app.services.circuit_map import CircuitMapUnavailable, slug as circuit_slug
 from app.services.circuit_stats import summarise
-from app.services import f1_site
+from app.services import f1_site, osm_circuit
 from app.services.ingest_runner import IngestRunner
 from app.services.storage import IngestionStore
 
@@ -143,8 +143,13 @@ async def derive(
     name = weekend.get("circuit") or ""
 
     existing = await store.circuit_map(name)
-    if existing and not force:
-        return {"circuit": name, "derived": False, "reason": "already stored"}
+    # Geometry, not merely a document. The official facts live in the same
+    # record and are written by a different job, so "a document exists" stopped
+    # meaning "we have drawn this circuit" the moment those landed — and the
+    # circuits most likely to have facts without geometry are exactly the ones
+    # this fallback is for.
+    if (existing or {}).get("outline") and not force:
+        return {"circuit": name, "derived": False, "reason": "already drawn"}
 
     # This weekend first, then every earlier visit. The current event is the
     # one least likely to have telemetry published, and a circuit drawn from
@@ -156,11 +161,27 @@ async def derive(
     ]
     try:
         derived = await runner.derive_circuit_map(name, visits)
-    except CircuitMapUnavailable as exc:
-        # 409 rather than 500: the request was valid and the answer is "not
-        # from this weekend". A season with no position data is a fact about
-        # the archive, not a fault in this service.
-        raise HTTPException(status_code=409, detail=str(exc))
+    except CircuitMapUnavailable as telemetry_failure:
+        # Fall back to OpenStreetMap. Telemetry is the better source — it
+        # carries speed and corner positions — but it only exists from 2018,
+        # so a circuit returning after an absence has none. OSM has no lap,
+        # only the shape, which is still far more than a blank panel.
+        official = (existing or {}).get("official") or {}
+        try:
+            derived = await asyncio.to_thread(
+                osm_circuit.build_outline,
+                name, official.get("official_name") or name,
+                official.get("length_km") or 0.0,
+            )
+        except osm_circuit.OSMUnavailable as osm_failure:
+            # 409 rather than 500: the request was valid and neither source
+            # can answer it. That is a fact about the archive, not a fault.
+            raise HTTPException(
+                status_code=409,
+                detail="{} | openstreetmap: {}".format(
+                    telemetry_failure, osm_failure
+                ),
+            )
     except Exception as exc:
         logger.exception("circuit derivation failed for %s", name)
         raise HTTPException(status_code=502, detail=str(exc))
@@ -169,7 +190,10 @@ async def derive(
     return {
         "circuit": name,
         "derived": True,
-        "source": "{} {}".format(derived.source_season, derived.source_session),
+        "source": (
+            derived.source_session if derived.source_season == 0
+            else "{} {}".format(derived.source_season, derived.source_session)
+        ),
         "corners": len(derived.corners),
         "outline_points": len(derived.outline),
     }

@@ -13,6 +13,31 @@ import { useMemo, useState } from 'react'
  * you *where*, and that is the thing a viewer wants before a race.
  */
 
+/**
+ * Where a layout came from, credited in the legend.
+ *
+ * OpenStreetMap is ODbL and requires attribution, so this is a licence term
+ * rather than a nicety — and it doubles as the honest label for a map that has
+ * no telemetry behind it.
+ */
+function Provenance({ map }) {
+  if (map.source_session === 'openstreetmap') {
+    return (
+      <>
+        ©{' '}
+        <a href="https://www.openstreetmap.org/copyright"
+           target="_blank" rel="noreferrer noopener">
+          OpenStreetMap
+        </a>{' '}contributors
+      </>
+    )
+  }
+  return (
+    <>traced from {map.source_season}{' '}
+    {map.source_session === 'Q' ? 'qualifying' : 'the race'}</>
+  )
+}
+
 /** Slow to fast: deep blue, amber, accent red. */
 const SCALE = [
   [0.0, [59, 110, 165]],
@@ -37,14 +62,20 @@ function colourFor(fraction) {
 export default function TrackMap({ map, height = 380 }) {
   const [hover, setHover] = useState(null)
 
-  const { segments, fastest, slowest } = useMemo(() => {
+  const { segments, fastest, slowest, coloured } = useMemo(() => {
     const outline = map?.outline || []
     const speeds = map?.speeds || []
-    if (outline.length < 2) return { segments: [], fastest: 0, slowest: 0 }
+    if (outline.length < 2) {
+      return { segments: [], fastest: 0, slowest: 0, coloured: false }
+    }
 
+    // A map from OpenStreetMap has a shape and no lap, so no speeds. Drawn as
+    // a single accent-coloured ribbon instead of a gradient — the absence of
+    // colour is the honest signal that there is no telemetry behind it.
     const measured = speeds.filter((s) => s > 0)
-    const top = Math.max(...measured)
-    const bottom = Math.min(...measured)
+    const coloured = measured.length > 0
+    const top = coloured ? Math.max(...measured) : 0
+    const bottom = coloured ? Math.min(...measured) : 0
     const range = top - bottom || 1
 
     // One path per pair of points. More elements than a single path, but a
@@ -54,12 +85,12 @@ export default function TrackMap({ map, height = 380 }) {
       const speed = speeds[i] || bottom
       built.push({
         d: `M${outline[i - 1][0]},${outline[i - 1][1]}L${outline[i][0]},${outline[i][1]}`,
-        colour: colourFor((speed - bottom) / range),
-        speed,
+        colour: coloured ? colourFor((speed - bottom) / range) : 'var(--accent)',
+        speed: coloured ? speed : null,
         index: i,
       })
     }
-    return { segments: built, fastest: top, slowest: bottom }
+    return { segments: built, fastest: top, slowest: bottom, coloured }
   }, [map])
 
   const centre = useMemo(() => {
@@ -163,11 +194,21 @@ export default function TrackMap({ map, height = 380 }) {
       </svg>
 
       <div className="trackmap-key">
-        <span className="small muted">{slowest} kph</span>
-        <span className="trackmap-ramp" aria-hidden="true" />
-        <span className="small muted">{fastest} kph</span>
+        {coloured ? (
+          <>
+            <span className="small muted">{slowest} kph</span>
+            <span className="trackmap-ramp" aria-hidden="true" />
+            <span className="small muted">{fastest} kph</span>
+          </>
+        ) : (
+          <span className="small muted">
+            Shape only — no lap telemetry exists for this circuit.
+          </span>
+        )}
         <span className="small trackmap-readout">
-          {hover ? `${hover.speed} kph here` : `traced from ${map.source_season} ${map.source_session === 'Q' ? 'qualifying' : 'the race'}`}
+          {coloured && hover
+            ? `${hover.speed} kph here`
+            : <Provenance map={map} />}
         </span>
       </div>
     </div>

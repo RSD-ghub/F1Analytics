@@ -155,6 +155,36 @@ class CircuitMap:
         }
 
 
+def placement(points: Sequence[Tuple[float, float]]):
+    """A function mapping world coordinates into the stored viewBox.
+
+    One scale for the racing line and the corner markers together, or the
+    numbers drift off the track they label. Shared by both sources of geometry
+    — telemetry and OpenStreetMap — so a map drawn from either lands in the
+    same box and renders through the same component.
+    """
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    span = max(max_x - min_x, max_y - min_y) or 1.0
+    scale = (VIEWBOX - 2 * MARGIN) / span
+    # Centre the shorter axis so a long thin circuit is not pinned to one edge.
+    offset_x = MARGIN + ((VIEWBOX - 2 * MARGIN) - (max_x - min_x) * scale) / 2
+    offset_y = MARGIN + ((VIEWBOX - 2 * MARGIN) - (max_y - min_y) * scale) / 2
+
+    def place(x: float, y: float) -> List[float]:
+        # SVG's y grows downward; the world's grows up. Flipping here rather
+        # than in the component keeps the stored document the thing that gets
+        # drawn, with no per-renderer convention to remember.
+        return [
+            round((x - min_x) * scale + offset_x, 1),
+            round(VIEWBOX - ((y - min_y) * scale + offset_y), 1),
+        ]
+
+    return place
+
+
 def build_map(
     circuit: str,
     season: int,
@@ -184,26 +214,7 @@ def build_map(
         _rotate(float(row.X), float(row.Y), rotation) for row in corners.itertuples()
     ] if corners is not None and len(corners) else []
 
-    # One scale for the line and the corner markers, or the numbers drift off
-    # the track they label.
-    every_x = [p[0] for p in rotated] + [p[0] for p in corner_points]
-    every_y = [p[1] for p in rotated] + [p[1] for p in corner_points]
-    min_x, max_x = min(every_x), max(every_x)
-    min_y, max_y = min(every_y), max(every_y)
-    span = max(max_x - min_x, max_y - min_y) or 1.0
-    scale = (VIEWBOX - 2 * MARGIN) / span
-    # Centre the shorter axis so a long thin circuit is not pinned to one edge.
-    offset_x = MARGIN + ((VIEWBOX - 2 * MARGIN) - (max_x - min_x) * scale) / 2
-    offset_y = MARGIN + ((VIEWBOX - 2 * MARGIN) - (max_y - min_y) * scale) / 2
-
-    def place(x: float, y: float) -> List[float]:
-        # SVG's y grows downward; the timing frame's grows up. Flipping here
-        # rather than in the component keeps the stored document the thing that
-        # gets drawn, with no per-renderer convention to remember.
-        return [
-            round((x - min_x) * scale + offset_x, 1),
-            round(VIEWBOX - ((y - min_y) * scale + offset_y), 1),
-        ]
+    place = placement(rotated + corner_points)
 
     keep = _downsample(rotated, OUTLINE_POINTS)
     outline = [place(*rotated[i]) for i in keep]
