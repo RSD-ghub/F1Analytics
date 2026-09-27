@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom'
 import { getNextRace, getLastRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
-import { Panel, Loading, Unavailable, Probability, Bar, Caveats } from '../components/Panel'
+import { Panel, Loading, Unavailable, Probability, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import VenuePhotos from '../components/VenuePhotos'
 import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 import LastRace from '../components/LastRace'
 
 /**
@@ -148,36 +151,36 @@ function Forecast({ prediction }) {
         )}
       </div>
 
-      <table className="grid">
-        <thead>
-          <tr>
-            <th>Driver</th>
-            <th className="viz">Chances</th>
-            <th className="num">Win</th>
-            <th className="num">Podium</th>
-            <th className="num">Points</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="grid">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Driver</TableHead>
+            <TableHead className="viz">Chances</TableHead>
+            <TableHead className="num">Win</TableHead>
+            <TableHead className="num">Podium</TableHead>
+            <TableHead className="num">Points</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row) => (
-            <tr key={row.driver}>
-              <td>
+            <TableRow key={row.driver}>
+              <TableCell>
                 <span className="driver">{row.driver}</span>
                 <span className="team">{row.team}</span>
-              </td>
-              <td className="viz">
+              </TableCell>
+              <TableCell className="viz">
                 <OddsBar win={row.p_win} podium={row.p_podium} points={row.p_points} />
-              </td>
+              </TableCell>
               {/* The numbers stay. The bar is for reading the shape of the
                   field at a glance; anyone checking a specific claim against
                   the scored record still needs the figure. */}
-              <td className="num"><Probability value={row.p_win} /></td>
-              <td className="num"><Probability value={row.p_podium} /></td>
-              <td className="num"><Probability value={row.p_points} /></td>
-            </tr>
+              <TableCell className="num"><Probability value={row.p_win} /></TableCell>
+              <TableCell className="num"><Probability value={row.p_podium} /></TableCell>
+              <TableCell className="num"><Probability value={row.p_points} /></TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </Panel>
   )
 }

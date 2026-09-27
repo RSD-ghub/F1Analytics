@@ -21,19 +21,23 @@ const LIGHTS = [0, 1, 2, 3, 4]
 const STEP_MS = 620
 const HOLD_MS = 1400
 
+/** Whether the viewer has asked for less motion. Read once, at module load. */
+const STILL =
+  typeof window !== 'undefined' &&
+  Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+
 export default function StartLights() {
   // -1 none lit, 0..4 lighting up, 5 all lit and holding, 6 out — lights out
   // and away we go, which is also the resting state.
-  const [stage, setStage] = useState(-1)
+  //
+  // The reduced-motion case starts at 5 rather than being set there by the
+  // effect: no sequence, but not nothing — the gantry sits lit, which is the
+  // recognisable image without the movement. Deciding it in the initialiser
+  // keeps setState out of the effect body, which cascades a render.
+  const [stage, setStage] = useState(STILL ? 5 : -1)
 
   useEffect(() => {
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (still) {
-      // No sequence, but not nothing: the gantry sits lit, which is the
-      // recognisable image without the motion.
-      setStage(5)
-      return undefined
-    }
+    if (STILL) return undefined
     const timers = LIGHTS.map((i) =>
       setTimeout(() => setStage(i), STEP_MS * (i + 1)),
     )

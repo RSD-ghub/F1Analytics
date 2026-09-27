@@ -183,23 +183,17 @@ body {
 .lede { margin-top: 0; color: var(--muted); }
 
 /* ── Panels ───────────────────────────────────────────────────────────────── */
-/* Less box, more rule.
-   
-   Every page was a stack of identical bordered cards, which gave a reader no
-   way to tell a headline from a footnote — the container was doing all the
-   structuring and the content none. The border is now barely there and the
-   heading carries the break instead. */
-.panel {
-  background: var(--panel); border: 1px solid var(--line-soft);
-  border-radius: var(--radius); overflow: hidden; box-shadow: var(--lift);
+/* Panel is shadcn's Card now, so its box, padding and radius come from there.
+   What is left here is the type — the heading was rendering at Card's default
+   weight and size, which is louder than this product wants when a page is a
+   stack of six of them. */
+.panel [data-slot="card-title"] {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
 }
-.panel-head { padding: 18px 20px 0; }
-.panel-head h2 {
-  margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
-}
-.panel-sub { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-.panel-body { padding: 16px 20px 18px; }
-.panel-foot { padding: 0 20px 16px; }
+.panel [data-slot="card-description"] { font-size: 13px; }
+.panel-foot { display: block; }
+/* A wide table scrolls inside its own panel rather than pushing the page. */
+.panel [data-slot="card-content"] { overflow-x: auto; }
 
 .notice { background: var(--panel-soft); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 6px 6px 0; margin: 0 0 14px; font-size: 14px; }
 .notice.warn { border-left-color: var(--warn); }
@@ -291,7 +285,7 @@ tr.thin td { opacity: 0.55; }
 .narrow .panel { box-shadow: var(--lift); }
 .form label { font-weight: 500; color: var(--muted); }
 .form input { font-size: 15px; padding: 11px 13px; }
-.form .button { margin-top: 2px; padding: 11px 16px; }
+
 
 .examples { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; color: var(--text); }
 .examples li { font-size: 14px; }
@@ -306,7 +300,11 @@ tr.thin td { opacity: 0.55; }
 
 /* ── Forms ────────────────────────────────────────────────────────────────── */
 .form { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; }
-.form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+/* No flex-direction on the label. It is shadcn's Label now, which carries
+   "flex items-center" — vertical centring in a row. Left over from the
+   hand-rolled form, this rule flipped that axis to a column, at which point
+   items-center began centring the text horizontally and every field label sat
+   in the middle of the form. */
 input { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; color: var(--text); font: inherit; }
 input:focus { outline: none; border-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; }

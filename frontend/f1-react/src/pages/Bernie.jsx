@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/useAuth'
 import { Link } from 'react-router-dom'
 import { continueThread, getNextRace, listThreads, readThread, startThread } from '../api/f1Api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Panel, Loading, Unavailable } from '../components/Panel'
 
 /**
@@ -71,7 +73,7 @@ export default function Bernie() {
             page that needs a login. Forecasts, the track record and One Blog
             are open to everyone.
           </p>
-          <Link className="button" to="/login">Sign in to ask</Link>
+          <Button asChild><Link to="/login">Sign in to ask</Link></Button>
         </Panel>
       </div>
     )
@@ -113,9 +115,9 @@ export default function Bernie() {
   return (
     <div className="bernie">
       <aside className="threads">
-        <button className="button subtle" onClick={() => setActive(null)}>
+        <Button variant="outline" onClick={() => setActive(null)}>
           New conversation
-        </button>
+        </Button>
         {threads.map((thread) => (
           <button
             key={thread.thread_id}
@@ -150,15 +152,16 @@ export default function Bernie() {
         {error && <BernieError error={error} />}
 
         <form className="composer" onSubmit={send}>
-          <input
+          <Input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={active ? 'Ask a follow-up…' : 'Who looks strongest this weekend?'}
             disabled={busy || !race}
+            aria-label="Ask Bernie about this weekend"
           />
-          <button className="button" disabled={busy || !question.trim() || !race}>
+          <Button type="submit" disabled={busy || !question.trim() || !race}>
             Send
-          </button>
+          </Button>
         </form>
 
         <p className="disclaimer">

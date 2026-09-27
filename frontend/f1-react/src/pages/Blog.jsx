@@ -5,6 +5,9 @@ import { Loading, Unavailable } from '../components/Panel'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 /**
  * One Blog, as a feed.
@@ -132,12 +135,25 @@ export default function Blog() {
       )}
 
       {seasons.length > 1 && (
-        <label className="season-pick">
-          <span className="small muted">Season</span>
-          <select value={index.data.season} onChange={(e) => setParams({ season: e.target.value })}>
-            {seasons.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
+        <div className="season-pick">
+          <span className="small muted" id="season-label">Season</span>
+          {/* shadcn's Select rather than a bare <select>: it is keyboard
+              navigable, announces itself, and looks like the rest of the
+              product on every platform, which a native control does not. */}
+          <Select
+            value={String(index.data.season)}
+            onValueChange={(value) => setParams({ season: value })}
+          >
+            <SelectTrigger className="w-28" aria-labelledby="season-label">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {seasons.map((s) => (
+                <SelectItem key={s} value={String(s)}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
     </div>
   )

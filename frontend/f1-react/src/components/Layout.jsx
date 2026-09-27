@@ -1,6 +1,7 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import StartLights from './StartLights'
+import { Button } from '@/components/ui/button'
 
 const LINKS = [
   { to: '/', label: 'Next race', end: true },
@@ -32,10 +33,10 @@ export default function Layout({ children }) {
           {auth?.token ? (
             <>
               <span className="muted small">{auth.username}</span>
-              <button className="button subtle" onClick={logout}>Sign out</button>
+              <Button variant="outline" size="sm" onClick={logout}>Sign out</Button>
             </>
           ) : (
-            <Link className="button subtle" to="/login">Sign in</Link>
+            <Button asChild variant="outline" size="sm"><Link to="/login">Sign in</Link></Button>
           )}
         </div>
       </header>

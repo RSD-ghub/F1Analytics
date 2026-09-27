@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { login, register } from '../api/f1Api'
 import { useAuth } from '../context/useAuth'
 import { Panel } from '../components/Panel'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 /**
  * Sign in / register.
@@ -52,17 +55,22 @@ export default function Login({ mode = 'login' }) {
 
       <Panel>
         <form className="form" onSubmit={submit}>
-          <label>
-            Email
+          <div className="field">
+            {/* Label's htmlFor pairs it with the input, so clicking the word
+                focuses the box and a screen reader announces the two
+                together. The bare <label>Email<input/></label> nesting that
+                was here worked for the mouse and said nothing. */}
+            <Label htmlFor="email">Email</Label>
             {/* autoComplete lets a password manager fill this, which is the
                 difference between a form people use and one they abandon. */}
-            <input type="email" value={email} required
+            <Input id="email" type="email" value={email} required
                    autoComplete="email" autoFocus
                    onChange={(e) => setEmail(e.target.value)} />
-          </label>
-          <label>
-            Password
-            <input type="password" value={password} required minLength={10}
+          </div>
+          <div className="field">
+            <Label htmlFor="password">Password</Label>
+            <Input id="password" type="password" value={password} required
+                   minLength={10}
                    autoComplete={isRegister ? 'new-password' : 'current-password'}
                    onChange={(e) => setPassword(e.target.value)} />
             {isRegister && (
@@ -71,13 +79,13 @@ export default function Login({ mode = 'login' }) {
                 so there are no symbol or digit rules.
               </span>
             )}
-          </label>
+          </div>
           {/* Announced, not just coloured: a screen reader user gets nothing
               from red text that appears silently. */}
           {error && <p className="error" role="alert">{error}</p>}
-          <button className="button" disabled={busy}>
+          <Button type="submit" disabled={busy}>
             {busy ? 'Working…' : isRegister ? 'Create account' : 'Sign in'}
-          </button>
+          </Button>
         </form>
         <p className="muted small">
           {isRegister ? (

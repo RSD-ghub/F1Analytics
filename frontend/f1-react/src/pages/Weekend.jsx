@@ -46,16 +46,23 @@ export default function Weekend() {
   const state = useAsync(
     () => getWeekend(season, round, { narrate: false }), [season, round],
   )
-  const [narrated, setNarrated] = useState(null)
+  // Keyed by the weekend rather than reset inside the effect. Calling
+  // setState in an effect body triggers a cascading render, which is what
+  // react-hooks/set-state-in-effect flags — and useAsync already solved this
+  // the same way: when the key changes, the stale guard discards whatever the
+  // previous request returns.
+  const [narrated, setNarrated] = useState({ key: null, data: null })
+  const key = `${season}/${round}`
 
   useEffect(() => {
     let current = true
-    setNarrated(null)
     getWeekend(season, round, { narrate: true })
-      .then((data) => { if (current) setNarrated(data) })
+      .then((data) => { if (current) setNarrated({ key, data }) })
       .catch(() => { /* the facts are already on the page */ })
     return () => { current = false }
-  }, [season, round])
+  }, [season, round, key])
+
+  const prose = narrated.key === key ? narrated.data : null
   // Fetched separately so a circuit we have no geometry for costs this panel
   // and not the timeline, which is the part of the page that matters.
   const track = useAsync(() => getCircuit(season, round), [season, round])
@@ -66,18 +73,18 @@ export default function Weekend() {
 
   // Prose is merged in by entry id, so an entry the narrator skipped keeps
   // its facts rather than disappearing when the narrated copy lands.
-  const prose = new Map(
-    (narrated?.entries || []).filter(Boolean).map((e) => [e.entry_id, e.narrative]),
+  const written = new Map(
+    (prose?.entries || []).filter(Boolean).map((e) => [e.entry_id, e.narrative]),
   )
   const blog = {
     ...state.data,
     entries: (state.data.entries || []).map((entry) =>
-      entry && prose.get(entry.entry_id)
-        ? { ...entry, narrative: prose.get(entry.entry_id) }
+      entry && written.get(entry.entry_id)
+        ? { ...entry, narrative: written.get(entry.entry_id) }
         : entry,
     ),
   }
-  const narrating = narrated === null
+  const narrating = prose === null
 
   return (
     <div className="stack">

@@ -17,22 +17,27 @@ import { useEffect, useMemo, useState } from 'react'
 const HOLD_MS = 6000
 
 export default function VenuePhotos({ images, circuit }) {
-  const [index, setIndex] = useState(0)
+  // Keyed on the circuit rather than reset by an effect. Resetting inside one
+  // cascades a render, and the key does the same job: a frame index left over
+  // from another circuit is simply not used.
+  const [frame, setFrame] = useState({ circuit: null, index: 0 })
+  const index = frame.circuit === circuit ? frame.index : 0
 
   const still = useMemo(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
     [],
   )
 
-  useEffect(() => { setIndex(0) }, [circuit])
-
   useEffect(() => {
     if (!images || images.length < 2 || still) return undefined
-    const timer = setInterval(
-      () => setIndex((i) => (i + 1) % images.length), HOLD_MS,
-    )
+    const timer = setInterval(() => {
+      setFrame((f) => ({
+        circuit,
+        index: (f.circuit === circuit ? f.index + 1 : 1) % images.length,
+      }))
+    }, HOLD_MS)
     return () => clearInterval(timer)
-  }, [images, still])
+  }, [images, still, circuit])
 
   if (!images?.length) return null
   const current = images[index]
@@ -57,7 +62,7 @@ export default function VenuePhotos({ images, circuit }) {
               type="button"
               className={`venue-dot${i === index ? ' is-on' : ''}`}
               aria-label={`Photograph ${i + 1} of ${images.length}`}
-              onClick={() => setIndex(i)}
+              onClick={() => setFrame({ circuit, index: i })}
             />
           ))}
         </div>

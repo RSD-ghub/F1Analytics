@@ -2,6 +2,9 @@ import { getChampionship } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Bar } from '../components/Panel'
 import { HundredRaces } from '../components/Odds'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 
 /**
  * Title probabilities from simulating every remaining race.
@@ -112,32 +115,32 @@ function Standings({ title, rows, nameKey = 'driver' }) {
         )
       }
     >
-      <table className="grid">
-        <thead>
-          <tr>
-            <th>{nameKey === 'team' ? 'Team' : 'Driver'}</th>
-            <th className="num">Points</th>
-            <th className="num">Title chance</th>
+      <Table className="grid">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{nameKey === 'team' ? 'Team' : 'Driver'}</TableHead>
+            <TableHead className="num">Points</TableHead>
+            <TableHead className="num">Title chance</TableHead>
             {/* The bar shows the title chance, so it sits beside it. It used
                 to be the last column, two places away from the number it
                 draws and flush against projected points, which is what a
                 reader took it to mean. */}
-            <th className="viz" />
-            <th className="num">Projected</th>
-          </tr>
-        </thead>
-        <tbody>
+            <TableHead className="viz" />
+            <TableHead className="num">Projected</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {contenders.map((row) => (
-            <tr key={row[nameKey] ?? row.driver}>
-              <td>{row[nameKey] ?? row.driver}</td>
-              <td className="num">{row.current_points.toFixed(0)}</td>
-              <td className="num strong">{(row.p_champion * 100).toFixed(1)}%</td>
-              <td className="viz"><Bar value={row.p_champion} /></td>
-              <td className="num muted">{row.expected_final_points.toFixed(0)}</td>
-            </tr>
+            <TableRow key={row[nameKey] ?? row.driver}>
+              <TableCell>{row[nameKey] ?? row.driver}</TableCell>
+              <TableCell className="num">{row.current_points.toFixed(0)}</TableCell>
+              <TableCell className="num strong">{(row.p_champion * 100).toFixed(1)}%</TableCell>
+              <TableCell className="viz"><Bar value={row.p_champion} /></TableCell>
+              <TableCell className="num muted">{row.expected_final_points.toFixed(0)}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </Panel>
   )
 }
