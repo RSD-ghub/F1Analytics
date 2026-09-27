@@ -5,6 +5,7 @@ import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
+import VenuePhotos from '../components/VenuePhotos'
 
 /**
  * One Blog — a race weekend as an append-only timeline.
@@ -94,6 +95,7 @@ export default function Weekend() {
             : 'the track this weekend will be run on'
           ].filter(Boolean).join(' · ')}
         >
+          <VenuePhotos images={track.data.imagery} circuit={track.data.circuit} />
           <div className="weekend-hero">
             <TrackMap map={track.data.map} />
             <CircuitBrief circuit={track.data} />

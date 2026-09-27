@@ -4,6 +4,7 @@ import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Probability, Bar, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
+import VenuePhotos from '../components/VenuePhotos'
 import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
 import LastRace from '../components/LastRace'
 
@@ -52,6 +53,7 @@ export default function NextRace() {
           title={circuit.circuit}
           subtitle={[circuit.country, weekend.race_name].filter(Boolean).join(' · ')}
         >
+          <VenuePhotos images={circuit.imagery} circuit={circuit.circuit} />
           <div className="weekend-hero">
             <TrackMap map={circuit.map} />
             <CircuitBrief circuit={circuit} />

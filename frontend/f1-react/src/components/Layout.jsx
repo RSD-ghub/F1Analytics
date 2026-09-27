@@ -1,6 +1,6 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
-import Backdrop from './Backdrop'
+import StartLights from './StartLights'
 
 const LINKS = [
   { to: '/', label: 'Next race', end: true },
@@ -15,7 +15,6 @@ export default function Layout({ children }) {
 
   return (
     <div className="app">
-      <Backdrop />
       <header className="masthead">
         <Link to="/" className="brand">
           <span className="brand-mark" aria-hidden="true" />
@@ -41,7 +40,8 @@ export default function Layout({ children }) {
         </div>
       </header>
 
-      <main>{children}</main>
+      <main>
+        <StartLights />{children}</main>
 
       <footer className="colophon">
         <p>
