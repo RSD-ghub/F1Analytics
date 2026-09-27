@@ -13,7 +13,7 @@ rate limit.
 
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -46,6 +46,23 @@ async def _weekend(store: IngestionStore, season: int, round_number: int):
 # candidate for a path parameter named ``season`` — declared after them, this
 # route was unreachable and the request failed trying to parse "official" as
 # an integer.
+@router.get("/outlines", response_model=List[Dict[str, Any]])
+async def outlines(
+    limit: int = 12,
+    store: IngestionStore = Depends(get_store),
+) -> List[Dict[str, Any]]:
+    """Just the shapes, for the page backdrop.
+
+    Geometry without the speeds, corners or statistics that the circuit panel
+    needs — this is decoration, and shipping the full documents for it would
+    send a couple of hundred kilobytes to draw a watermark.
+
+    Registered before the "/{season}/{round_number}" routes, which would
+    otherwise match "outlines" as a season and fail parsing it as an integer.
+    """
+    return await store.circuit_outlines(limit)
+
+
 @router.post("/official/{season}", response_model=Dict[str, Any])
 async def refresh_official(
     season: int,

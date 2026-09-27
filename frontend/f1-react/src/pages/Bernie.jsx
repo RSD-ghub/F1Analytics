@@ -38,16 +38,42 @@ export default function Bernie() {
   }, [active?.turns?.length])
 
   if (!auth?.token) {
+    /*
+     * The signed-out state used to be a bare panel headed "Sign in to talk to
+     * Bernie", which asked for an account without ever saying what the
+     * account was for. Someone arriving from the masthead had no way to know
+     * what Bernie knows or why he is worth the sign-up.
+     */
     return (
-      <Panel title="Sign in to talk to Bernie">
-        <p className="muted">
-          Conversations are private to your account, and they are the only part
-          of the service that spends model calls — so this is the one page that
-          needs a login. Forecasts, the track record and the weekend blog are
-          open to everyone.
-        </p>
-        <Link className="button" to="/login">Sign in</Link>
-      </Panel>
+      <div className="stack">
+        <header className="page-head">
+          <p className="eyebrow">Bernie</p>
+          <h1>Ask about the weekend</h1>
+          <p className="lede">
+            Bernie answers from the stored record — practice pace, qualifying,
+            the confirmed grid and its penalties, the locked forecast, and the
+            text of the FIA regulations. He cites the article when he leans on
+            a rule, and says he does not know when the record does not cover
+            the question.
+          </p>
+        </header>
+
+        <Panel title="What he can be asked">
+          <ul className="examples">
+            <li>Why does a driver start further back than they qualified?</li>
+            <li>How many power unit elements are allowed before a penalty?</li>
+            <li>What did the forecast say about this race, and how did it score?</li>
+            <li>Who was quickest over a race stint in practice?</li>
+          </ul>
+          <p className="small muted">
+            Conversations are private to your account, and they are the only
+            part of the service that spends model calls — so this is the one
+            page that needs a login. Forecasts, the track record and One Blog
+            are open to everyone.
+          </p>
+          <Link className="button" to="/login">Sign in to ask</Link>
+        </Panel>
+      </div>
     )
   }
 

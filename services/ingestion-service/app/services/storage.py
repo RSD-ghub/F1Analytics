@@ -552,6 +552,19 @@ class IngestionStore:
             ]
         return {"results": results, "laps": laps}
 
+    async def circuit_outlines(self, limit: int = 12) -> List[Dict[str, Any]]:
+        """Circuit shapes only, for decorative use.
+
+        Projected to the outline and the name. A stored circuit document also
+        carries three hundred speed samples, its corners and its official
+        record, none of which a watermark has any use for.
+        """
+        cursor = self._db[CIRCUITS].find(
+            {"outline.1": {"$exists": True}},
+            {"_id": 0, "slug": 1, "circuit": 1, "outline": 1},
+        ).limit(max(1, min(limit, 30)))
+        return [doc async for doc in cursor]
+
     async def save_circuit_official(self, slug: str, facts: Dict[str, Any]) -> None:
         """Store the figures a circuit's official page states about itself.
 

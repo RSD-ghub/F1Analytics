@@ -40,20 +40,30 @@ export default function Login({ mode = 'login' }) {
 
   return (
     <div className="narrow">
-      <Panel title={isRegister ? 'Create an account' : 'Sign in'}>
-        <p className="muted">
-          An account is only needed to talk to Bernie. Forecasts, the track
-          record and the weekend blog are open to everyone.
+      <header className="page-head auth-head">
+        <p className="eyebrow">{isRegister ? 'New account' : 'Welcome back'}</p>
+        <h1>{isRegister ? 'Create an account' : 'Sign in'}</h1>
+        <p className="lede">
+          Only needed to talk to Bernie. Forecasts, the track record and One
+          Blog are open to everyone, and always will be — a record behind a
+          login cannot be checked.
         </p>
+      </header>
+
+      <Panel>
         <form className="form" onSubmit={submit}>
           <label>
             Email
+            {/* autoComplete lets a password manager fill this, which is the
+                difference between a form people use and one they abandon. */}
             <input type="email" value={email} required
+                   autoComplete="email" autoFocus
                    onChange={(e) => setEmail(e.target.value)} />
           </label>
           <label>
             Password
             <input type="password" value={password} required minLength={10}
+                   autoComplete={isRegister ? 'new-password' : 'current-password'}
                    onChange={(e) => setPassword(e.target.value)} />
             {isRegister && (
               <span className="hint">
@@ -62,7 +72,9 @@ export default function Login({ mode = 'login' }) {
               </span>
             )}
           </label>
-          {error && <p className="error">{error}</p>}
+          {/* Announced, not just coloured: a screen reader user gets nothing
+              from red text that appears silently. */}
+          {error && <p className="error" role="alert">{error}</p>}
           <button className="button" disabled={busy}>
             {busy ? 'Working…' : isRegister ? 'Create account' : 'Sign in'}
           </button>

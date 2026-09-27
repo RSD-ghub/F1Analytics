@@ -118,3 +118,6 @@ export const getLastRace = () => request('/last-race')
 
 export const getBlogIndex = (season) =>
   request(season ? `/blog?season=${season}` : '/blog')
+
+export const getBackdrop = (limit = 10) =>
+  request(`/backdrop?limit=${limit}`)

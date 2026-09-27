@@ -183,6 +183,23 @@ class LastRaceView(BaseModel):
     markets: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+@router.get("/backdrop", response_model=List[Dict[str, Any]])
+async def backdrop(
+    limit: int = Query(12, ge=1, le=30),
+    settings: Settings = Depends(get_settings),
+) -> List[Dict[str, Any]]:
+    """Circuit shapes for the page background. Empty rather than failing.
+
+    Decoration, so it degrades to nothing: a backdrop that 500s would take a
+    page down to draw a watermark.
+    """
+    clients = _clients(settings)
+    fetched = await gather_optional(
+        outlines=clients["ingestion"].get("/circuits/outlines", {"limit": limit})
+    )
+    return fetched.get("outlines") or []
+
+
 @router.get("/last-race", response_model=Optional[LastRaceView])
 async def last_race(settings: Settings = Depends(get_settings)):
     """The most recent scored race. ``null`` when nothing has been scored yet.

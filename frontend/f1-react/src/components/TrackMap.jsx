@@ -40,9 +40,9 @@ function Provenance({ map }) {
 
 /** Slow to fast: deep blue, amber, accent red. */
 const SCALE = [
-  [0.0, [59, 110, 165]],
-  [0.5, [214, 178, 74]],
-  [1.0, [232, 68, 58]],
+  [0.0, [47, 107, 176]],
+  [0.5, [199, 145, 20]],
+  [1.0, [204, 51, 40]],
 ]
 
 function colourFor(fraction) {
@@ -146,9 +146,11 @@ export default function TrackMap({ map, height = 380 }) {
         aria-label={`Track layout for ${map.circuit}, coloured by speed`}
         onMouseLeave={() => setHover(null)}
       >
-        {/* A dark casing under the coloured line so the track reads as one
-            ribbon rather than a chain of segments where colours meet. */}
-        <g stroke="#0a0c10" strokeWidth="26" strokeLinecap="round" fill="none">
+        {/* A casing under the coloured line so the track reads as one ribbon
+            rather than a chain of segments where colours meet. It takes the
+            page's own ground, so it works on paper as well as it did on the
+            dark it was drawn for. */}
+        <g stroke="var(--bg)" strokeWidth="26" strokeLinecap="round" fill="none">
           {segments.map((s) => <path key={`c${s.index}`} d={s.d} />)}
         </g>
         <g strokeWidth="17" strokeLinecap="round" fill="none">
@@ -179,7 +181,7 @@ export default function TrackMap({ map, height = 380 }) {
               y={corner.y + (dy / away) * 40 + 9}
               textAnchor="middle"
               fontSize="26"
-              fill="#6f7688"
+              fill="var(--dim)"
             >
               {corner.number}{corner.letter}
             </text>
@@ -192,7 +194,7 @@ export default function TrackMap({ map, height = 380 }) {
           cy={map.outline[0][1]}
           r="15"
           fill="none"
-          stroke="#e8eaf0"
+          stroke="var(--text)"
           strokeWidth="4"
         />
       </svg>
