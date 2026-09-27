@@ -34,6 +34,7 @@ export default function CircuitBrief({ circuit }) {
   if (!circuit) return null
   const stats = circuit.stats || {}
   const map = circuit.map
+  const official = circuit.official
   const character = circuit.character || {}
   const archetype = character.archetype && character.archetype !== 'unknown'
     ? character.archetype
@@ -51,18 +52,30 @@ export default function CircuitBrief({ circuit }) {
       )}
 
       <div className="brief-stats">
-        {map?.lap_distance_m > 0 && (
+        {/* The official length, when we have it, over the one traced from a
+            lap: the racing line cuts every apex and comes out short — Baku
+            measures 5.937km off the telemetry against a stated 6.003km. */}
+        {(official?.length_km || map?.lap_distance_m > 0) && (
           <Stat
             label="Lap"
-            value={`${(map.lap_distance_m / 1000).toFixed(3)} km`}
-            note={`${(map.corners || []).length} corners`}
+            value={`${(official?.length_km ?? map.lap_distance_m / 1000).toFixed(3)} km`}
+            note={[
+              map?.corners?.length ? `${map.corners.length} corners` : null,
+              official?.scheduled_laps ? `${official.scheduled_laps} laps` : null,
+            ].filter(Boolean).join(' · ')}
           />
         )}
-        {stats.fastest_lap && (
+        {/* The official record beats ours wherever it exists. Ours is the
+            fastest lap in the races we hold, which have lap timing only from
+            2018 — for Sepang, returning after last racing in 2017, that is no
+            record at all. */}
+        {(official?.lap_record_time || stats.fastest_lap) && (
           <Stat
             label="Lap record"
-            value={lapTime(stats.fastest_lap.seconds)}
-            note={`${stats.fastest_lap.driver}, ${stats.fastest_lap.season}`}
+            value={official?.lap_record_time ?? lapTime(stats.fastest_lap.seconds)}
+            note={official?.lap_record_time
+              ? `${official.lap_record_driver}, ${official.lap_record_season}`
+              : `${stats.fastest_lap.driver}, ${stats.fastest_lap.season}`}
           />
         )}
         {stats.top_speed_kph > 0 && (
@@ -96,11 +109,25 @@ export default function CircuitBrief({ circuit }) {
       </div>
 
       <p className="brief-source small muted">
+        {official?.official_name && official.official_name !== circuit.circuit && (
+          <>{official.official_name}. </>
+        )}
+        {official?.first_season && (
+          <>First grand prix {official.first_season}. </>
+        )}
         {visits > 0
           ? `From ${visits} race${visits === 1 ? '' : 's'} in our corpus, ${stats.first_season}–${stats.last_season}.`
           : 'No previous race at this circuit in our corpus.'}
         {stats.most_wins &&
           ` ${stats.most_wins.driver} has won here ${stats.most_wins.wins} times.`}
+        {official && (
+          <>
+            {' '}Official figures from{' '}
+            <a href={official.url} target="_blank" rel="noreferrer noopener">
+              formula1.com
+            </a>.
+          </>
+        )}
       </p>
     </div>
   )

@@ -11,14 +11,16 @@ fewer lines and would have made the home page a way to spend the service's
 rate limit.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.dependencies import get_runner, get_store
-from app.services.circuit_map import CircuitMapUnavailable
+from app.services.circuit_map import CircuitMapUnavailable, slug as circuit_slug
 from app.services.circuit_stats import summarise
+from app.services import f1_site
 from app.services.ingest_runner import IngestRunner
 from app.services.storage import IngestionStore
 
@@ -38,6 +40,52 @@ async def _weekend(store: IngestionStore, season: int, round_number: int):
     return match
 
 
+# Registered before the "/{season}/{round_number}" routes below.
+#
+# FastAPI matches in registration order, and "official" is a perfectly good
+# candidate for a path parameter named ``season`` — declared after them, this
+# route was unreachable and the request failed trying to parse "official" as
+# an integer.
+@router.post("/official/{season}", response_model=Dict[str, Any])
+async def refresh_official(
+    season: int,
+    store: IngestionStore = Depends(get_store),
+) -> Dict[str, Any]:
+    """Read each circuit's own page and store the figures it states.
+
+    Facts only — official name, length, scheduled laps and distance, first
+    season, and the lap record with its holder. The track illustrations on
+    those pages are F1's artwork rather than measurements, and this project
+    publishes what it draws from telemetry instead.
+
+    Keyed on the circuit rather than the round, joined by the short name the
+    page gives, which is the same string the schedule uses as a location. One
+    request per circuit, once a season.
+    """
+    try:
+        slugs = await asyncio.to_thread(f1_site.fetch_season_slugs, season)
+    except f1_site.F1SiteUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    stored, failed = [], []
+    for race_slug in slugs:
+        try:
+            facts = await asyncio.to_thread(
+                f1_site.fetch_circuit_facts, season, race_slug
+            )
+        except f1_site.F1SiteUnavailable as exc:
+            logger.info("no facts for %s: %s", race_slug, exc)
+            failed.append(race_slug)
+            continue
+        key = circuit_slug(facts["short_name"])
+        await store.save_circuit_official(key, facts)
+        stored.append(key)
+        # One page a second. The volume is trivial either way; there is no
+        # reason to arrive as a burst.
+        await asyncio.sleep(1.0)
+
+    return {"season": season, "stored": sorted(stored), "failed": failed}
+
 @router.get("/{season}/{round_number}", response_model=Dict[str, Any])
 async def circuit(
     season: int,
@@ -56,13 +104,22 @@ async def circuit(
     name = weekend.get("circuit") or ""
 
     history = await store.circuit_history(name)
+    stored = await store.circuit_map(name) or {}
+    official = stored.pop("official", None)
+    # Geometry only counts as a map when it has geometry. A document holding
+    # nothing but official facts is a circuit we could not draw, and saying
+    # ``map: null`` lets the page render the record without one instead of
+    # receiving an empty outline and deciding for itself what that means.
+    has_layout = len(stored.get("outline") or []) > 1
+
     return {
         "season": season,
         "round": round_number,
         "race_name": weekend.get("race_name", ""),
         "circuit": name,
         "country": weekend.get("country", ""),
-        "map": await store.circuit_map(name),
+        "map": stored if has_layout else None,
+        "official": official,
         "stats": summarise(name, history["results"], history["laps"]),
     }
 

@@ -68,6 +68,14 @@ CIRCUIT_ALIASES = {
     "singapore": "marina bay",
     "spa": "spa francorchamps",
     "nurburg": "nurburgring",
+    # formula1.com names a circuit after itself where the schedule names the
+    # nearest city. Same venues: Catalunya is Barcelona, the Hungaroring is at
+    # Budapest, Interlagos is São Paulo, the Madring is Madrid.
+    "catalunya": "barcelona",
+    "hungaroring": "budapest",
+    "interlagos": "sao paulo",
+    "madring": "madrid",
+    "yas marina circuit": "yas island",
 }
 
 

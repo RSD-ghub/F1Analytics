@@ -526,17 +526,46 @@ class IngestionStore:
                 {"circuit": {"$in": names}}, {"_id": 0}
             )
         ]
-        names = sorted({row["race_name"] for row in results if row.get("race_name")})
+        # Matched on (season, race name) pairs, not race names alone.
+        #
+        # The lap rows carry no circuit, so the join has to go through the race
+        # name — but a race name is not a venue. The Spanish Grand Prix is
+        # Barcelona through 2025 and Madrid in 2026, and matching on the name
+        # gave Madrid, which has held exactly one race, a lap record set by
+        # Piastri at Barcelona the year before. The European Grand Prix has
+        # been both Valencia and Baku and would have done the same.
+        pairs = sorted({
+            (row["season"], row["race_name"]) for row in results
+            if row.get("race_name") and row.get("season")
+        })
         laps: List[Dict[str, Any]] = []
-        if names:
+        if pairs:
             laps = [
                 row async for row in self._db[DATA_COLLECTIONS["laps"]].find(
-                    {"race_name": {"$in": names}},
+                    {"$or": [
+                        {"season": season, "race_name": name}
+                        for season, name in pairs
+                    ]},
                     {"_id": 0, "lap_time_seconds": 1, "speed_trap_kph": 1,
                      "driver": 1, "season": 1},
                 )
             ]
         return {"results": results, "laps": laps}
+
+    async def save_circuit_official(self, slug: str, facts: Dict[str, Any]) -> None:
+        """Store the figures a circuit's official page states about itself.
+
+        Upserted into the same document as the geometry, and independently of
+        it. A circuit we cannot draw still has an official length and a lap
+        record worth showing — Sepang returns in 2026 having last raced in
+        2017, so it has no telemetry and no lap in our corpus, and these facts
+        are the only thing the page can honestly say about it.
+        """
+        await self._db[CIRCUITS].update_one(
+            {"id": slug},
+            {"$set": {"id": slug, "official": facts}},
+            upsert=True,
+        )
 
     async def save_circuit_map(self, document: Dict[str, Any]) -> None:
         """Store a circuit's geometry, replacing any earlier derivation.
@@ -545,8 +574,11 @@ class IngestionStore:
         are one shape, and deriving it per visit would pay the telemetry cost
         every year to redraw the same track.
         """
-        await self._db[CIRCUITS].replace_one(
-            {"id": document["id"]}, document, upsert=True
+        # Set rather than replace: the official facts are written by a
+        # different job on a different schedule, and a re-derivation of the
+        # geometry must not erase them.
+        await self._db[CIRCUITS].update_one(
+            {"id": document["id"]}, {"$set": document}, upsert=True
         )
 
     async def circuit_map(self, circuit: str) -> Optional[Dict[str, Any]]:

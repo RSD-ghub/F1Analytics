@@ -294,3 +294,25 @@ def test_a_race_name_does_not_fix_a_venue():
     """
     assert slug("Kuala Lumpur") == "kuala lumpur"
     assert slug("Kuala Lumpur") != slug("Sakhir")
+
+
+def test_a_race_name_is_not_a_venue():
+    """Laps carry no circuit, so their join has to go through the race name —
+    and a race name outlives a venue. The Spanish Grand Prix is Barcelona
+    through 2025 and Madrid in 2026, and matching on the name alone gave
+    Madrid, which has held exactly one race, a lap record set at Barcelona the
+    year before.
+
+    The fix is to match on (season, race name) pairs taken from the results,
+    which is what ``circuit_history`` does; this pins the property the pairing
+    exists to defend.
+    """
+    barcelona = [_result(2025, 9, "Piastri", 1, 1)]
+    barcelona[0]["race_name"] = "Spanish Grand Prix"
+    madrid = [_result(2026, 14, "Russell", 1, 1)]
+    madrid[0]["race_name"] = "Spanish Grand Prix"
+
+    pairs = sorted({(r["season"], r["race_name"]) for r in madrid})
+
+    assert pairs == [(2026, "Spanish Grand Prix")]
+    assert (2025, "Spanish Grand Prix") not in pairs
