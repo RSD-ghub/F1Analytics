@@ -9,15 +9,16 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.dependencies import get_llm
+from app.dependencies import get_llm, get_usage
 from app.models.blog import WeekendBlog
 from app.services import blog as builder
 from app.services.bernie import Bernie
 from app.services.downstream import ServiceClient, gather_optional
+from app.services.usage import UsageStore
 
 logger = logging.getLogger(__name__)
 
@@ -51,23 +52,37 @@ def _clients(settings: Settings):
     )
 
 
+class FeedEntry(BaseModel):
+    """One entry inside a weekend, shown when the card is opened."""
+
+    id: str
+    kind: str = ""
+    kind_label: str = ""
+    headline: str = ""
+    facts: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class FeedItem(BaseModel):
-    """One thing that happened, as it appears in the feed."""
+    """One race weekend, as a single card."""
 
     id: str
     season: int
     round: int
     race_name: str = ""
     circuit: str = ""
-    kind: str = ""
-    kind_label: str = ""
-    headline: str = ""
-    summary: str = ""
-    occurred_at: Optional[str] = None
+    race_start_utc: Optional[str] = None
     image: Optional[str] = None
-    #: The two or three figures worth showing on a card. The full entry has
-    #: more; a card that reproduces all of them is the timeline again.
-    facts: List[Dict[str, Any]] = Field(default_factory=list)
+    #: What happened, in two sentences, written by the model over the same
+    #: entries the card carries. Absent when the model is unavailable — the
+    #: card still has its headline and its numbers.
+    summary: str = ""
+    headline: str = ""
+    #: The three figures a reader wants without opening anything: who won,
+    #: whether we called it, and how the forecast scored.
+    winner: str = ""
+    called_winner: str = ""
+    win_skill: Optional[float] = None
+    entries: List[FeedEntry] = Field(default_factory=list)
 
 
 KIND_LABEL = {
@@ -80,27 +95,43 @@ KIND_LABEL = {
 
 @router.get("/feed", response_model=List[FeedItem])
 async def feed(
-    limit: int = Query(24, ge=1, le=60),
+    background: BackgroundTasks,
+    limit: int = Query(8, ge=1, le=24),
     settings: Settings = Depends(get_settings),
+    llm=Depends(get_llm),
+    usage: UsageStore = Depends(get_usage),
 ) -> List[FeedItem]:
-    """The weekend record as a stream of items, newest first.
+    """The weekend record, one card per race weekend, newest first.
 
-    The index lists weekends; this lists what happened inside them. A reader
-    arriving at a blog wants to see what there is to read, not a table of
-    contents pointing at eleven rounds any of which might be empty.
+    It was one card per *entry*, which gave a single grand prix five cards —
+    qualifying, three forecasts and the result — each with the same photograph
+    of the same circuit. That is not a feed, it is a timeline with the
+    weekends taken out of it.
 
-    Assembled from the same entry builders the weekend page uses, so a card
-    and the page it opens cannot disagree. Narration is deliberately not
-    requested: it costs thirteen seconds a weekend and a card shows a
-    headline, not prose.
+    So: one card a weekend, carrying what a reader wants without opening
+    anything — who won, whether we called it, how the forecast scored — with
+    the entries underneath for whoever wants them.
+
+    The summary is written by the model, and the request never waits for it.
+    Ten weekends is ten model calls on a cold cache, and this page showed a
+    skeleton for the whole of it — the same mistake the weekend page had, where
+    the facts sat ready while the prose was written. A card whose summary has
+    not been produced yet renders without one; it is generated after the
+    response goes out and is there on the next load.
     """
     ingestion, prediction = _clients(settings)
+    scoring = ServiceClient(
+        "scoring", settings.scoring_service_url, settings.downstream_timeout_seconds
+    )
     chosen = datetime.now(timezone.utc).year
 
     fetched = await gather_optional(
         calendar=ingestion.get("/forward/calendar/{}".format(chosen)),
+        scores=scoring.get("/scores", {"season": chosen, "limit": 200}),
     )
+    scores = fetched.get("scores") or []
     now = datetime.now(timezone.utc)
+
     rounds = []
     for weekend in (fetched.get("calendar") or []):
         start = weekend.get("race_start_utc")
@@ -114,13 +145,9 @@ async def feed(
             rounds.append((weekend["round"], weekend))
     rounds.sort(reverse=True)
 
+    bernie = Bernie(llm)
     items: List[FeedItem] = []
-    # Newest rounds first, stopping as soon as the page is full. Each weekend
-    # is a handful of stored queries with no narration, so this is cheap — but
-    # there is no reason to build the whole season to show twenty-four cards.
-    for round_number, weekend in rounds:
-        if len(items) >= limit:
-            break
+    for round_number, weekend in rounds[:limit]:
         try:
             entries, race_name, _circuit = await _assemble(
                 settings, chosen, round_number
@@ -129,36 +156,122 @@ async def feed(
             logger.exception("feed skipped %s-%s", chosen, round_number)
             continue
         entries = [e for e in entries if e]
+        if not entries:
+            continue
+
         found = await gather_optional(
-            circuit=ingestion.get("/circuits/{}/{}".format(chosen, round_number))
+            circuit=ingestion.get("/circuits/{}/{}".format(chosen, round_number)),
+            results=ingestion.get(
+                "/data/results",
+                {"season": chosen, "round": round_number, "limit": 5},
+            ),
         )
         imagery = ((found.get("circuit") or {}).get("imagery")) or []
-        image = imagery[0]["url"] if imagery else None
+        classified = sorted(
+            [r for r in (found.get("results") or []) if (r.get("position") or 0) > 0],
+            key=lambda r: r["position"],
+        )
 
-        for entry in entries:
-            # ``_assemble`` returns the builders' own models, not dictionaries.
-            kind = getattr(entry.kind, "value", entry.kind)
-            items.append(FeedItem(
-                id=entry.entry_id,
-                season=chosen,
-                round=round_number,
-                race_name=entry.race_name or race_name or weekend.get("race_name", ""),
-                circuit=weekend.get("circuit", ""),
-                kind=kind,
-                kind_label=KIND_LABEL.get(kind, "Weekend"),
-                headline=entry.headline,
-                summary=entry.summary,
-                occurred_at=(
-                    entry.occurred_at.isoformat()
-                    if hasattr(entry.occurred_at, "isoformat") else entry.occurred_at
-                ),
-                image=image,
-                # Two or three figures, not the whole entry: a card that
-                # reproduces every fact is the timeline again.
-                facts=[f.model_dump() for f in (entry.facts or [])[:3]],
-            ))
+        # The best-informed window that was scored for this race.
+        for_race = [s for s in scores if s.get("round") == round_number]
+        best = next(
+            (s for w in WINDOW_PREFERENCE for s in for_race if s["window"] == w),
+            for_race[0] if for_race else None,
+        )
+        win_skill = None
+        if best:
+            market = next(
+                (m for m in (best.get("markets") or []) if m["market"] == "win"), None
+            )
+            win_skill = market["skill_vs_baseline"] if market else None
 
-    return items[:limit]
+        called = ""
+        if best:
+            forecast = next(
+                (e for e in entries
+                 if getattr(e.kind, "value", e.kind) == "forecast"), None
+            )
+            if forecast:
+                favourite = next(
+                    (f for f in forecast.facts if f.label == "Most likely winner"), None
+                )
+                called = favourite.value if favourite else ""
+
+        result = next(
+            (e for e in entries if getattr(e.kind, "value", e.kind) == "result"), None
+        )
+        item = FeedItem(
+            id="{}-{}".format(chosen, round_number),
+            season=chosen,
+            round=round_number,
+            race_name=race_name or weekend.get("race_name", ""),
+            circuit=weekend.get("circuit", ""),
+            race_start_utc=weekend.get("race_start_utc"),
+            image=imagery[0]["url"] if imagery else None,
+            headline=result.headline if result else entries[-1].headline,
+            winner=classified[0].get("driver", "") if classified else "",
+            called_winner=called,
+            win_skill=win_skill,
+            entries=[
+                FeedEntry(
+                    id=e.entry_id,
+                    kind=getattr(e.kind, "value", e.kind),
+                    kind_label=KIND_LABEL.get(
+                        getattr(e.kind, "value", e.kind), "Weekend"
+                    ),
+                    headline=e.headline,
+                    facts=[f.model_dump() for f in (e.facts or [])[:4]],
+                )
+                for e in entries
+            ],
+            summary=await _cached_summary(usage, chosen, round_number, entries),
+        )
+        if not item.summary and bernie.available:
+            background.add_task(
+                _write_summary, bernie, usage, chosen, round_number, entries,
+            )
+        items.append(item)
+
+    return items
+
+
+def _summary_key(season: int, round_number: int, entries) -> str:
+    """Keyed on the entry count as well as the round.
+
+    A race summarised after qualifying and then finished would otherwise keep
+    a summary describing a weekend that had not happened yet.
+    """
+    return UsageStore.key("weekend-summary", season, round_number, len(entries))
+
+
+async def _cached_summary(usage, season: int, round_number: int, entries) -> str:
+    cached = await usage.cached(_summary_key(season, round_number, entries))
+    return (cached or {}).get("summary", "")
+
+
+async def _write_summary(bernie, usage, season: int, round_number: int, entries):
+    """Produce a weekend's two sentences, after the response has gone out."""
+    facts = {
+        "race": "{} round {}".format(season, round_number),
+        "what the weekend produced": [
+            "{}: {}".format(
+                KIND_LABEL.get(getattr(e.kind, "value", e.kind), "Entry"), e.headline
+            )
+            for e in entries
+        ],
+        "the figures": [
+            "{} {} {}".format(f.label, f.value, f.detail).strip()
+            for e in entries for f in (e.facts or [])[:4]
+        ],
+    }
+    try:
+        summary = await bernie.summarise(facts)
+    except Exception:
+        # Decoration on a card. The weekend still has its headline and its
+        # figures, and the next load will try again.
+        logger.warning("no summary for %s-%s", season, round_number, exc_info=True)
+        return
+    await usage.store(_summary_key(season, round_number, entries), {"summary": summary})
 
 
 class WeekendCard(BaseModel):

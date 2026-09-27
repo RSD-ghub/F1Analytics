@@ -127,6 +127,28 @@ class Bernie:
     def available(self) -> bool:
         return bool(getattr(self._client, "available", False))
 
+    async def summarise(self, facts: Dict[str, Any]) -> str:
+        """Two sentences on a race weekend, for a card.
+
+        A card is scanned, not read. The weekend page already carries the full
+        entries and Bernie's prose over them; repeating either on a card turns
+        an index into the thing it indexes, which is what the first version of
+        this feed did — four hundred words of summary across five cards for
+        one grand prix.
+
+        The instruction is tight because the model will otherwise produce a
+        paragraph and a closing flourish. Facts only, as ever: the summary is
+        built from the same entries the page shows and may not reach past them.
+        """
+        return (await self.converse(
+            "In no more than two sentences, say what happened at this race "
+            "weekend and how our forecast fared. Lead with the result. Do not "
+            "repeat the numbers verbatim — the card shows them beside your "
+            "words. No preamble, no closing remark, no bullet points.",
+            facts,
+            max_tokens=160,
+        ))[0].strip()
+
     async def explain(
         self,
         question: str,

@@ -130,75 +130,138 @@ async def test_a_downstream_outage_does_not_take_the_index_with_it(monkeypatch):
 
 
 # ── The feed ─────────────────────────────────────────────────────────────────
+#
+# One card a race weekend. It was one card per entry, which gave a single
+# grand prix five — qualifying, three forecasts and a result — each carrying
+# the same photograph of the same circuit.
+
+
+class _Background:
+    """FastAPI's BackgroundTasks, reduced to what the handler uses."""
+
+    def __init__(self):
+        self.scheduled = []
+
+    def add_task(self, func, *args, **kwargs):
+        self.scheduled.append(func)
+
+
+class _Llm:
+    available = False
+
+
+def _entry(round_number, kind, headline):
+    from app.models.blog import BlogEntry
+
+    return BlogEntry(
+        entry_id="2026-{}-{}".format(round_number, kind.value),
+        season=2026, round=round_number, race_name="Round {}".format(round_number),
+        kind=kind, headline=headline, summary="", sources=["stored data"],
+    )
+
+
+def _wire_feed(monkeypatch, calendar, assemble):
+    monkeypatch.setattr(blog, "_clients", lambda settings: (
+        _Client({"/forward/calendar": calendar, "/circuits": {"imagery": []},
+                 "/data/results": []}),
+        _Client({}),
+    ))
+    monkeypatch.setattr(blog, "ServiceClient", lambda *a, **k: _Client({"/scores": []}))
+    monkeypatch.setattr(blog, "_assemble", assemble)
+    monkeypatch.setattr(blog, "Bernie", lambda llm: _Llm())
+
+
+async def _no_summary(usage, season, round_number, entries):
+    return ""
+
+
+async def test_a_weekend_is_one_card_not_one_per_entry(monkeypatch):
+    """A grand prix produced five cards, all with the same photograph of the
+    same circuit. That is a timeline with the weekends taken out of it."""
+    from app.models.blog import EntryKind
+
+    async def assemble(settings, season, round_number):
+        return [
+            _entry(round_number, EntryKind.QUALIFYING, "Pole"),
+            _entry(round_number, EntryKind.FORECAST, "Forecast"),
+            _entry(round_number, EntryKind.RESULT, "Result"),
+        ], "Round {}".format(round_number), "Circuit"
+
+    _wire_feed(monkeypatch, [_weekend(15, -1)], assemble)
+    monkeypatch.setattr(blog, "_cached_summary", _no_summary)
+
+    items = await blog.feed(_Background(), limit=10, settings=Settings(),
+                            llm=None, usage=None)
+
+    assert len(items) == 1
+    assert items[0].round == 15
+    assert len(items[0].entries) == 3
 
 
 async def test_the_feed_leads_with_the_most_recent_race(monkeypatch):
-    """The index lists weekends; the feed lists what happened inside them. A
-    reader arriving at a blog wants to see what there is to read."""
-    from app.models.blog import BlogEntry, EntryKind
+    from app.models.blog import EntryKind
 
-    def _entry(name):
-        return BlogEntry(
-            entry_id="2026-{}-result".format(name), season=2026, round=name,
-            race_name="Round {}".format(name), kind=EntryKind.RESULT,
-            headline="Round {} result".format(name), summary="",
-            sources=["results"],
-        )
+    async def assemble(settings, season, round_number):
+        return ([_entry(round_number, EntryKind.RESULT, "Result")],
+                "Round {}".format(round_number), "Circuit")
 
-    calendar = [_weekend(14, -21), _weekend(15, -1), _weekend(16, +7)]
-    monkeypatch.setattr(blog, "_clients", lambda settings: (
-        _Client({"/forward/calendar": calendar, "/circuits": {"imagery": []}}),
-        _Client({}),
-    ))
+    _wire_feed(monkeypatch, [_weekend(14, -21), _weekend(15, -1), _weekend(16, +7)],
+               assemble)
+    monkeypatch.setattr(blog, "_cached_summary", _no_summary)
 
-    async def _assemble(settings, season, round_number):
-        return [_entry(round_number)], "Round {}".format(round_number), "Circuit"
-
-    monkeypatch.setattr(blog, "_assemble", _assemble)
-
-    items = await blog.feed(limit=10, settings=Settings())
+    items = await blog.feed(_Background(), limit=10, settings=Settings(),
+                            llm=None, usage=None)
 
     assert [i.round for i in items] == [15, 14]
 
 
 async def test_a_race_that_has_not_run_is_not_in_the_feed(monkeypatch):
-    """There is nothing to read about it yet, and a card that opens onto
-    nothing is worse than no card."""
-    monkeypatch.setattr(blog, "_clients", lambda settings: (
-        _Client({"/forward/calendar": [_weekend(16, +7)], "/circuits": {}}),
-        _Client({}),
-    ))
-
-    async def _assemble(settings, season, round_number):
+    async def assemble(settings, season, round_number):
         raise AssertionError("should not assemble a race that has not run")
 
-    monkeypatch.setattr(blog, "_assemble", _assemble)
+    _wire_feed(monkeypatch, [_weekend(16, +7)], assemble)
+    monkeypatch.setattr(blog, "_cached_summary", _no_summary)
 
-    assert await blog.feed(limit=10, settings=Settings()) == []
+    assert await blog.feed(_Background(), limit=10, settings=Settings(),
+                           llm=None, usage=None) == []
 
 
 async def test_one_broken_weekend_does_not_empty_the_feed(monkeypatch):
-    """A weekend whose data will not assemble costs its own cards and nothing
-    else."""
-    from app.models.blog import BlogEntry, EntryKind
+    from app.models.blog import EntryKind
 
-    calendar = [_weekend(14, -21), _weekend(15, -1)]
-    monkeypatch.setattr(blog, "_clients", lambda settings: (
-        _Client({"/forward/calendar": calendar, "/circuits": {"imagery": []}}),
-        _Client({}),
-    ))
-
-    async def _assemble(settings, season, round_number):
+    async def assemble(settings, season, round_number):
         if round_number == 15:
             raise RuntimeError("upstream is confused about this one")
-        return [BlogEntry(
-            entry_id="2026-14-result", season=2026, round=14,
-            race_name="Round 14", kind=EntryKind.RESULT,
-            headline="Round 14 result", summary="", sources=["results"],
-        )], "Round 14", "Circuit"
+        return ([_entry(14, EntryKind.RESULT, "Result")], "Round 14", "Circuit")
 
-    monkeypatch.setattr(blog, "_assemble", _assemble)
+    _wire_feed(monkeypatch, [_weekend(14, -21), _weekend(15, -1)], assemble)
+    monkeypatch.setattr(blog, "_cached_summary", _no_summary)
 
-    items = await blog.feed(limit=10, settings=Settings())
+    items = await blog.feed(_Background(), limit=10, settings=Settings(),
+                            llm=None, usage=None)
 
     assert [i.round for i in items] == [14]
+
+
+async def test_the_request_never_waits_for_a_summary(monkeypatch):
+    """Ten weekends is ten model calls on a cold cache, and the page showed a
+    skeleton for the whole of it. A card without its summary renders; the
+    writing happens after the response goes out."""
+    from app.models.blog import EntryKind
+
+    class _Available:
+        available = True
+
+    async def assemble(settings, season, round_number):
+        return ([_entry(15, EntryKind.RESULT, "Result")], "Round 15", "Circuit")
+
+    _wire_feed(monkeypatch, [_weekend(15, -1)], assemble)
+    monkeypatch.setattr(blog, "Bernie", lambda llm: _Available())
+    monkeypatch.setattr(blog, "_cached_summary", _no_summary)
+
+    background = _Background()
+    items = await blog.feed(background, limit=10, settings=Settings(),
+                            llm=None, usage=None)
+
+    assert items[0].summary == ""
+    assert background.scheduled, "the summary was never scheduled"
