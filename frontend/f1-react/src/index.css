@@ -78,9 +78,14 @@
   /* Every one of these was checked against the ground rather than chosen by
      eye. Small text needs 4.5:1 and the first pass missed twice — the table
      headers and the warning colour both sat around 3.2 and 4.3. */
-  --text: #15171c;     /* 16.6:1 */
+  --text: #15171c;     /* 16.6:1 on a panel */
   --muted: #5f6672;    /*  5.4:1 */
   --dim: #656d7d;      /*  4.8:1 — table headers are 11px, so they count */
+
+  /* Text that sits on the photograph rather than on a panel. Measured against
+     the brightest region of the image through the scrim: 10.1:1 and 6.0:1. */
+  --on-photo: #ffffff;
+  --on-photo-soft: #d4d9e3;
 
   --accent: #cc3328;   /*  4.8:1 */
   --accent-soft: #e0574c;
@@ -98,7 +103,9 @@
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* A panel on paper needs a shadow rather than a border to lift off it. */
-  --lift: 0 1px 2px rgba(21, 23, 28, 0.04), 0 1px 8px rgba(21, 23, 28, 0.03);
+  /* Heavier than it would be on paper: these cards now float on a
+     photograph and need to read as above it. */
+  --lift: 0 2px 6px rgba(0, 0, 0, 0.18), 0 10px 34px rgba(0, 0, 0, 0.22);
 
   color-scheme: light;
 }
@@ -107,7 +114,20 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  /*
+   * The photograph is the page, fixed so it sits still while the content
+   * scrolls over it.
+   *
+   * The scrim over it is not decoration. This image is dark but its sky is
+   * not — around #b9bec6 — and white text on that alone measures 1.87:1.
+   * Through 60% black it reaches 10:1, and the secondary tone 6:1. Anything
+   * lighter fails somewhere in the frame, which is the part a reader would
+   * find rather than me.
+   */
+  background:
+    linear-gradient(rgba(10, 12, 16, 0.60), rgba(10, 12, 16, 0.72)),
+    url('/backgrounds/race.jpg') center / cover no-repeat fixed,
+    var(--bg);
   color: var(--text);
   font: 400 15px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -137,13 +157,15 @@ body {
 .app { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
 /* ── Masthead ─────────────────────────────────────────────────────────────── */
+/* On the photograph, so it takes the light tones and a hairline instead of a
+   solid rule. */
 .masthead {
   display: flex; align-items: center; gap: 32px;
   padding: 20px 0 0; margin-bottom: 34px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
 }
 .brand {
-  display: flex; align-items: center; gap: 10px; color: var(--text);
+  display: flex; align-items: center; gap: 10px; color: var(--on-photo);
   text-decoration: none; font-weight: 700; letter-spacing: -0.015em;
   padding-bottom: 16px;
 }
@@ -152,12 +174,12 @@ body {
 .brand-mark { width: 10px; height: 10px; border-radius: 2px; background: var(--accent); }
 .masthead nav { display: flex; gap: 26px; flex: 1; }
 .masthead nav a {
-  color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500;
+  color: var(--on-photo-soft); text-decoration: none; font-size: 14px; font-weight: 500;
   padding: 4px 0 16px; border-bottom: 2px solid transparent;
   transition: color 120ms ease, border-color 120ms ease;
 }
-.masthead nav a:hover { color: var(--text); }
-.masthead nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+.masthead nav a:hover { color: var(--on-photo); }
+.masthead nav a.active { color: var(--on-photo); border-bottom-color: var(--accent); }
 .account { padding-bottom: 14px; }
 .account { display: flex; align-items: center; gap: 12px; }
 
@@ -167,11 +189,18 @@ body {
 /* The page head gets room. It was set at the same weight as a panel title,
    so nothing on any page announced what the page was. */
 .page-head { margin-bottom: 4px; }
+/* The page head sits on the photograph, not on a panel. */
+.page-head { color: var(--on-photo); }
 .page-head h1 {
   margin: 6px 0 8px; font-size: 36px; line-height: 1.08;
   letter-spacing: -0.028em; font-weight: 700; text-wrap: balance;
+  color: var(--on-photo);
+  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.45);
 }
-.page-head .lede, .page-head .muted { max-width: 62ch; }
+.page-head .lede, .page-head .muted {
+  max-width: 62ch; color: var(--on-photo-soft);
+}
+.page-head .eyebrow { color: var(--accent-soft); }
 .eyebrow {
   margin: 0; color: var(--accent); font-size: 11px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.11em;
@@ -281,7 +310,7 @@ tr.thin td { opacity: 0.55; }
 /* ── Account and Bernie ───────────────────────────────────────────────────── */
 .auth-head { text-align: center; margin-bottom: 20px; }
 .auth-head h1 { font-size: 28px; }
-.auth-head .lede { margin-inline: auto; max-width: 44ch; font-size: 14px; }
+.auth-head .lede { margin-inline: auto; max-width: 44ch; font-size: 14px; color: var(--on-photo-soft); }
 .narrow .panel { box-shadow: var(--lift); }
 .form label { font-weight: 500; color: var(--muted); }
 .form input { font-size: 15px; padding: 11px 13px; }
@@ -315,34 +344,8 @@ input:focus { outline: none; border-color: var(--accent); }
 .link { color: var(--accent); text-decoration: none; font-size: 14px; }
 a { color: var(--accent); }
 
-.colophon { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 40px; color: var(--muted); font-size: 13px; }
-
-/* ── The five lights ──────────────────────────────────────────────────────── */
-/*
- * A band above the content, in the normal flow.
- *
- * Two earlier attempts were wrong in instructive ways. Fixed behind the whole
- * page is the obvious reading of "background" and does not survive contact
- * with text: measured against a lit bulb, muted body text reaches only 4.37:1
- * even at fourteen per cent opacity, by which point the lights are invisible.
- * Absolutely positioned with padding reserved underneath was worse — the
- * gantry's height scales with the viewport and the padding did not, so the
- * headline printed across a dark light box at every width but one.
- *
- * In flow it simply takes its own space, at any width, with no number to keep
- * in step.
- */
-.lights {
-  display: flex; justify-content: center;
-  margin: 4px 0 30px; pointer-events: none;
-}
-.lights svg { width: min(720px, 88vw); }
-.lights-beam { fill: #c9c6bf; }
-.lights-box { fill: #2a2d34; stroke: #1b1e24; stroke-width: 1.5; }
-
-.bulb { fill: #3a3e46; transition: fill 260ms ease, filter 260ms ease; }
-.bulb.is-lit { fill: #e8342a; filter: drop-shadow(0 0 10px rgba(232, 52, 42, 0.75)); }
-.bulb-glass { fill: none; stroke: rgba(255, 255, 255, 0.13); stroke-width: 1.5; }
+/* Also on the photograph. */
+.colophon { border-top: 1px solid rgba(255, 255, 255, 0.16); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
 
 /* ── Venue photographs ────────────────────────────────────────────────────── */
 .venue {
@@ -375,6 +378,11 @@ a { color: var(--accent); }
 
 @media (max-width: 720px) {
   .venue { height: 190px; }
+  /* The credit wraps to two lines on a narrow screen and reached the dots in
+     the opposite corner. Moving them to the top keeps both readable without
+     shortening an attribution that a licence requires in full. */
+  .venue-dots { top: 11px; bottom: auto; }
+  .venue-credit { padding-left: 12px; max-width: 100%; }
 }
 
 /* ── The weekend's circuit ────────────────────────────────────────────────── */
@@ -490,6 +498,12 @@ a { color: var(--accent); }
 
 @media (max-width: 720px) {
   .app { padding: 0 16px; }
+
+  /* background-attachment: fixed is unreliable on mobile browsers — iOS
+     Safari ignores it and others repaint the whole image on every scroll
+     frame. Scrolling with the page costs the parallax and keeps the
+     photograph. */
+  body { background-attachment: scroll, scroll; }
   .page-head h1 { font-size: 28px; }
 
   .bernie { grid-template-columns: 1fr; }
@@ -569,7 +583,7 @@ a { color: var(--accent); }
 /* ── Account and Bernie ───────────────────────────────────────────────────── */
 .auth-head { text-align: center; margin-bottom: 20px; }
 .auth-head h1 { font-size: 28px; }
-.auth-head .lede { margin-inline: auto; max-width: 44ch; font-size: 14px; }
+.auth-head .lede { margin-inline: auto; max-width: 44ch; font-size: 14px; color: var(--on-photo-soft); }
 .narrow .panel { box-shadow: var(--lift); }
 .form label { font-weight: 500; color: var(--muted); }
 .form input { font-size: 15px; padding: 11px 13px; }
@@ -603,34 +617,8 @@ input:focus { outline: none; border-color: var(--accent); }
 .link { color: var(--accent); text-decoration: none; font-size: 14px; }
 a { color: var(--accent); }
 
-.colophon { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 40px; color: var(--muted); font-size: 13px; }
-
-/* ── The five lights ──────────────────────────────────────────────────────── */
-/*
- * A band above the content, in the normal flow.
- *
- * Two earlier attempts were wrong in instructive ways. Fixed behind the whole
- * page is the obvious reading of "background" and does not survive contact
- * with text: measured against a lit bulb, muted body text reaches only 4.37:1
- * even at fourteen per cent opacity, by which point the lights are invisible.
- * Absolutely positioned with padding reserved underneath was worse — the
- * gantry's height scales with the viewport and the padding did not, so the
- * headline printed across a dark light box at every width but one.
- *
- * In flow it simply takes its own space, at any width, with no number to keep
- * in step.
- */
-.lights {
-  display: flex; justify-content: center;
-  margin: 4px 0 30px; pointer-events: none;
-}
-.lights svg { width: min(720px, 88vw); }
-.lights-beam { fill: #c9c6bf; }
-.lights-box { fill: #2a2d34; stroke: #1b1e24; stroke-width: 1.5; }
-
-.bulb { fill: #3a3e46; transition: fill 260ms ease, filter 260ms ease; }
-.bulb.is-lit { fill: #e8342a; filter: drop-shadow(0 0 10px rgba(232, 52, 42, 0.75)); }
-.bulb-glass { fill: none; stroke: rgba(255, 255, 255, 0.13); stroke-width: 1.5; }
+/* Also on the photograph. */
+.colophon { border-top: 1px solid rgba(255, 255, 255, 0.16); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
 
 /* ── Venue photographs ────────────────────────────────────────────────────── */
 .venue {
@@ -663,6 +651,11 @@ a { color: var(--accent); }
 
 @media (max-width: 720px) {
   .venue { height: 190px; }
+  /* The credit wraps to two lines on a narrow screen and reached the dots in
+     the opposite corner. Moving them to the top keeps both readable without
+     shortening an attribution that a licence requires in full. */
+  .venue-dots { top: 11px; bottom: auto; }
+  .venue-credit { padding-left: 12px; max-width: 100%; }
 }
 
 /* ── The weekend's circuit ────────────────────────────────────────────────── */
@@ -778,6 +771,12 @@ a { color: var(--accent); }
 
 @media (max-width: 720px) {
   .app { padding: 0 16px; }
+
+  /* background-attachment: fixed is unreliable on mobile browsers — iOS
+     Safari ignores it and others repaint the whole image on every scroll
+     frame. Scrolling with the page costs the parallax and keeps the
+     photograph. */
+  body { background-attachment: scroll, scroll; }
   .page-head h1 { font-size: 28px; }
 
   .bernie { grid-template-columns: 1fr; }

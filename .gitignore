@@ -72,3 +72,8 @@ nb-configuration.xml
 
 # macOS
 .DS_Store
+
+# Full-resolution source art. The web copy lives in
+# frontend/f1-react/public/backgrounds/ at a size a browser should download;
+# the 10MB original is kept locally and has no business in the history.
+/automobile-racing-sports-competition.jpg

@@ -1,6 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
-import StartLights from './StartLights'
 import { Button } from '@/components/ui/button'
 
 const LINKS = [
@@ -42,7 +41,7 @@ export default function Layout({ children }) {
       </header>
 
       <main>
-        <StartLights />{children}</main>
+        {children}</main>
 
       <footer className="colophon">
         <p>
