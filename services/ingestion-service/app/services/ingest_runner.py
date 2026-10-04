@@ -368,6 +368,20 @@ class IngestRunner:
         )
         return rows
 
+    async def _official_event_name(self, expected: ExpectedSession) -> str:
+        """The FIA's own title for an event, if we hold one.
+
+        Already fetched for the circuit panel. Used here to build a second
+        document URL when the schedule's name does not resolve — a race held
+        away from the country it is named after is published under a title
+        that says so.
+        """
+        try:
+            record = await self._store.circuit_map(expected.circuit) or {}
+        except Exception:
+            return ""
+        return ((record.get("official") or {}).get("meeting_name")) or ""
+
     async def derive_circuit_map(self, circuit: str, visits):
         """Trace a circuit's shape from session telemetry.
 
@@ -407,7 +421,8 @@ class IngestRunner:
             )
 
         document = await fia_documents.fetch_starting_grid(
-            expected.season, expected.round, expected.race_name
+            expected.season, expected.round, expected.race_name,
+            official_name=await self._official_event_name(expected),
         )
         # The entry list lets a driver on the grid but missing from our rows be
         # added rather than sinking the whole grid — see apply_starting_grid.
@@ -586,7 +601,8 @@ class IngestRunner:
             return rows
         try:
             document = await fia_documents.fetch_starting_grid(
-                expected.season, expected.round, expected.race_name
+                expected.season, expected.round, expected.race_name,
+                official_name=await self._official_event_name(expected),
             )
             identities = await self._identities_for(expected)
             return grid_resolution.apply_starting_grid(rows, document, identities)

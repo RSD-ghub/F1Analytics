@@ -128,6 +128,47 @@ def event_slug(event_name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", normalise_name(event_name)).strip("_")
 
 
+#: Trailing words the FIA's own event title carries and its URL slug does not.
+_TITLE_NOISE = re.compile(r"\s*(19|20)\d{2}\s*$")
+
+
+def names_to_try(event_name: str, official_name: str = "") -> List[str]:
+    """Event names to build a document URL from, in order of likelihood.
+
+    The schedule's name resolves almost every event, and did for all 24 of
+    2025. It does not resolve a race held somewhere other than the country it
+    is named after: the 2026 Bahrain Grand Prix ran at Sepang, and the FIA
+    published its grid under "Bahrain Grand Prix in Malaysia". We asked for
+    "bahrain_grand_prix", got a 404 at every attempt across the weekend, and
+    the confirmed-grid lock window — the one that exists to catch exactly the
+    late penalties a relocated race is no less likely to have — never fired.
+
+    The second candidate is cut out of the official title rather than
+    hand-written, so it covers the next relocation too. Given "FORMULA 1 GULF
+    AIR BAHRAIN GRAND PRIX IN MALAYSIA 2026", it finds the schedule's name
+    inside it and keeps everything from there to the year: "BAHRAIN GRAND PRIX
+    IN MALAYSIA". Sponsors and the series prefix sit before that point and are
+    dropped without having to be listed.
+    """
+    names = [event_name]
+    if not official_name:
+        return names
+
+    haystack = normalise_name(official_name)
+    needle = normalise_name(event_name)
+    start = haystack.find(needle)
+    if start < 0:
+        # The official title does not contain the schedule's name at all —
+        # "GRAN PREMIO D'ITALIA" against "Italian Grand Prix". Nothing can be
+        # cut from it safely, and the plain slug resolves those anyway.
+        return names
+
+    candidate = _TITLE_NOISE.sub("", haystack[start:]).strip()
+    if candidate and candidate != needle:
+        names.append(candidate)
+    return names
+
+
 def document_url(season: int, event_name: str, kind: str = "final") -> str:
     if kind not in GRID_DOCUMENT_KINDS:
         raise ValueError("unknown grid document kind: {}".format(kind))
@@ -346,41 +387,51 @@ async def fetch_starting_grid(
     event_name: str,
     timeout_seconds: float = 30.0,
     kinds: Sequence[str] = GRID_DOCUMENT_KINDS,
+    official_name: str = "",
 ) -> StartingGridDocument:
     """Fetch and parse the official grid, preferring the final document.
 
     Raises ``GridDocumentUnavailable`` when neither document is published — the
     normal state between the end of qualifying and the stewards publishing.
+
+    ``official_name`` is the FIA's own title for the event, used to build a
+    second URL candidate when the schedule's name does not resolve. See
+    ``names_to_try``.
     """
     attempted: List[str] = []
+    candidates = names_to_try(event_name, official_name)
     async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+        # Kind outside, name inside: a final grid under the second name beats a
+        # provisional one under the first, because the whole point of
+        # preferring the final document is that the penalties are settled.
         for kind in kinds:
-            url = document_url(season, event_name, kind)
-            attempted.append(url)
-            try:
-                response = await client.get(url)
-            except httpx.HTTPError as exc:
-                logger.warning("grid document fetch failed for %s: %s", url, exc)
-                continue
-            if response.status_code == 404:
-                continue
-            response.raise_for_status()
+            for name in candidates:
+                url = document_url(season, name, kind)
+                attempted.append(url)
+                try:
+                    response = await client.get(url)
+                except httpx.HTTPError as exc:
+                    logger.warning("grid document fetch failed for %s: %s", url, exc)
+                    continue
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
 
-            entries, penalties, document_number = parse_grid_pdf(response.content)
-            logger.info(
-                "read the %s starting grid for %s %s: %d slots (doc %s)",
-                kind, season, event_name, len(entries), document_number,
-            )
-            return StartingGridDocument(
-                season=season,
-                round=round_number,
-                event_name=event_name,
-                kind=kind,
-                url=url,
-                entries=tuple(entries),
-                penalties=tuple(penalties),
-                document_number=document_number,
-            )
+                entries, penalties, document_number = parse_grid_pdf(response.content)
+                logger.info(
+                    "read the %s starting grid for %s %s: %d slots (doc %s)",
+                    kind, season, name, len(entries), document_number,
+                )
+                return StartingGridDocument(
+                    season=season,
+                    round=round_number,
+                    event_name=event_name,
+                    kind=kind,
+                    url=url,
+                    entries=tuple(entries),
+                    penalties=tuple(penalties),
+                    document_number=document_number,
+                )
 
     raise GridDocumentUnavailable(
         "no starting grid published for {} {} (tried {})".format(
