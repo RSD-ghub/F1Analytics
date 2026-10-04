@@ -124,3 +124,5 @@ export const getBackdrop = (limit = 10) =>
 
 export const getBlogFeed = (limit = 24) =>
   request(`/blog/feed?limit=${limit}`)
+
+export const getGlobe = () => request('/globe')

@@ -46,6 +46,46 @@ async def _weekend(store: IngestionStore, season: int, round_number: int):
 # candidate for a path parameter named ``season`` — declared after them, this
 # route was unreachable and the request failed trying to parse "official" as
 # an integer.
+@router.post("/locations/{season}", response_model=Dict[str, Any])
+async def refresh_locations(
+    season: int,
+    store: IngestionStore = Depends(get_store),
+) -> Dict[str, Any]:
+    """Geocode each circuit, so the globe has somewhere to put it.
+
+    Searched by the official circuit name where we hold one. "Kuala Lumpur"
+    geocodes to a city centre thirty miles from the track; "Sepang
+    International Circuit" geocodes to the track.
+
+    Nominatim asks for at most one request a second and is entitled to refuse
+    a client that ignores that, so this is paced and run once a season.
+    """
+    weekends = await store.list_weekends(season, season)
+    located, failed = [], []
+    for weekend in weekends:
+        name = weekend.get("circuit") or ""
+        if not name:
+            continue
+        key = circuit_slug(name)
+        record = await store.circuit_map(name) or {}
+        if record.get("location"):
+            continue
+        official = (record.get("official") or {}).get("official_name")
+        try:
+            lat, lon = await asyncio.to_thread(
+                osm_circuit.locate, official or "{} circuit".format(name)
+            )
+        except osm_circuit.OSMUnavailable as exc:
+            logger.info("could not place %s: %s", name, exc)
+            failed.append(name)
+            continue
+        await store.save_circuit_location(key, lat, lon)
+        located.append({"circuit": name, "lat": round(lat, 4), "lon": round(lon, 4)})
+        await asyncio.sleep(1.1)
+
+    return {"season": season, "located": located, "failed": sorted(set(failed))}
+
+
 @router.post("/imagery/{season}", response_model=Dict[str, Any])
 async def refresh_imagery(
     season: int,
@@ -163,6 +203,7 @@ async def circuit(
     stored = await store.circuit_map(name) or {}
     official = stored.pop("official", None)
     imagery = stored.pop("imagery", None)
+    location = stored.pop("location", None)
     # Geometry only counts as a map when it has geometry. A document holding
     # nothing but official facts is a circuit we could not draw, and saying
     # ``map: null`` lets the page render the record without one instead of
@@ -178,6 +219,7 @@ async def circuit(
         "map": stored if has_layout else None,
         "official": official,
         "imagery": imagery or [],
+        "location": location,
         "stats": summarise(name, history["results"], history["laps"]),
     }
 

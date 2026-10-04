@@ -96,3 +96,34 @@ def test_testing_events_are_not_circuits_to_record():
 def test_each_race_is_listed_once():
     """The page links every event several times over."""
     assert season_slugs(INDEX) == ["azerbaijan", "bahrain"]
+
+
+# ── The payload arrives in pieces ────────────────────────────────────────────
+
+
+def test_a_value_split_across_two_script_chunks_is_read_whole():
+    """Next.js pushes its payload in chunks, each its own <script>, and a value
+    can land across the boundary.
+
+    The Spanish Grand Prix page splits "Circuit de Barcelona-Catalunya" in the
+    middle. Reading one chunk at a time returned "Circuit de Barce" — truncated
+    at exactly the chunk edge, with the boundary read as the closing quote. It
+    was stored that way, and only surfaced because the short name then failed
+    to geocode. Nothing about the value itself looked wrong.
+    """
+    split = (
+        '<script>self.__next_f.push([1,"{\\"circuitShortName\\":\\"Barcelona\\",'
+        '\\"circuitOfficialName\\":\\"Circuit de Barce"])</script>'
+        '<script>self.__next_f.push([1,"lona-Catalunya\\",\\"trackLength\\":\\"4.657\\"}"])</script>'
+    )
+
+    facts = parse_circuit_facts(split)
+
+    assert facts["official_name"] == "Circuit de Barcelona-Catalunya"
+    assert facts["length_km"] == 4.657
+
+
+def test_a_page_without_chunks_is_still_read():
+    """So a page that stops using this framework degrades to the old
+    behaviour rather than to nothing."""
+    assert parse_circuit_facts(PAGE)["short_name"] == "Kuala Lumpur"

@@ -820,3 +820,49 @@ a { color: var(--accent); }
 .feed-facts dd { margin: 1px 0 0; font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
 
 .soon { margin-top: 6px; }
+
+/* ── The season on a globe ────────────────────────────────────────────────── */
+.atlas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 30px; align-items: start; }
+.atlas-globe { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.globe { max-width: 100%; height: auto; cursor: grab; touch-action: none; }
+.globe:active { cursor: grabbing; }
+.globe-land { fill: #2f3a46; stroke: #44525f; stroke-width: 0.4; }
+.globe-rim { stroke: rgba(255, 255, 255, 0.22); stroke-width: 1; }
+
+/* Markers are the navigation, so they are focusable and show it. */
+.stop { cursor: pointer; outline: none; }
+.stop-dot { stroke: rgba(0, 0, 0, 0.55); stroke-width: 1; transition: r 120ms ease; }
+.stop-raced .stop-dot { fill: var(--on-photo-soft); }
+.stop-next .stop-dot { fill: var(--accent); }
+.stop-scheduled .stop-dot { fill: #6f8bb0; }
+.stop:hover .stop-dot, .stop:focus-visible .stop-dot { r: 7; }
+.stop:focus-visible .stop-dot { stroke: #fff; stroke-width: 2; }
+.stop.is-selected .stop-dot { stroke: #fff; stroke-width: 2; }
+
+/* The next race announces itself. One marker, so it reads as emphasis rather
+   than as decoration. */
+.stop-pulse { fill: var(--accent); opacity: 0.3; }
+@media (prefers-reduced-motion: no-preference) {
+  .stop-pulse { animation: ping 2.4s ease-out infinite; }
+  @keyframes ping {
+    0% { transform: scale(0.45); opacity: 0.55; }
+    70%, 100% { transform: scale(1.5); opacity: 0; }
+  }
+}
+
+.atlas-key { list-style: none; margin: 0; padding: 0; display: flex; gap: 18px; color: var(--on-photo-soft); font-size: 13px; }
+.atlas-key li { display: flex; align-items: center; gap: 7px; }
+.key-dot { width: 9px; height: 9px; border-radius: 50%; }
+.key-raced { background: var(--on-photo-soft); }
+.key-next { background: var(--accent); }
+.key-scheduled { background: #6f8bb0; }
+
+.atlas-name { margin: 10px 0 2px; font-size: 20px; letter-spacing: -0.015em; }
+.atlas-when { margin: 10px 0 0; font-family: var(--mono); font-size: 14px; }
+.atlas-countdown { margin: 8px 0 12px; font-size: 14px; }
+.atlas-countdown strong { font-family: var(--mono); font-size: 20px; color: var(--accent); }
+
+@media (max-width: 860px) {
+  .atlas { grid-template-columns: 1fr; }
+}

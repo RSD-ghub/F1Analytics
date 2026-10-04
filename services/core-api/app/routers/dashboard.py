@@ -8,6 +8,7 @@ names what is missing instead of quietly omitting it.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
@@ -234,6 +235,86 @@ async def backdrop(settings: Settings = Depends(get_settings)) -> Backdrop:
         outlines=clients["ingestion"].get("/circuits/outlines", {"limit": 10})
     )
     return Backdrop(kind="circuits", outlines=fallback.get("outlines") or [])
+
+
+class GlobeStop(BaseModel):
+    """One race on the globe, and what clicking it should do."""
+
+    season: int
+    round: int
+    race_name: str = ""
+    circuit: str = ""
+    country: str = ""
+    lat: float
+    lon: float
+    race_start_utc: Optional[str] = None
+    #: "raced" — it has happened and been written up; "next" — the upcoming
+    #: weekend; "scheduled" — later in the season. The frontend routes on this
+    #: rather than recomputing it from dates, so the globe and the rest of the
+    #: product cannot disagree about which race is next.
+    status: str = "scheduled"
+
+
+@router.get("/globe", response_model=List[GlobeStop])
+async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
+    """Every race of the season that we can place on a map.
+
+    A circuit with no coordinates is left off rather than dropped at (0, 0),
+    which is in the Atlantic. Geocoding is a separate job on its own schedule
+    and a new venue may not have run yet.
+    """
+    clients = _clients(settings)
+    season = datetime.now(timezone.utc).year
+
+    fetched = await gather_optional(
+        calendar=clients["ingestion"].get("/forward/calendar/{}".format(season)),
+        upcoming=clients["ingestion"].get("/forward/next"),
+    )
+    calendar = fetched.get("calendar") or []
+    next_round = (fetched.get("upcoming") or {}).get("round")
+    now = datetime.now(timezone.utc)
+
+    stops: List[GlobeStop] = []
+    for weekend in calendar:
+        found = await gather_optional(
+            circuit=clients["ingestion"].get(
+                "/circuits/{}/{}".format(season, weekend["round"])
+            )
+        )
+        place = ((found.get("circuit") or {}).get("location")) or {}
+        if not place.get("lat"):
+            continue
+
+        start = weekend.get("race_start_utc")
+        has_run = False
+        if start:
+            try:
+                has_run = datetime.fromisoformat(
+                    start.replace("Z", "+00:00")
+                ) <= now
+            except ValueError:
+                has_run = False
+
+        if weekend["round"] == next_round:
+            status = "next"
+        elif has_run:
+            status = "raced"
+        else:
+            status = "scheduled"
+
+        stops.append(GlobeStop(
+            season=season,
+            round=weekend["round"],
+            race_name=weekend.get("race_name", ""),
+            circuit=weekend.get("circuit", ""),
+            country=weekend.get("country", ""),
+            lat=place["lat"],
+            lon=place["lon"],
+            race_start_utc=start,
+            status=status,
+        ))
+
+    return stops
 
 
 @router.get("/last-race", response_model=Optional[LastRaceView])

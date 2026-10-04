@@ -565,6 +565,19 @@ class IngestionStore:
         ).limit(max(1, min(limit, 30)))
         return [doc async for doc in cursor]
 
+    async def save_circuit_location(self, slug: str, lat: float, lon: float) -> None:
+        """Where a circuit is, for the globe.
+
+        Written into the same record as the geometry and the official figures,
+        by a third job on a third schedule. All three use ``$set`` so none can
+        erase another's work.
+        """
+        await self._db[CIRCUITS].update_one(
+            {"id": slug},
+            {"$set": {"id": slug, "location": {"lat": lat, "lon": lon}}},
+            upsert=True,
+        )
+
     async def save_circuit_imagery(
         self, slug: str, images: List[Dict[str, Any]]
     ) -> None:

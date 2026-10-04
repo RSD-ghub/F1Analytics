@@ -3,7 +3,8 @@ import { useAuth } from '../context/useAuth'
 import { Button } from '@/components/ui/button'
 
 const LINKS = [
-  { to: '/', label: 'Next race', end: true },
+  { to: '/', label: 'Home', end: true },
+  { to: '/next-race', label: 'Next race' },
   { to: '/blog', label: 'One Blog' },
   { to: '/track-record', label: 'Track record' },
   { to: '/championship', label: 'Championship' },

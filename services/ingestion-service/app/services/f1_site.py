@@ -73,7 +73,28 @@ class F1SiteUnavailable(RuntimeError):
     """The page could not be read. The circuit keeps whatever it already had."""
 
 
+#: One chunk of the page's streamed payload.
+#:
+#: Next.js does not inline its data as a single blob — it pushes it in pieces,
+#: each its own ``<script>``, and a value can land across the boundary. The
+#: Spanish Grand Prix page splits "Circuit de Barcelona-Catalunya" in the
+#: middle, and reading one chunk at a time returned "Circuit de Barce": a
+#: field truncated to exactly the chunk edge, with the boundary read as the
+#: closing quote. It then failed to geocode, which is how it was noticed, but
+#: it had already been stored and could as easily have gone unseen.
+_CHUNK = re.compile(r'self\.__next_f\.push\(\[\d+\s*,\s*"(.*?)"\]\)', re.S)
+
+
 def _unescape(html: str) -> str:
+    """The page's payload, with its chunks rejoined.
+
+    Falls back to unescaping the whole document when no chunks are found, so a
+    page that stops using this framework degrades to the old behaviour rather
+    than to nothing.
+    """
+    chunks = _CHUNK.findall(html)
+    if chunks:
+        return "".join(chunks).replace('\\"', '"')
     return html.replace('\\"', '"')
 
 

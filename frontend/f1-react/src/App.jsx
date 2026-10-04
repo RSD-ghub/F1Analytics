@@ -7,6 +7,7 @@ import NextRace from './pages/NextRace'
 import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
 import Blog from './pages/Blog'
+import Home from './pages/Home'
 
 /**
  * Routing.
@@ -20,7 +21,8 @@ export default function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<NextRace />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/next-race" element={<NextRace />} />
         <Route path="/track-record" element={<TrackRecord />} />
         <Route path="/championship" element={<Championship />} />
         <Route path="/blog" element={<Blog />} />
