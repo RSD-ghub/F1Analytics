@@ -23,6 +23,7 @@ const TILT_LIMIT = 68
 export default function Globe({ stops, size = 440, onSelect, selected }) {
   const [land, setLand] = useState(null)
   const [rotation, setRotation] = useState([-10, -18])
+  const [hovered, setHovered] = useState(null)
   const dragging = useRef(null)
   const svgRef = useRef(null)
 
@@ -118,7 +119,11 @@ export default function Globe({ stops, size = 440, onSelect, selected }) {
     setRotation([-stop.lon, Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, -stop.lat))])
   }
 
+  const marker = hovered
+    && visible.find((m) => m.stop.round === hovered.round)
+
   return (
+    <div className="globe-wrap" style={{ width: size, maxWidth: '100%' }}>
     <svg
       ref={svgRef}
       className="globe"
@@ -133,9 +138,12 @@ export default function Globe({ stops, size = 440, onSelect, selected }) {
       onPointerCancel={onPointerUp}
     >
       <defs>
-        <radialGradient id="globe-sea" cx="38%" cy="32%">
-          <stop offset="0%" stopColor="#2b4a74" />
-          <stop offset="100%" stopColor="#101d2e" />
+        {/* Lit from the upper left, and much lighter than the first pass —
+            a dark globe on a dark photograph read as a hole in the page. */}
+        <radialGradient id="globe-sea" cx="36%" cy="30%">
+          <stop offset="0%" stopColor="#9fc4e8" />
+          <stop offset="55%" stopColor="#6898c6" />
+          <stop offset="100%" stopColor="#3f6a98" />
         </radialGradient>
       </defs>
 
@@ -162,6 +170,10 @@ export default function Globe({ stops, size = 440, onSelect, selected }) {
               e.stopPropagation()
               if (!wasDragged()) onSelect?.(stop)
             }}
+            onPointerEnter={() => setHovered(stop)}
+            onPointerLeave={() => setHovered(null)}
+            onFocus={() => setHovered(stop)}
+            onBlur={() => setHovered(null)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -172,10 +184,41 @@ export default function Globe({ stops, size = 440, onSelect, selected }) {
           >
             {stop.status === 'next' && <circle className="stop-pulse" r="11" />}
             <circle className="stop-dot" r={isSelected ? 6.5 : 4.5} />
+            {/* A transparent disc gives the marker a target worth aiming at.
+                A 4.5-unit dot on a globe is a hard thing to hit with a mouse
+                and impossible with a thumb. */}
+            <circle className="stop-hit" r="13" />
           </g>
         )
       })}
     </svg>
+
+    {/* Positioned in the SVG's own coordinate space, scaled to the rendered
+        size — the globe shrinks on a narrow screen and the card has to follow
+        its marker rather than the viewBox. */}
+    {marker && (
+      <div
+        className={`globe-card globe-card-${marker.stop.status}`}
+        style={{
+          left: `${(marker.x / size) * 100}%`,
+          top: `${(marker.y / size) * 100}%`,
+        }}
+        role="status"
+      >
+        <span className="globe-card-round">R{marker.stop.round}</span>
+        <span className="globe-card-name">{marker.stop.race_name}</span>
+        <span className="globe-card-where">
+          {marker.stop.circuit}
+          {marker.stop.country ? ` · ${marker.stop.country}` : ''}
+        </span>
+        <span className="globe-card-status">
+          {marker.stop.status === 'raced' ? 'Raced — open the report'
+            : marker.stop.status === 'next' ? 'Next race — open the forecast'
+            : 'Still to come'}
+        </span>
+      </div>
+    )}
+    </div>
   )
 }
 
