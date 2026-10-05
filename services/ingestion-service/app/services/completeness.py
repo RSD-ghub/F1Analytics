@@ -54,6 +54,7 @@ def run_integrity_checks(
     checks: List[IntegrityCheck] = [
         _check_results_present(payload),
         _check_field_size(payload),
+        _check_classification_final(payload),
     ]
 
     if depth is IngestDepth.FULL and lap_data_expected(season):
@@ -85,6 +86,52 @@ def _check_field_size(payload: SessionPayload) -> IntegrityCheck:
         passed=count >= MIN_CLASSIFIED_DRIVERS,
         detail="{} classified drivers (expected at least {})".format(
             count, MIN_CLASSIFIED_DRIVERS
+        ),
+    )
+
+
+def _check_classification_final(payload: SessionPayload) -> IntegrityCheck:
+    """Catch a classification fetched before the result was official.
+
+    The existing checks all count rows, and rows arrive early: within hours of
+    the flag the timing feed serves a full field with positions, and the fields
+    that make it a *result* — points, status, classified position — are still
+    blank. Twenty-two rows of that pass every other check here, so the race is
+    recorded ``complete`` and nobody looks at it again.
+
+    2026 round 16 is why this exists. It was ingested six hours after the start,
+    stored every driver on zero points, and placed four cars one position too
+    high because Leclerc was missing from the provisional order entirely. It
+    then fed the standings, One Blog and the scoring reconciliation as fact.
+
+    Both conditions have to hold, because either alone has a legitimate reading:
+    a driver can finish with no points, and the status field can be sparse in
+    older seasons. A field where *nobody* scored and *nobody* has a status is
+    not a race anyone ran.
+    """
+    rows = payload.results
+    if not rows:
+        # results_present already reports this; don't fail twice for one fault.
+        return IntegrityCheck(
+            name="classification_final",
+            passed=True,
+            detail="no classification to judge",
+        )
+
+    points = sum(row.points or 0 for row in rows)
+    with_status = sum(1 for row in rows if (row.status or "").strip())
+    provisional = points == 0 and with_status == 0
+
+    return IntegrityCheck(
+        name="classification_final",
+        passed=not provisional,
+        detail=(
+            "provisional: {} rows, no points awarded and no finishing status "
+            "on any car — refetch once the result is official".format(len(rows))
+            if provisional
+            else "{:g} points awarded across {} cars, {} with a status".format(
+                points, len(rows), with_status
+            )
         ),
     )
 

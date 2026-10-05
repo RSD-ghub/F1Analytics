@@ -28,9 +28,22 @@ from app.services.completeness import run_integrity_checks, summarise
 MODERN = ExpectedSession(season=2024, round=5, race_name="Test Grand Prix")
 
 
+#: Championship points for the top ten. Fixtures carry them because a race
+#: classification without points is exactly what ``classification_final``
+#: exists to reject — a fixture built without them is not a finished race.
+POINTS = (25.0, 18.0, 15.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 1.0)
+
+
+def _points_for(position: int) -> float:
+    return POINTS[position - 1] if position <= len(POINTS) else 0.0
+
+
 def _results(count=20):
     return [
-        ResultRow(id="r%d" % i, season=2024, round=5, driver="D%d" % i, position=i)
+        ResultRow(
+            id="r%d" % i, season=2024, round=5, driver="D%d" % i, position=i,
+            points=_points_for(i), classified_position=str(i), status="Finished",
+        )
         for i in range(1, count + 1)
     ]
 
@@ -46,7 +59,9 @@ def test_results_depth_is_complete_on_classification_alone():
     )
 
     assert report.passed
-    assert {c.name for c in report.checks} == {"results_present", "field_size_plausible"}
+    assert {c.name for c in report.checks} == {
+        "results_present", "field_size_plausible", "classification_final",
+    }
 
 
 def test_full_depth_still_demands_lap_data():

@@ -28,6 +28,16 @@ MODERN = ExpectedSession(season=2024, round=5, race_name="Test Grand Prix")
 LEGACY = ExpectedSession(season=2014, round=5, race_name="Old Grand Prix")
 
 
+#: Championship points for the top ten. Fixtures carry them because a race
+#: classification without points is exactly what ``classification_final``
+#: exists to reject — a fixture built without them is not a finished race.
+POINTS = (25.0, 18.0, 15.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 1.0)
+
+
+def _points_for(position: int) -> float:
+    return POINTS[position - 1] if position <= len(POINTS) else 0.0
+
+
 def _results(session: ExpectedSession, count: int):
     return [
         ResultRow(
@@ -36,6 +46,9 @@ def _results(session: ExpectedSession, count: int):
             round=session.round,
             driver="Driver {}".format(i),
             position=i,
+            points=_points_for(i),
+            classified_position=str(i),
+            status="Finished",
         )
         for i in range(1, count + 1)
     ]
@@ -71,6 +84,7 @@ def test_pre_2018_season_is_complete_on_results_alone():
     assert {check.name for check in report.checks} == {
         "results_present",
         "field_size_plausible",
+        "classification_final",
     }
 
 
@@ -301,3 +315,73 @@ def test_a_season_with_no_expected_sessions_is_not_reported_complete():
     # manifest must never be allowed to reach this function.
     assert summary.is_complete
     assert summary.open_gaps == []
+
+
+# ── Provisional classifications ──────────────────────────────────────────────
+
+
+def _provisional(session: ExpectedSession, count: int):
+    """What the timing feed serves in the hours after the flag.
+
+    Full field, real positions, and none of the fields that make it official.
+    """
+    return [
+        ResultRow(
+            id="r{}".format(i),
+            season=session.season,
+            round=session.round,
+            driver="Driver {}".format(i),
+            position=i,
+        )
+        for i in range(1, count + 1)
+    ]
+
+
+def test_a_provisional_classification_is_not_complete():
+    """2026 round 16: twenty-two rows, zero points, no status — and it passed
+    every other check, so it was stored as a finished race and fed the
+    standings, One Blog and the scoring reconciliation."""
+    payload = SessionPayload(session=LEGACY, results=_provisional(LEGACY, 22))
+    report = run_integrity_checks(payload)
+
+    assert _named(report, "results_present").passed
+    assert _named(report, "field_size_plausible").passed
+    assert not _named(report, "classification_final").passed
+    assert not report.passed
+
+
+def test_a_finished_race_is_not_called_provisional():
+    payload = SessionPayload(session=LEGACY, results=_results(LEGACY, 20))
+    assert _named(run_integrity_checks(payload), "classification_final").passed
+
+
+def test_a_race_where_only_the_back_markers_score_nothing_is_fine():
+    """Half the field finishing out of the points is a normal race, not a
+    truncated fetch. Only a field where *nobody* scored and *nobody* has a
+    status is provisional."""
+    rows = _results(LEGACY, 20)
+    for row in rows[10:]:
+        row.points = 0.0
+    payload = SessionPayload(session=LEGACY, results=rows)
+
+    assert _named(run_integrity_checks(payload), "classification_final").passed
+
+
+def test_a_status_without_points_is_still_a_real_race():
+    """A race abandoned before the points distance awards nothing, but the
+    stewards still classify every car. Points alone would flag it."""
+    rows = _results(LEGACY, 20)
+    for row in rows:
+        row.points = 0.0
+    payload = SessionPayload(session=LEGACY, results=rows)
+
+    assert _named(run_integrity_checks(payload), "classification_final").passed
+
+
+def test_an_empty_classification_does_not_fail_twice():
+    """results_present owns that fault; reporting it again as a provisional
+    classification would put one problem on two lines of the gap list."""
+    report = run_integrity_checks(SessionPayload(session=LEGACY))
+
+    assert not _named(report, "results_present").passed
+    assert _named(report, "classification_final").passed

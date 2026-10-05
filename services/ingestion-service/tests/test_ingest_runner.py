@@ -41,7 +41,12 @@ def _full_results_frame(count: int = 20) -> pd.DataFrame:
                 "TeamName": "Team {}".format(i),
                 "Position": float(i),
                 "ClassifiedPosition": str(i),
-                "Points": 0.0,
+                # A finished race awards points and records a status. Building
+                # the frame without them would make every fixture here look
+                # like the provisional classification that classification_final
+                # is there to catch.
+                "Points": 25.0 if i == 1 else 0.0,
+                "Status": "Finished",
             }
             for i in range(1, count + 1)
         ]
