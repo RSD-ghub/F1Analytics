@@ -57,5 +57,121 @@
     "evaluation_races": 14,
     "evaluated_seasons": [],
     "decided_at": "2026-10-02T05:53:05.735197+00:00"
+  },
+  {
+    "promote": false,
+    "reason": "gain of -14.2% is below the 2% threshold; keeping champion",
+    "champion_score": -41.75322817093476,
+    "challenger_score": -42.19616084899709,
+    "baseline_score": -44.862272502334676,
+    "relative_gain": -0.14246586116155088,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "decided_at": "2026-10-04T16:56:25.514786+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": false,
+    "reason": "gain of -10.8% is below the 2% threshold; keeping champion",
+    "champion_score": -41.75322817093476,
+    "challenger_score": -42.09045624860765,
+    "baseline_score": -44.862272502334676,
+    "relative_gain": -0.10846679613636957,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "decided_at": "2026-10-04T16:57:19.554499+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": false,
+    "reason": "gain of -12.3% is below the 2% threshold; keeping champion",
+    "champion_score": -41.57328314515185,
+    "challenger_score": -41.97247859705889,
+    "baseline_score": -44.81606269029735,
+    "relative_gain": -0.123102864795309,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "decided_at": "2026-10-05T01:42:49.856047+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": true,
+    "reason": "challenger beats champion by 7.0% of its edge over uniform",
+    "champion_score": -41.71599982975911,
+    "challenger_score": -41.50018508309813,
+    "baseline_score": -44.81606269029735,
+    "relative_gain": 0.06961624856326681,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "champion_scale": 1.1,
+    "challenger_scale": 0.8,
+    "scale_fitted_on": [
+      2022,
+      2023
+    ],
+    "decided_at": "2026-10-05T01:50:22.690642+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": true,
+    "reason": "challenger beats champion by 7.0% of its edge over uniform",
+    "champion_score": -41.71599982975911,
+    "challenger_score": -41.50018508309813,
+    "baseline_score": -44.81606269029735,
+    "relative_gain": 0.06961624856326681,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "champion_scale": 1.1,
+    "challenger_scale": 0.8,
+    "scale_fitted_on": [
+      2022,
+      2023
+    ],
+    "decided_at": "2026-10-05T01:50:40.263786+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": true,
+    "reason": "challenger beats champion by 7.0% of its edge over uniform",
+    "champion_score": -41.71599982975911,
+    "challenger_score": -41.50018508309813,
+    "baseline_score": -44.81606269029735,
+    "relative_gain": 0.06961624856326681,
+    "evaluation_races": 15,
+    "evaluated_seasons": [
+      2026
+    ],
+    "champion_scale": 1.1,
+    "challenger_scale": 0.8,
+    "scale_fitted_on": [
+      2022,
+      2023
+    ],
+    "decided_at": "2026-10-05T02:16:35.296905+00:00",
+    "champion_version": "race-plackett-luce-v4"
+  },
+  {
+    "promote": false,
+    "reason": "only 0 unseen race(s); need 15 before a promotion decision carries any weight",
+    "champion_score": 0.0,
+    "challenger_score": 0.0,
+    "baseline_score": 0.0,
+    "relative_gain": 0.0,
+    "evaluation_races": 0,
+    "evaluated_seasons": [],
+    "champion_scale": 1.0,
+    "challenger_scale": 1.0,
+    "scale_fitted_on": [],
+    "decided_at": "2026-10-05T02:16:45.982885+00:00"
   }
 ]

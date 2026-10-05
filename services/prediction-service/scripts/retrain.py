@@ -37,7 +37,7 @@ from app.services.model import MODEL_VERSION, WEIGHTS_PATH, feature_names  # noq
 from app.training import dataset, promotion  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(__file__))
-from train_model import load_results, train_once  # noqa: E402
+from train_model import _fit_temperature, load_results, train_once  # noqa: E402
 from train_model import TRAINING_FROM_SEASON  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -82,6 +82,39 @@ def archive(champion: Dict) -> str:
     )
     shutil.copy2(ARTIFACT, path)
     return path
+
+
+#: Separates the model family from its promotion revision.
+REVISION_MARK = "+r"
+
+
+def next_version(previous: Optional[str], family: str = MODEL_VERSION) -> str:
+    """The name a promoted model is published under.
+
+    A promotion used to write ``MODEL_VERSION`` — the same string the outgoing
+    model carried, because that constant describes the *architecture* and the
+    architecture does not change when the weights are refitted. So two different
+    weight sets shared one name, and since every stored prediction records only
+    that name, nothing afterwards could say which weights produced which
+    forecast. The archive file was timestamped, but no prediction pointed at it.
+
+    That breaks the one claim this product is built on. A published probability
+    is only accountable if the model behind it can still be identified, and
+    "scored separately, because averaging two models would restate history" is
+    not something the track record can do with one name for both.
+
+    So each promotion within a family takes the next revision: the originally
+    trained model is r1 by implication, its first successor ``+r2``. A family
+    rename in the code is already a distinct name and starts its own line.
+    """
+    base, mark, revision = (previous or "").partition(REVISION_MARK)
+    if base != family:
+        return family
+    try:
+        number = (int(revision) if mark else 1) + 1
+    except ValueError:
+        number = 2
+    return "{}{}{}".format(family, REVISION_MARK, number)
 
 
 def main() -> int:
@@ -158,17 +191,51 @@ def main() -> int:
         from_season=args.from_season,
     )
 
+    # Put both weight vectors on comparable footing before scoring them.
+    #
+    # The split for this has to be out of sample for *both* sides, which is
+    # narrower than the validation seasons alone: those are held out of the
+    # challenger's fit, but the champion was trained through its own span and
+    # overlaps most of them. Fitting its scale on races it learned from, while
+    # the challenger's comes from races it has never seen, would hand the
+    # incumbent an advantage the challenger cannot have.
+    scale_seasons = [s for s in validation_seasons if s > champion_trained_through]
+    scale_races = [o for o in observations if o.season in set(scale_seasons)]
+    if not scale_races:
+        logger.warning(
+            "no validation season is newer than the champion's training span "
+            "(%s); both models will be compared at scale 1.0, which measures "
+            "their sharpness as well as their skill",
+            champion_trained_through,
+        )
+    champion_scale = promotion.fit_comparison_scale(
+        champion["weights"], names, scale_races
+    )
+    challenger_scale = promotion.fit_comparison_scale(
+        challenger["weights"], names, scale_races
+    )
+    logger.info(
+        "comparison scale fitted on %s (%s races): champion %.2f, challenger %.2f",
+        scale_seasons or "-", len(scale_races), champion_scale, challenger_scale,
+    )
+
     decision = promotion.compare(
         champion["weights"], challenger["weights"], names, evaluation,
         min_races=args.min_races,
+        champion_scale=champion_scale,
+        challenger_scale=challenger_scale,
+        scale_fitted_on=scale_seasons,
     )
 
     logger.info("\n=== promotion decision ===")
     logger.info("evaluated on      : %s races, seasons %s",
                 decision.evaluation_races, decision.evaluated_seasons)
+    logger.info("scales fitted on  : %s", decision.scale_fitted_on or "-")
     logger.info("uniform baseline  : %.4f", decision.baseline_score)
-    logger.info("champion          : %.4f", decision.champion_score)
-    logger.info("challenger        : %.4f", decision.challenger_score)
+    logger.info("champion          : %.4f  (at scale %.2f)",
+                decision.champion_score, decision.champion_scale)
+    logger.info("challenger        : %.4f  (at scale %.2f)",
+                decision.challenger_score, decision.challenger_scale)
     logger.info("relative gain     : %+.2f%%", 100 * decision.relative_gain)
     logger.info("decision          : %s", "PROMOTE" if decision.promote else "HOLD")
     logger.info("reason            : %s", decision.reason)
@@ -177,32 +244,85 @@ def main() -> int:
     record["champion_version"] = champion.get("version")
     append_history(record)
 
-    if decision.promote and args.apply:
-        archived = archive(champion)
-        logger.info("archived outgoing champion to %s", archived)
-        _write_promoted(champion, challenger, names, evaluation_seasons, decision)
-        logger.info("promoted challenger to %s", ARTIFACT)
-    elif decision.promote:
-        logger.info("\n(dry run — pass --apply to promote)")
+    if not decision.promote:
+        return 0
 
+    # A promotion replaces a complete model, so a complete model has to be
+    # built. The post-quali fit above is only half of one: the serving model
+    # also carries pre-qualifying weights and a calibrated sampling temperature
+    # per window, and neither can be inherited from the outgoing champion —
+    # they belong to its weights, not to the slot.
+    pre_quali = train_once(
+        results, with_grid=False,
+        test_seasons=list(evaluation_seasons) + validation_seasons,
+        target_season=args.target_season, decay=args.decay,
+        from_season=args.from_season,
+    )
+    report = {"post_quali": challenger, "pre_quali": pre_quali}
+    temperatures = _fit_temperature(results, report, validation_seasons, args)
+
+    if not args.apply:
+        logger.info("\n(dry run — pass --apply to promote)")
+        return 0
+
+    archived = archive(champion)
+    logger.info("archived outgoing champion to %s", archived)
+    _write_promoted(
+        champion, report, names, evaluation_seasons, validation_seasons,
+        temperatures, decision, args,
+    )
+    logger.info("promoted challenger to %s", ARTIFACT)
     return 0
 
 
-def _write_promoted(champion, challenger, names, evaluation_seasons, decision) -> None:
-    """Write the new champion, carrying its provenance forward.
+def _write_promoted(
+    champion, report, names, evaluation_seasons, validation_seasons,
+    temperatures, decision, args,
+) -> None:
+    """Write the new champion as a whole model, carrying its provenance forward.
+
+    This used to copy the outgoing artifact and overwrite three keys: weights,
+    means and stds. Everything else was inherited — including
+    ``pre_quali_weights`` and ``noise_scale``, which describe the *previous*
+    model. A promotion would therefore have served the challenger's post-quali
+    weights beside the old model's pre-quali weights, at the old model's
+    calibration. The pre-qualifying window would have been predicting with
+    weights belonging to a model that no longer existed, and nothing in the
+    artifact would have said so.
+
+    Every field that depends on the weights is now rewritten from the fit that
+    produced them.
 
     ``promoted_on_seasons`` is what stops the next cycle from re-using these
     races to justify another promotion — the anti-holdout-burn record.
     """
+    primary = report["post_quali"]
     artifact = dict(champion)
     artifact.update(
         {
-            "version": MODEL_VERSION,
+            "version": next_version(champion.get("version")),
             "fitted_at": datetime.now(timezone.utc).isoformat(),
-            "training_seasons": challenger["train_seasons"],
-            "weights": challenger["weights"],
-            "feature_means": challenger["means"],
-            "feature_stds": challenger["stds"],
+            "training_seasons": primary["train_seasons"],
+            "era_decay": args.decay,
+            "target_season": args.target_season,
+            "weights": primary["weights"],
+            "feature_means": primary["means"],
+            "feature_stds": primary["stds"],
+            "pre_quali_weights": report["pre_quali"]["weights"],
+            "noise_scale": temperatures.get("post_quali", (1.0, {}))[0],
+            "pre_quali_noise_scale": temperatures.get("pre_quali", (1.0, {}))[0],
+            "temperature_sweeps": {
+                window: {str(k): v for k, v in sweep.items()}
+                for window, (_, sweep) in temperatures.items()
+            },
+            "validation_seasons": validation_seasons,
+            "metrics": {
+                "post_quali": {"train": primary["train"], "test": primary["test"]},
+                "pre_quali": {
+                    "train": report["pre_quali"]["train"],
+                    "test": report["pre_quali"]["test"],
+                },
+            },
             "promoted_on_seasons": evaluation_seasons,
             "promotion": decision.as_dict(),
             "previous_version": champion.get("version"),

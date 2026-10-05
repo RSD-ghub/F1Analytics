@@ -48,6 +48,23 @@ MIN_RELATIVE_GAIN = 0.02
 #: Roughly a season of racing.
 MIN_EVALUATION_RACES = 15
 
+#: Scalings tried when putting two weight vectors on a comparable footing.
+#:
+#: A Plackett-Luce weight vector carries its own sharpness. Multiplying it by a
+#: scalar leaves every ranking it produces bit-identical — all utilities move
+#: together — but it moves the log-likelihood a great deal, because it sharpens
+#: or flattens the implied probabilities.
+#:
+#: That matters here because the two sides of this comparison are not fitted
+#: alike. The champion has been through a calibration step; a freshly fitted
+#: challenger has not, and L-BFGS on a different number of races lands at a
+#: different sharpness. Scoring both raw measured that difference and reported
+#: it as skill. On the 2026 evaluation set it produced a 12% "regression" in a
+#: challenger whose ranking ability was within one percent of the champion's.
+COMPARISON_SCALES = (
+    0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0
+)
+
 
 @dataclass
 class PromotionDecision:
@@ -66,6 +83,13 @@ class PromotionDecision:
     relative_gain: float
     evaluation_races: int
     evaluated_seasons: List[int] = field(default_factory=list)
+    #: The sharpness each side was scored at, and where it was fitted. Recorded
+    #: because a decision whose numbers cannot be reproduced is an anecdote —
+    #: and because two runs with different settings previously landed in the
+    #: history looking identical.
+    champion_scale: float = 1.0
+    challenger_scale: float = 1.0
+    scale_fitted_on: List[int] = field(default_factory=list)
     decided_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def as_dict(self) -> Dict:
@@ -78,6 +102,9 @@ class PromotionDecision:
             "relative_gain": self.relative_gain,
             "evaluation_races": self.evaluation_races,
             "evaluated_seasons": self.evaluated_seasons,
+            "champion_scale": self.champion_scale,
+            "challenger_scale": self.challenger_scale,
+            "scale_fitted_on": self.scale_fitted_on,
             "decided_at": self.decided_at.isoformat(),
         }
 
@@ -102,6 +129,43 @@ def unseen_races(
     return [o for o in observations if o.season > floor]
 
 
+def fit_comparison_scale(
+    weights: Dict[str, float],
+    feature_names: Sequence[str],
+    races: Sequence[RaceObservation],
+) -> float:
+    """The sharpness at which this weight vector reads best, in log-likelihood.
+
+    **Fitted on validation races, never on the races that decide the promotion.**
+    One scalar chosen on the evaluation set would be the holdout burn this module
+    exists to prevent, in miniature: the challenger would be handed a free tuning
+    pass on exactly the evidence it is about to be judged on.
+
+    With no validation races there is nothing to fit on, and 1.0 is returned —
+    the comparison is then no better than it was before, which is the honest
+    outcome rather than a silently tuned one.
+    """
+    if not races:
+        logger.warning(
+            "no validation races; comparing at scale 1.0, so any difference in "
+            "sharpness between the two models will be read as skill"
+        )
+        return 1.0
+
+    vector = np.array([weights.get(name, 0.0) for name in feature_names])
+    scores = {
+        scale: mean_log_likelihood(vector * scale, races)
+        for scale in COMPARISON_SCALES
+    }
+    best = max(scores, key=scores.get)
+    if best in (min(COMPARISON_SCALES), max(COMPARISON_SCALES)):
+        logger.warning(
+            "comparison scale %.2f sits at the edge of the sweep; the optimum "
+            "may lie outside the candidate range", best
+        )
+    return float(best)
+
+
 def compare(
     champion_weights: Dict[str, float],
     challenger_weights: Dict[str, float],
@@ -109,6 +173,9 @@ def compare(
     races: Sequence[RaceObservation],
     min_races: int = MIN_EVALUATION_RACES,
     min_gain: float = MIN_RELATIVE_GAIN,
+    champion_scale: float = 1.0,
+    challenger_scale: float = 1.0,
+    scale_fitted_on: Optional[Sequence[int]] = None,
 ) -> PromotionDecision:
     """Decide whether the challenger replaces the champion.
 
@@ -116,6 +183,12 @@ def compare(
     of the observed finishing orders — and the margin is expressed relative to
     how much the champion beats a uniform baseline, so "2% better" means 2% of a
     real edge rather than 2% of an arbitrary number.
+
+    Each side is scored at its own sharpness, supplied by ``fit_comparison_scale``
+    from a validation split. Without that the comparison silently includes how
+    sharp each weight vector happens to be, which is not a difference in skill:
+    rescaling a weight vector cannot change which driver it ranks ahead of which.
+    See ``COMPARISON_SCALES``.
     """
     if len(races) < min_races:
         return PromotionDecision(
@@ -131,8 +204,8 @@ def compare(
             evaluation_races=len(races),
         )
 
-    champion = _score(champion_weights, feature_names, races)
-    challenger = _score(challenger_weights, feature_names, races)
+    champion = _score(champion_weights, feature_names, races, champion_scale)
+    challenger = _score(challenger_weights, feature_names, races, challenger_scale)
     baseline = uniform_baseline_log_likelihood(races)
 
     champion_edge = champion - baseline
@@ -165,6 +238,9 @@ def compare(
         relative_gain=gain,
         evaluation_races=len(races),
         evaluated_seasons=seasons,
+        champion_scale=float(champion_scale),
+        challenger_scale=float(challenger_scale),
+        scale_fitted_on=sorted(scale_fitted_on or []),
     )
 
 
@@ -172,6 +248,7 @@ def _score(
     weights: Dict[str, float],
     feature_names: Sequence[str],
     races: Sequence[RaceObservation],
+    scale: float = 1.0,
 ) -> float:
     vector = np.array([weights.get(name, 0.0) for name in feature_names])
-    return mean_log_likelihood(vector, races)
+    return mean_log_likelihood(vector * scale, races)

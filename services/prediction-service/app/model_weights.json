@@ -1,116 +1,139 @@
 {
   "era_decay": 0.6,
   "feature_means": {
-    "avg_finish_recent": 9.647113665389528,
-    "avg_finish_season": 9.608969486621467,
-    "avg_grid_recent": 11.006114942528734,
-    "circuit_avg_finish": 10.135453384418904,
-    "dnf_rate": 0.16896548490098623,
+    "avg_finish_recent": 9.353326201128185,
+    "avg_finish_season": 9.29638661992526,
+    "avg_grid_recent": 10.620657459638203,
+    "circuit_avg_finish": 9.997438889969526,
+    "dnf_rate": 0.16422133654548093,
     "grid_legacy": 0.0,
     "grid_modern": 0.0,
-    "is_cold_start": 0.003524904214559387,
-    "points_per_race": 4.8298350173869204,
-    "positions_gained": 1.3139233716475096,
-    "practice_long_run_gap_pct": 0.013421302566961658,
-    "quali_gap_pct": 0.02240764364918927,
-    "quali_teammate_gap_pct": 3.940242317350724e-05,
-    "recent_quali_gap_pct": 0.023178200653514325,
-    "team_avg_finish": 9.570278847291396,
-    "teammate_delta": -0.042065401917688434
+    "is_cold_start": 0.003501264345458082,
+    "points_per_race": 4.995289223400654,
+    "positions_gained": 1.2095182519613563,
+    "practice_long_run_gap_pct": 0.008000000000000002,
+    "quali_gap_pct": 0.015000000000000001,
+    "quali_teammate_gap_pct": 0.0,
+    "recent_quali_gap_pct": 0.015000000000000001,
+    "team_avg_finish": 9.257956033199193,
+    "teammate_delta": -0.05344991363733968
   },
   "feature_stds": {
-    "avg_finish_recent": 4.551357641128531,
-    "avg_finish_season": 4.437604387823181,
-    "avg_grid_recent": 5.228154654554448,
-    "circuit_avg_finish": 4.112897584412497,
-    "dnf_rate": 0.1342333847196981,
-    "grid_legacy": 6.922186552431729,
-    "grid_modern": 6.072255838455205,
-    "is_cold_start": 0.05926617302338299,
-    "points_per_race": 5.788315246736619,
-    "positions_gained": 2.319068558544171,
-    "practice_long_run_gap_pct": 0.013490073381763844,
-    "quali_gap_pct": 0.021953144638760184,
-    "quali_teammate_gap_pct": 0.008674401227906836,
-    "recent_quali_gap_pct": 0.018100555765763825,
-    "team_avg_finish": 4.3136262248476145,
-    "teammate_delta": 2.368771728053831
+    "avg_finish_recent": 4.324830492739837,
+    "avg_finish_season": 4.224747512020308,
+    "avg_grid_recent": 4.881767799254486,
+    "circuit_avg_finish": 4.104241432631455,
+    "dnf_rate": 0.12329657590106777,
+    "grid_legacy": 1.0,
+    "grid_modern": 5.869507561918286,
+    "is_cold_start": 0.059067804203654845,
+    "points_per_race": 5.913951938592543,
+    "positions_gained": 2.2158247830617657,
+    "practice_long_run_gap_pct": 1.0,
+    "quali_gap_pct": 1.0,
+    "quali_teammate_gap_pct": 1.0,
+    "recent_quali_gap_pct": 1.0,
+    "team_avg_finish": 4.096548605583705,
+    "teammate_delta": 2.325317318070618
   },
-  "fitted_at": "2026-08-22T14:24:15.067504+00:00",
+  "fitted_at": "2026-10-05T02:16:44.218240+00:00",
   "metrics": {
     "post_quali": {
       "test": {
-        "improvement": 0.08291593675375218,
-        "mean_log_likelihood": -36.97350191986784,
-        "races": 88,
-        "uniform_baseline": -40.316371640993204
+        "improvement": 0.07010438028318579,
+        "mean_log_likelihood": -37.24206951813829,
+        "races": 118,
+        "uniform_baseline": -40.04973109721691
       },
       "train": {
-        "improvement": 0.07663664207523482,
-        "mean_log_likelihood": -39.93940935686946,
-        "races": 225,
-        "uniform_baseline": -43.254271478383366
+        "improvement": 0.09050920658892782,
+        "mean_log_likelihood": -37.27047876844086,
+        "races": 137,
+        "uniform_baseline": -40.979500879450164
       }
     },
     "pre_quali": {
       "test": {
-        "improvement": 0.06543114456537738,
-        "mean_log_likelihood": -37.90925603839691,
-        "races": 88,
-        "uniform_baseline": -40.563363328395056
+        "improvement": 0.060508666076960926,
+        "mean_log_likelihood": -38.3783592233763,
+        "races": 118,
+        "uniform_baseline": -40.85014713559898
       },
       "train": {
-        "improvement": 0.07051817422836999,
-        "mean_log_likelihood": -40.348683968082305,
-        "races": 225,
-        "uniform_baseline": -43.40986864868062
+        "improvement": 0.07673514453587119,
+        "mean_log_likelihood": -37.73595494353012,
+        "races": 137,
+        "uniform_baseline": -40.87229652487975
       }
     }
   },
   "noise_scale": 0.3,
-  "pre_quali_noise_scale": 0.3,
+  "pre_quali_noise_scale": 0.45,
   "pre_quali_weights": {
-    "avg_finish_recent": 0.012197597063450128,
-    "avg_finish_season": 0.2800743777044305,
-    "avg_grid_recent": -0.20443883676577398,
-    "circuit_avg_finish": 0.020190815848403713,
-    "dnf_rate": -0.05065903807558869,
+    "avg_finish_recent": 0.07234169981915692,
+    "avg_finish_season": 0.30800555607220304,
+    "avg_grid_recent": -0.39310495661347156,
+    "circuit_avg_finish": -0.043926594627148596,
+    "dnf_rate": -0.006222976802956052,
     "is_cold_start": 0.0,
-    "points_per_race": 0.3330634220122712,
-    "positions_gained": 0.015907836847260888,
-    "practice_long_run_gap_pct": -0.10745190072666888,
-    "quali_teammate_gap_pct": 0.0064258529399563,
-    "recent_quali_gap_pct": -0.11658002115763766,
-    "team_avg_finish": -0.36013368188159517,
-    "teammate_delta": -0.030120190498989504
+    "points_per_race": 0.33774196846029514,
+    "positions_gained": 0.04806008103478108,
+    "practice_long_run_gap_pct": -4.122508723833637e-33,
+    "quali_teammate_gap_pct": 0.0,
+    "recent_quali_gap_pct": -4.122508723833637e-33,
+    "team_avg_finish": -0.37890677962704494,
+    "teammate_delta": -0.07737016988262622
+  },
+  "previous_version": "race-plackett-luce-v4",
+  "promoted_on_seasons": [
+    2026
+  ],
+  "promotion": {
+    "baseline_score": -44.81606269029735,
+    "challenger_scale": 0.8,
+    "challenger_score": -41.50018508309813,
+    "champion_scale": 1.1,
+    "champion_score": -41.71599982975911,
+    "decided_at": "2026-10-05T02:16:35.296905+00:00",
+    "evaluated_seasons": [
+      2026
+    ],
+    "evaluation_races": 15,
+    "promote": true,
+    "reason": "challenger beats champion by 7.0% of its edge over uniform",
+    "relative_gain": 0.06961624856326681,
+    "scale_fitted_on": [
+      2022,
+      2023
+    ]
   },
   "target_season": 2026,
   "temperature_sweeps": {
     "post_quali": {
-      "0.05": 0.5172177888081785,
-      "0.1": 0.48017457055421026,
-      "0.15": 0.45018943388485305,
-      "0.2": 0.4317748120123752,
-      "0.3": 0.42472387389023386,
-      "0.45": 0.4558302662093083,
-      "0.6": 0.49687572457627116,
-      "0.8": 0.5439924549031477,
-      "1.0": 0.5798746616895344,
-      "1.4": 0.6264934381221415,
-      "2.0": 0.6647974961662636
+      "0.05": 0.5604502543432847,
+      "0.1": 0.5300988606575415,
+      "0.15": 0.5053445799659141,
+      "0.2": 0.48709021875859043,
+      "0.3": 0.46984080567925596,
+      "0.45": 0.4741355924322391,
+      "0.6": 0.4952535687365995,
+      "0.8": 0.528938322488867,
+      "1.0": 0.5591277175078341,
+      "1.4": 0.6047937321732918,
+      "2.0": 0.6465383647121885
     },
     "pre_quali": {
-      "0.05": 0.5494713309854499,
-      "0.1": 0.5201299700066137,
-      "0.15": 0.49631516283068794,
-      "0.2": 0.4796689735780419,
-      "0.3": 0.470935219609788,
-      "0.45": 0.49414530942460333,
-      "0.6": 0.5289373906084655,
-      "0.8": 0.5685755412367721,
-      "1.0": 0.5991230517195764,
-      "1.4": 0.6384788459656086,
-      "2.0": 0.6711847632275139
+      "0.05": 0.6302190621898603,
+      "0.1": 0.5944176122168288,
+      "0.15": 0.5652379908710897,
+      "0.2": 0.5426154187702258,
+      "0.3": 0.5171924492448764,
+      "0.45": 0.5140010730312842,
+      "0.6": 0.530407080299353,
+      "0.8": 0.5582960120415318,
+      "1.0": 0.5840255524137005,
+      "1.4": 0.6229219490021587,
+      "2.0": 0.6583339706040982
     }
   },
   "test_seasons": [
@@ -118,40 +141,38 @@
     2025
   ],
   "training_seasons": [
-    2010,
-    2011,
-    2012,
-    2013,
     2014,
     2015,
     2016,
     2017,
-    2018,
-    2019,
     2020,
-    2021
+    2024,
+    2025
   ],
   "validation_seasons": [
+    2018,
+    2019,
+    2021,
     2022,
     2023
   ],
-  "version": "race-plackett-luce-v4",
+  "version": "race-plackett-luce-v4+r2",
   "weights": {
-    "avg_finish_recent": 0.07267549261287787,
-    "avg_finish_season": 0.12209153299191702,
-    "avg_grid_recent": -0.12680798904277782,
-    "circuit_avg_finish": 0.048903551387624054,
-    "dnf_rate": -0.04887658624147746,
-    "grid_legacy": -0.20630802084640174,
-    "grid_modern": -0.3217337423724755,
-    "is_cold_start": -0.0034588228100796655,
-    "points_per_race": 0.3182828139654869,
-    "positions_gained": 0.004799764547669389,
-    "practice_long_run_gap_pct": -0.0878216166602214,
-    "quali_gap_pct": -0.049266509738510905,
-    "quali_teammate_gap_pct": 0.0015479069130065705,
-    "recent_quali_gap_pct": -0.028998140355902893,
-    "team_avg_finish": -0.18083114186415344,
-    "teammate_delta": 0.016408555338314746
+    "avg_finish_recent": 0.05317330937787887,
+    "avg_finish_season": 0.13645251308959344,
+    "avg_grid_recent": -0.0874457465839462,
+    "circuit_avg_finish": 0.013931391336541412,
+    "dnf_rate": 0.00020752764656950992,
+    "grid_legacy": 0.0,
+    "grid_modern": -0.5097340910225601,
+    "is_cold_start": 0.030974782092120588,
+    "points_per_race": 0.32616582186602505,
+    "positions_gained": -0.002744058118211002,
+    "practice_long_run_gap_pct": -3.958701317942799e-33,
+    "quali_gap_pct": -3.958701317942799e-33,
+    "quali_teammate_gap_pct": 0.0,
+    "recent_quali_gap_pct": -3.958701317942799e-33,
+    "team_avg_finish": -0.20096226829887304,
+    "teammate_delta": -0.027256141979060733
   }
 }
