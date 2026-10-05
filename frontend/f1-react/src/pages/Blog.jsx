@@ -61,8 +61,13 @@ export default function Blog() {
         </p>
       </header>
 
+      {/* The most recent weekend leads. A feed where every item is the same
+          size has no front page — the reader has to compare dates to find out
+          what just happened. Scale says it instead. */}
       <div className="weekends">
-        {items.map((item) => <WeekendCard key={item.id} item={item} />)}
+        {items.map((item, i) => (
+          <WeekendCard key={item.id} item={item} lead={i === 0} />
+        ))}
       </div>
 
       {items.length === 0 && (
@@ -112,13 +117,13 @@ export default function Blog() {
   )
 }
 
-function WeekendCard({ item }) {
+function WeekendCard({ item, lead = false }) {
   const [open, setOpen] = useState(false)
   const called = item.called_winner && item.winner
     && item.called_winner === item.winner
 
   return (
-    <Card className="weekend-story">
+    <Card className={lead ? 'weekend-story is-lead' : 'weekend-story'}>
       {item.image && (
         <div
           className="weekend-photo"

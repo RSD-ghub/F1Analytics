@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getWeekend, getCircuit } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
-import { Panel, Loading, Unavailable } from '../components/Panel'
+import { Panel, Loading, Unavailable, Probability } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import VenuePhotos from '../components/VenuePhotos'
@@ -189,24 +189,77 @@ function Entry({ entry }) {
   )
 }
 
+/**
+ * How each column the server can send is named and rendered.
+ *
+ * The table used to print the raw field name and the raw value, so a forecast
+ * arrived as "p win  0.298". A reader has no way to read that as "a 30% chance
+ * of winning", and a probability written as a decimal invites being read as a
+ * score out of one. Probabilities are therefore percentages here, and the
+ * labels say what the number is about rather than what the field is called.
+ *
+ * ``points`` and ``p_points`` are different quantities — championship points
+ * scored, and the chance of finishing in the points — so they must not share a
+ * heading.
+ *
+ * Anything not listed falls back to the old generic rendering. A column the
+ * server adds later should look plain, not vanish.
+ */
+const COLUMNS = {
+  position: { label: 'Pos', numeric: true },
+  driver: { label: 'Driver' },
+  team: { label: 'Team' },
+  starts: { label: 'Starts', numeric: true },
+  points: { label: 'Points', numeric: true },
+  // Zero is the pole-sitter, not a missing gap. "+0.000" reads as a dead heat
+  // with themselves.
+  gap_to_pole: {
+    label: 'Gap to pole',
+    numeric: true,
+    render: (v) =>
+      typeof v !== 'number' ? (v ?? '—') : v === 0 ? 'pole' : `+${v.toFixed(3)}`,
+  },
+  // Probability renders a null as "not published" rather than a dash: the
+  // backend distinguishes "we make no claim" from "we claim zero", and the
+  // pre-qualifying window publishes no winner at all.
+  p_win: { label: 'Win', numeric: true, render: (v) => <Probability value={v} /> },
+  p_podium: { label: 'Podium', numeric: true, render: (v) => <Probability value={v} /> },
+  p_points: { label: 'Points finish', numeric: true, render: (v) => <Probability value={v} /> },
+}
+
 function EntryTable({ rows }) {
   const columns = Object.keys(rows[0])
-  const format = (value) =>
+  const generic = (value) =>
     typeof value === 'number'
       ? Number.isInteger(value) ? value : value.toFixed(3)
       : value ?? '—'
 
+  const spec = (column) => COLUMNS[column] ?? {
+    label: column.replace(/_/g, ' '),
+    numeric: typeof rows[0][column] === 'number',
+  }
+
   return (
-    <table className="grid compact">
+    <table className="datatable compact">
       <thead>
-        <tr>{columns.map((c) => <th key={c} className={typeof rows[0][c] === 'number' ? 'num' : ''}>{c.replace(/_/g, ' ')}</th>)}</tr>
+        <tr>
+          {columns.map((c) => {
+            const { label, numeric } = spec(c)
+            return <th key={c} className={numeric ? 'num' : ''}>{label}</th>
+          })}
+        </tr>
       </thead>
       <tbody>
         {rows.map((row, i) => (
           <tr key={i}>
-            {columns.map((c) => (
-              <td key={c} className={typeof row[c] === 'number' ? 'num' : ''}>{format(row[c])}</td>
-            ))}
+            {columns.map((c) => {
+              const { numeric, render } = spec(c)
+              return (
+                <td key={c} className={numeric ? 'num' : ''}>
+                  {render ? render(row[c]) : generic(row[c])}
+                </td>
+              )
+            })}
           </tr>
         ))}
       </tbody>

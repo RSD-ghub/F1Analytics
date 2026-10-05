@@ -98,24 +98,37 @@ function Lead({ forecast }) {
   )
 }
 
+/** Below this, a title chance is reported as "<0.1%" rather than a figure. */
+const LONG_SHOT = 0.001
+
 function Standings({ title, rows, nameKey = 'driver' }) {
-  const contenders = rows.filter((r) => r.p_champion > 0.001)
-  const eliminated = rows.length - contenders.length
+  // Everyone is listed.
+  //
+  // Rows under 0.1% used to be dropped with a footnote. That was tolerable
+  // while a dozen drivers were still in it, and became absurd once one driver
+  // reached ~100%: the standings rendered a single row, and a reader looking
+  // for second place found a sentence explaining that twenty-one entries
+  // existed somewhere else. Championship standings are the point of the page.
+  //
+  // So the long shots stay, dimmed, with their chance shown as a bound rather
+  // than a rounded zero — "<0.1%" is a claim about precision, "0.0%" reads as
+  // mathematically out, and they are not the same thing.
+  const outOfIt = rows.filter((r) => r.p_champion <= LONG_SHOT).length
 
   return (
     <Panel
       title={title}
       footer={
-        eliminated > 0 && (
+        outOfIt > 0 && (
           <p className="muted small">
-            {eliminated} {eliminated === 1 ? 'entry has' : 'entries have'} a title
-            chance below 0.1% and are not listed. That is not the same as
-            mathematically eliminated.
+            {outOfIt} {outOfIt === 1 ? 'entry is' : 'entries are'} shown at
+            under 0.1%. That is not the same as mathematically eliminated —
+            the points are still there to be taken.
           </p>
         )
       }
     >
-      <Table className="grid">
+      <Table className="datatable">
         <TableHeader>
           <TableRow>
             <TableHead>{nameKey === 'team' ? 'Team' : 'Driver'}</TableHead>
@@ -130,11 +143,18 @@ function Standings({ title, rows, nameKey = 'driver' }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {contenders.map((row) => (
-            <TableRow key={row[nameKey] ?? row.driver}>
+          {rows.map((row) => (
+            <TableRow
+              key={row[nameKey] ?? row.driver}
+              className={row.p_champion <= LONG_SHOT ? 'is-long-shot' : ''}
+            >
               <TableCell>{row[nameKey] ?? row.driver}</TableCell>
               <TableCell className="num">{row.current_points.toFixed(0)}</TableCell>
-              <TableCell className="num strong">{(row.p_champion * 100).toFixed(1)}%</TableCell>
+              <TableCell className="num strong">
+                {row.p_champion <= LONG_SHOT
+                  ? <span className="muted">&lt;0.1%</span>
+                  : `${(row.p_champion * 100).toFixed(1)}%`}
+              </TableCell>
               <TableCell className="viz"><Bar value={row.p_champion} /></TableCell>
               <TableCell className="num muted">{row.expected_final_points.toFixed(0)}</TableCell>
             </TableRow>

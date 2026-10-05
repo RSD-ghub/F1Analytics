@@ -7,10 +7,13 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  *
  * Two presentation rules this page exists to honour:
  *
- * A raw Brier score is not a claim a reader can evaluate. Winning is rare, so
- * predicting "nobody wins" for everyone already scores about 0.045 on a
- * twenty-car grid. Skill against that baseline is the number shown large;
- * the Brier score is shown small, next to it.
+ * Nothing on this page is a raw score. A Brier score is not a claim a reader can
+ * evaluate — winning is rare, so predicting "nobody wins" for everyone already
+ * scores about 0.045 on a twenty-car grid, and a reader with no feel for that
+ * baseline cannot tell 0.04 from good. Every number here is therefore a
+ * percentage: skill stated against the guessing baseline, and calibration stated
+ * as what we said against what happened. The underlying scores still exist on
+ * /track-record and are what the percentages are computed from.
  *
  * Pending predictions are shown alongside scored ones. A record that displayed
  * only what had been reconciled could be improved by never reconciling the
@@ -125,8 +128,6 @@ function WindowRecord({ window }) {
             </span>
             <span className="market-note">
               {skill >= 0 ? 'better than guessing' : 'worse than guessing'}
-              {window.brier_by_market?.[market] !== undefined &&
-                ` · Brier ${window.brier_by_market[market].toFixed(4)}`}
             </span>
           </div>
         ))}
@@ -176,9 +177,8 @@ function Calibration({ curves }) {
           <h3>
             {MARKET_LABEL[curve.market] ?? curve.market}
             <span className="muted"> · {curve.window === 'pre_quali' ? 'before qualifying' : 'grid set'}</span>
-            <span className="ece"> ECE {curve.expected_calibration_error.toFixed(3)}</span>
           </h3>
-          <table className="grid compact">
+          <table className="datatable compact">
             <thead>
               <tr>
                 <th>Band</th><th className="num">Forecasts</th>

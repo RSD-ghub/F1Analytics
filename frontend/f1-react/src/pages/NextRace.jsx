@@ -151,7 +151,7 @@ function Forecast({ prediction }) {
         )}
       </div>
 
-      <Table className="grid">
+      <Table className="datatable">
         <TableHeader>
           <TableRow>
             <TableHead>Driver</TableHead>
