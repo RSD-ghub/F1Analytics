@@ -1,0 +1,26 @@
+# Keep the host's build artefacts out of the image.
+#
+# The Dockerfile runs `npm ci` and then `COPY . .`. Without this file that copy
+# puts the host's node_modules on top of the ones just installed in the image —
+# and npm installs platform-specific binaries, so a tree built on macOS lands
+# darwin-arm64 esbuild and rollup in a linux container and the Vite build fails
+# on an error that says nothing about where the files came from.
+#
+# It also keeps roughly 170 MB out of the build context, which is the difference
+# between a fast build and one that spends most of its time uploading.
+node_modules
+dist
+.vite
+
+# Local environment and editor state, which should never be baked into an image.
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vscode
+.idea
+
+# Nothing in the image needs version control history.
+.git
+.gitignore

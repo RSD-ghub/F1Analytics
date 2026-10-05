@@ -1,1 +1,28 @@
-target/*
+# Build context for the four Python services, whose context is the repo root.
+#
+# They each copy explicit paths — shared/f1_common and services/<name>/app — so
+# nothing here is at risk of being overwritten the way the frontend's was. This
+# is about size: without it every one of the four builds ships the frontend's
+# node_modules and the git history to the daemon before doing anything, which
+# on a small VM is most of the build time.
+#
+# Anything a Dockerfile actually copies must stay out of this list.
+node_modules
+.venv
+.git
+
+frontend/f1-react/node_modules
+frontend/f1-react/dist
+frontend/f1-react/.vite
+
+# Caches and local state.
+__pycache__
+*.pyc
+.pytest_cache
+fastf1-data
+.DS_Store
+
+# Secrets never belong in a build context, let alone an image.
+.env
+.env.*
+!.env.example

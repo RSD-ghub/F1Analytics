@@ -166,8 +166,11 @@ services:
     container_name: f1_frontend
     restart: unless-stopped
     expose: ["80"]
-    depends_on:
-      core-api: {condition: service_healthy}
+    # No depends_on. This container serves static files and talks to nothing;
+    # Caddy routes /api/* to core-api without passing through here. Waiting for
+    # core-api to become healthy only meant that a backend which was slow to
+    # start — or briefly unhealthy — took the entire front end down with it,
+    # when it could have been serving every page that does not need data.
 
 volumes:
   mongo_data:

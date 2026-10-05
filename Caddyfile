@@ -10,7 +10,18 @@
 
 	# The API. Everything under /api is core-api, which is the only service
 	# that authenticates — the other three are not reachable from here at all.
-	handle /api/* {
+	#
+	# `handle_path`, not `handle`: core-api mounts its routes at /health,
+	# /status, /blog and so on, with nothing under /api. The prefix exists only
+	# to tell Caddy which upstream to use, so it has to come off before the
+	# request is forwarded. `handle` matches the prefix but leaves the URI
+	# alone, which would forward /api/status unchanged and get a 404 for every
+	# call the app makes — with the page itself loading perfectly, because the
+	# static files come from somewhere else entirely.
+	#
+	# The dev server already strips it (vite.config.js rewrites /api away), so
+	# this is the one place the two environments could silently disagree.
+	handle_path /api/* {
 		reverse_proxy core-api:8000
 	}
 
@@ -20,13 +31,40 @@
 	}
 
 	header {
-		# No longer a site that serves only its own assets: the typefaces come
-		# from Google Fonts and the venue photographs from Wikimedia Commons.
-		# A Content-Security-Policy would be worth adding, and would have to
-		# admit fonts.googleapis.com, fonts.gstatic.com and
-		# upload.wikimedia.org. It is left out here rather than guessed at —
-		# a CSP that is wrong fails silently and takes the page's images and
-		# fonts with it, and this config has never been run.
+		# ── Content-Security-Policy, report-only to begin with ───────────────
+		#
+		# Every origin below was measured from the running app rather than
+		# guessed, which is the only way this is safe to write: a wrong CSP
+		# fails silently and takes the fonts and photographs with it.
+		#
+		# Loading the blog — the page that pulls the most third-party content —
+		# produced exactly five origins: self, fonts.googleapis.com (the
+		# stylesheet), fonts.gstatic.com (the font files), and both
+		# thumb.wikimedia.org and upload.wikimedia.org for venue photographs.
+		# thumb. is the one that matters: it serves eight of the ten images and
+		# was missing from the list this comment used to carry, so a policy
+		# written from that list would have blanked most of the photography.
+		#
+		# script-src needs no escape hatch. The production bundle has one
+		# external module script and no inline script at all, so 'self' is the
+		# whole policy and the most dangerous directive is also the tightest.
+		#
+		# style-src has to allow 'unsafe-inline' because React writes inline
+		# style attributes at runtime — the track map, the odds bars and the
+		# globe all position elements that way. That is a real weakening, but a
+		# far smaller one than for scripts: it permits styling, not execution.
+		# style-src-attr would be tighter still and is deliberately not used,
+		# because a browser that does not support it falls back to style-src
+		# and loses the allowance entirely, taking the layout with it.
+		#
+		# Report-Only means violations are reported and nothing is blocked. The
+		# site has never run under this policy, so promote it to the enforcing
+		# header — rename to Content-Security-Policy — only after loading the
+		# blog, a weekend, the globe and the track record with the console open
+		# and seeing no violations. Both headers may be served at once if you
+		# want to enforce a known-good policy while testing a stricter one.
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin

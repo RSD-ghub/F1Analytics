@@ -2,7 +2,8 @@
 # F1 Analytics — Frontend Dockerfile (multi-stage)
 #
 # Stage 1 (build):   Node 20 builds the Vite/React bundle into /app/dist
-# Stage 2 (runtime): nginx serves the static bundle and proxies /f1/ to backend
+# Stage 2 (runtime): nginx serves the static bundle. It does not proxy; Caddy
+#                    routes /api/* to core-api before anything reaches here.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: Node build ───────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ COPY package*.json ./
 RUN npm ci --silent
 
 # Copy source and build.
-# Override outDir so Vite outputs to /app/dist instead of the Java classpath path.
+# outDir is set explicitly so the runtime stage can copy from a known path.
 COPY . .
 RUN npm run build -- --outDir dist --emptyOutDir
 
@@ -26,7 +27,7 @@ FROM nginx:1.27-alpine AS runtime
 # Remove the default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Copy our reverse-proxy config
+# Copy our static-file config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy the built static assets from stage 1
