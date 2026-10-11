@@ -6,7 +6,7 @@ tracking codes that duplicate a story, and dates that would pin an item to the
 top of the list for ever.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -117,10 +117,38 @@ def test_an_undated_item_is_marked_as_estimated():
     assert undated.published_estimated is True
 
 
+def test_a_feed_with_no_dates_keeps_the_outlets_own_order():
+    """Formula1.com publishes no pubDate at all, so every item was landing on
+    one instant, tied and ordered arbitrarily among themselves."""
+    payload = b"""<rss><channel>
+        <item><title>Newest</title><link>https://example.com/1</link></item>
+        <item><title>Middle</title><link>https://example.com/2</link></item>
+        <item><title>Oldest</title><link>https://example.com/3</link></item>
+        </channel></rss>"""
+    items = parse_feed(payload, FEED, now=NOW)
+
+    assert [i.title for i in items] == ["Newest", "Middle", "Oldest"]
+    stamps = [i.published_at for i in items]
+    assert stamps == sorted(stamps, reverse=True), "feed order was lost"
+    assert len(set(stamps)) == 3, "undated items are still tied"
+    assert all(i.published_estimated for i in items)
+    # Seconds apart, not hours: the spacing breaks a tie and must not read as
+    # a real publication time.
+    assert stamps[0] - stamps[-1] < timedelta(minutes=1)
+
+
+def test_a_dated_item_is_not_shifted_by_an_undated_one():
+    """The spacing applies to undated items only."""
+    upgrade = next(
+        i for i in parse_feed(RSS, FEED, now=NOW) if i.title.startswith("Team brings")
+    )
+    assert upgrade.published_at == datetime(2026, 10, 8, 13, 30, tzinfo=timezone.utc)
+
+
 def test_a_date_in_the_future_is_not_trusted():
     """Otherwise it would sit at the top of every list until 2027."""
     future = next(i for i in parse_feed(RSS, FEED, now=NOW) if i.title == "From the future")
-    assert future.published_at == NOW
+    assert NOW - timedelta(minutes=1) < future.published_at <= NOW
     assert future.published_estimated is True
 
 

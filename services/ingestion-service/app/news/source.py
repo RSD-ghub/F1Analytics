@@ -49,6 +49,10 @@ MAX_SUMMARY_CHARS = 320
 #: Kept as-is it would sit at the top of every "latest" list for days.
 FUTURE_TOLERANCE = timedelta(hours=1)
 
+#: Gap between consecutive undated items from one feed. Enough to keep the
+#: outlet's own order; too small to read as a real publication time.
+UNDATED_SPACING = timedelta(seconds=1)
+
 _ATOM = "{http://www.w3.org/2005/Atom}"
 _TAG = re.compile(r"<[^>]+>")
 
@@ -226,6 +230,7 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
 
     items: List[NewsItem] = []
     seen = set()
+    undated = 0
     for title, link, summary, published in raw_items:
         title = clean_text(title)
         url = canonical_url(link)
@@ -239,7 +244,20 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
         when = _parse_date(published)
         estimated = when is None
         if when is None or when > now + FUTURE_TOLERANCE:
-            when, estimated = now, True
+            # Formula1.com's feed carries no pubDate on any item, so every
+            # headline from it is undated and fell on the same instant: ten
+            # stories sharing one timestamp, ordered arbitrarily among
+            # themselves. A feed is published newest first, which is the only
+            # ordering evidence there is, so it is kept by spacing undated
+            # items a second apart down the feed.
+            #
+            # Deliberately seconds, not hours. The spacing exists to break a
+            # tie, and spreading them over a plausible-looking half a day
+            # would be inventing publication times precise enough to be
+            # believed. They stay marked estimated, and the page says "first
+            # seen" rather than giving a date.
+            when, estimated = now - UNDATED_SPACING * undated, True
+            undated += 1
         items.append(NewsItem(
             item_id=key,
             source=feed.key,
