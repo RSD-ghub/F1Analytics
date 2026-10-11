@@ -101,7 +101,10 @@ const WINDOW_TITLE = {
   pre_quali: 'Before qualifying',
   post_quali: 'After qualifying (provisional grid)',
   final_grid: 'On the confirmed grid',
+  sprint: 'Sprint, on the sprint grid',
 }
+
+const CURVE_WINDOW = { pre_quali: 'before qualifying', sprint: 'sprint' }
 
 const MARKET_LABEL = { win: 'Winner', podium: 'Podium', points: 'Points finish' }
 
@@ -176,7 +179,7 @@ function Calibration({ curves }) {
         <div className="curve" key={`${curve.market}-${curve.window}`}>
           <h3>
             {MARKET_LABEL[curve.market] ?? curve.market}
-            <span className="muted"> · {curve.window === 'pre_quali' ? 'before qualifying' : 'grid set'}</span>
+            <span className="muted"> · {CURVE_WINDOW[curve.window] ?? 'grid set'}</span>
           </h3>
           <table className="datatable compact">
             <thead>

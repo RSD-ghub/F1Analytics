@@ -74,7 +74,7 @@ export function HundredRaces({ probability, label, unit = 'races' }) {
  * misread a favourite is to treat the highest probability as the outcome, and
  * naming how often they are beaten is the correction.
  */
-export function InPlainWords({ leader, win, podium }) {
+export function InPlainWords({ leader, win, podium, race = 'race' }) {
   if (!leader) return null
   if (win == null) {
     return (
@@ -90,7 +90,7 @@ export function InPlainWords({ leader, win, podium }) {
   return (
     <p className="lede">
       <strong>{leader}</strong> is the favourite at{' '}
-      {Math.round(win * 100)}% — which also means the model expects the race to
+      {Math.round(win * 100)}% — which also means the model expects the {race} to
       go to someone else in {losses} of every 100 run from this grid.
     </p>
   )

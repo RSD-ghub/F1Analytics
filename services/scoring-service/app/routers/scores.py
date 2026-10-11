@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from app.config import Settings, get_settings
 from app.dependencies import get_reconciler, get_store
 from app.models.schemas import (
+    RACE,
+    SPRINT,
     Market,
     PredictionScore,
     RaceOutcome,
@@ -68,6 +70,34 @@ async def reconcile_race(
             round=round_number,
             reconciled=False,
             message="no classified winner ingested yet; nothing to score",
+        )
+    return ReconcileResponse(
+        season=season, round=round_number, reconciled=True, scored=len(scores)
+    )
+
+
+@router.post(
+    "/reconcile/{season}/{round_number}/sprint", response_model=ReconcileResponse
+)
+async def reconcile_sprint(
+    season: int,
+    round_number: int,
+    reconciler: Reconciler = Depends(get_reconciler),
+) -> ReconcileResponse:
+    """Score the sprint forecast for one round against the sprint's result."""
+    try:
+        outcome, scores = await reconciler.reconcile_race(
+            season, round_number, event=SPRINT
+        )
+    except Exception as exc:
+        raise _guard(exc)
+
+    if outcome is None:
+        return ReconcileResponse(
+            season=season,
+            round=round_number,
+            reconciled=False,
+            message="no classified sprint winner ingested yet; nothing to score",
         )
     return ReconcileResponse(
         season=season, round=round_number, reconciled=True, scored=len(scores)
@@ -136,9 +166,10 @@ async def get_score(
 async def get_outcome(
     season: int,
     round_number: int,
+    event: str = Query(RACE, pattern="^(race|sprint)$"),
     store: ScoringStore = Depends(get_store),
 ) -> RaceOutcome:
-    outcome = await store.get_outcome(season, round_number)
+    outcome = await store.get_outcome(season, round_number, event)
     if outcome is None:
         raise HTTPException(
             status_code=404,

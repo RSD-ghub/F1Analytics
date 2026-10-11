@@ -10,7 +10,7 @@ non-obvious FastF1 detail worth preserving verbatim (see ``extract_pit_stops``).
 """
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -181,6 +181,54 @@ def extract_qualifying(
             )
         )
     return rows
+
+
+def knockout_classification(
+    parts: Sequence[Optional[pd.DataFrame]],
+) -> Dict[str, Tuple[int, List[float]]]:
+    """A knockout qualifying classification rebuilt from its laps.
+
+    ``parts`` is the session's laps split into its three segments, as FastF1's
+    ``split_qualifying_sessions`` returns them (``None`` for a segment that did
+    not run). Returns car number -> (position, [best seconds per segment]).
+
+    Exists because FastF1 cannot classify sprint qualifying: its results come
+    from Ergast, which has never carried the session, so every row arrives with
+    no position. The order is recoverable from the laps by the knockout rule
+    itself — whoever reached the latest segment ranks ahead, ordered within it
+    by their best lap there. Laps deleted for track limits do not count, as
+    they do not count on the timing screen; a driver with no counting lap in
+    their last segment is ordered after those who set one.
+    """
+    best: Dict[str, List[float]] = {}
+    reached: Dict[str, int] = {}
+    for index, laps in enumerate(parts):
+        if laps is None or laps.empty:
+            continue
+        for _, lap in laps.iterrows():
+            number = safe_text(lap.get("DriverNumber"))
+            if not number:
+                continue
+            times = best.setdefault(number, [0.0, 0.0, 0.0])
+            reached[number] = max(reached.get(number, -1), index)
+            deleted = lap.get("Deleted")
+            if isinstance(deleted, (bool, np.bool_)) and deleted:
+                continue
+            seconds = to_seconds(lap.get("LapTime"))
+            if seconds > 0 and (times[index] == 0.0 or seconds < times[index]):
+                times[index] = seconds
+
+    def sort_key(number: str):
+        last = reached[number]
+        lap = best[number][last]
+        # Latest segment first; within it, a timed lap ahead of none, fastest first.
+        return (-last, lap == 0.0, lap, number)
+
+    ordered = sorted(best, key=sort_key)
+    return {
+        number: (position, list(best[number]))
+        for position, number in enumerate(ordered, start=1)
+    }
 
 
 def extract_laps(

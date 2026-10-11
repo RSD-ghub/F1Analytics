@@ -19,6 +19,7 @@ from app.config import Settings, get_settings
 from app.dependencies import get_client, get_model, get_predictor, get_store
 from app.models.schemas import (
     ChampionshipForecast,
+    Event,
     FeatureSnapshot,
     LockWindow,
     ModelVersion,
@@ -46,6 +47,18 @@ class ForecastRequest(BaseModel):
     window: LockWindow = LockWindow.PRE_QUALI
     circuit: str = ""
     race_name: str = ""
+
+
+def _event(value: str) -> Optional[Event]:
+    """``race`` (the default), ``sprint``, or ``all`` for both."""
+    return None if value == "all" else Event(value)
+
+
+EVENT_QUERY = Query(
+    "race",
+    pattern="^(race|sprint|all)$",
+    description="Which race of the weekend: race, sprint, or all",
+)
 
 
 class PreviewResponse(BaseModel):
@@ -115,9 +128,10 @@ async def list_predictions(
     season: Optional[int] = Query(None),
     round_number: Optional[int] = Query(None, alias="round"),
     limit: int = Query(100, ge=1, le=500),
+    event: str = EVENT_QUERY,
     store: PredictionStore = Depends(get_store),
 ) -> List[Prediction]:
-    return await store.list_predictions(season, round_number, limit)
+    return await store.list_predictions(season, round_number, limit, _event(event))
 
 
 # Literal paths must be registered before /{season}/{round_number}: FastAPI
@@ -147,10 +161,16 @@ async def model_versions(
 async def for_race(
     season: int,
     round_number: int,
+    event: str = EVENT_QUERY,
     store: PredictionStore = Depends(get_store),
 ) -> List[Prediction]:
-    """Both windows for one race, so their differences can be compared directly."""
-    return await store.list_predictions(season, round_number)
+    """Every window for one race, so their differences can be compared directly.
+
+    The Grand Prix's by default; ``?event=sprint`` for the sprint's.
+    """
+    return await store.list_predictions(
+        season, round_number, event=_event(event)
+    )
 
 
 # ── Championship ─────────────────────────────────────────────────────────────

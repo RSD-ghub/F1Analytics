@@ -259,6 +259,22 @@ def feature_vector(
     return np.array(values, dtype=float)
 
 
+def race_distance_dnf(full_race_rate: float, distance_fraction: float) -> float:
+    """A full-race retirement rate scaled to a shorter race.
+
+    Treated as a constant hazard per kilometre, so a car that survives a full
+    race with probability ``1 - p`` survives a fraction ``f`` of it with
+    ``(1 - p) ** f``. Linear scaling would be close at small rates and wrong at
+    large ones; this is exact under the assumption and costs nothing extra.
+
+    The assumption is generous to the start: first-lap incidents do not shrink
+    with distance, so this somewhat understates a sprint's retirements.
+    """
+    if distance_fraction >= 1.0:
+        return full_race_rate
+    return 1.0 - (1.0 - full_race_rate) ** max(distance_fraction, 0.0)
+
+
 class ModelWeightsMissing(RuntimeError):
     """No fitted weights artifact. The service must not serve guesses."""
 
@@ -381,21 +397,38 @@ class RaceModel:
     # ── Sampling ─────────────────────────────────────────────────────────────
 
     def predict(
-        self, drivers: Sequence[DriverFeatures], seed: int
+        self,
+        drivers: Sequence[DriverFeatures],
+        seed: int,
+        points_positions: int = POINTS_POSITIONS,
+        distance_fraction: float = 1.0,
     ) -> List[DriverProbability]:
         """Finishing probabilities for a field.
 
         p_win sums to 1.0 across the field by construction — exactly one driver
         wins each simulated race.
+
+        ``points_positions`` and ``distance_fraction`` exist for the sprint:
+        fewer places score, and a third of the distance is a third of the
+        exposure to the failures ``dnf_rate`` measures over a full race.
         """
         if not drivers:
             return []
         return self._summarise(
-            drivers, self.sample_orders(drivers, seed=seed, runs=self.runs)
+            drivers,
+            self.sample_orders(
+                drivers, seed=seed, runs=self.runs,
+                distance_fraction=distance_fraction,
+            ),
+            points_positions=points_positions,
         )
 
     def sample_orders(
-        self, drivers: Sequence[DriverFeatures], seed: int, runs: int
+        self,
+        drivers: Sequence[DriverFeatures],
+        seed: int,
+        runs: int,
+        distance_fraction: float = 1.0,
     ) -> np.ndarray:
         """Sample ``runs`` finishing orders. Shape: (runs, n_drivers) of positions.
 
@@ -412,7 +445,10 @@ class RaceModel:
             if any(d.grid_position > 0 for d in drivers)
             else self.pre_quali_noise_scale
         )
-        dnf_rates = np.array([min(max(d.dnf_rate, 0.0), 0.9) for d in drivers])
+        dnf_rates = np.array([
+            race_distance_dnf(min(max(d.dnf_rate, 0.0), 0.9), distance_fraction)
+            for d in drivers
+        ])
 
         gumbel = rng.gumbel(loc=0.0, scale=scale, size=(runs, len(drivers)))
         perturbed = strengths[None, :] + gumbel
@@ -427,7 +463,10 @@ class RaceModel:
         return positions
 
     def _summarise(
-        self, drivers: Sequence[DriverFeatures], positions: np.ndarray
+        self,
+        drivers: Sequence[DriverFeatures],
+        positions: np.ndarray,
+        points_positions: int = POINTS_POSITIONS,
     ) -> List[DriverProbability]:
         runs = positions.shape[0]
         results = [
@@ -436,7 +475,7 @@ class RaceModel:
                 team=driver.team,
                 p_win=float((positions[:, index] == 1).sum() / runs),
                 p_podium=float((positions[:, index] <= PODIUM_POSITIONS).sum() / runs),
-                p_points=float((positions[:, index] <= POINTS_POSITIONS).sum() / runs),
+                p_points=float((positions[:, index] <= points_positions).sum() / runs),
                 expected_position=float(positions[:, index].mean()),
             )
             for index, driver in enumerate(drivers)

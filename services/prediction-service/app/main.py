@@ -64,6 +64,7 @@ async def lifespan(_: FastAPI):
             pre_quali_hours=settings.pre_quali_lock_hours_before,
             post_quali_hours=settings.post_quali_lock_hours_before,
             final_grid_minutes=settings.final_grid_lock_minutes_before,
+            sprint_hours=settings.sprint_lock_hours_before,
         ),
         settings.lock_check_minutes,
     )

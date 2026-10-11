@@ -10,6 +10,7 @@ guarantee — which is exactly what the ad-hoc pull scripts this replaces did no
     python scripts/backfill.py practice 2018 2025
     python scripts/backfill.py full 2018 2025
     python scripts/backfill.py full 2018 2025 --refresh   # re-read, after a schema change
+    python scripts/backfill.py sprints 2021 2025
 
 ``full`` adds laps, stints, pit stops, weather and race control on top of
 ``results``. It is much slower — lap frames are the bulk of what FastF1 serves —
@@ -120,8 +121,24 @@ async def main() -> int:
                 done += 1
             logger.info("  %s -> %s rows", session.key, rows)
         logger.info("practice: %s/%s weekends with pace", done, len(expected))
+    elif mode == "sprints":
+        # Sprint qualifying and sprint results, for scoring and for the sprint
+        # backtest. The timetable first: sprint sessions are found by the
+        # names it publishes, and a season never refreshed has none.
+        await runner.refresh_weekends(first, last)
+        for season in range(first, last + 1):
+            outcome = await runner.ingest_sprint_sessions(
+                season, include_finished=True
+            )
+            logger.info(
+                "sprints %s: ingested=%s waiting=%s failed=%s",
+                season, len(outcome["ingested"]), len(outcome["waiting"]),
+                len(outcome["failed"]),
+            )
+            for label in outcome["failed"]:
+                logger.warning("  failed: %s", label)
     else:
-        raise SystemExit("mode must be 'results' or 'practice'")
+        raise SystemExit("mode must be 'results', 'practice', 'full' or 'sprints'")
 
     client.close()
     return 0

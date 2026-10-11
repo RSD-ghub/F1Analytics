@@ -25,6 +25,7 @@ _scheduler: Optional[AsyncIOScheduler] = None
 JOB_ID = "heal-current-season"
 GRID_JOB_ID = "confirm-starting-grids"
 RESULTS_JOB_ID = "ingest-finished-races"
+SPRINT_JOB_ID = "ingest-sprint-sessions"
 NEWS_JOB_ID = "refresh-paddock-news"
 
 
@@ -81,6 +82,20 @@ async def ingest_finished_races(runner: IngestRunner) -> None:
         await runner.ingest_finished_races(season)
     except Exception:
         logger.exception("scheduled results ingest failed for %s", season)
+
+
+async def ingest_sprint_sessions(runner: IngestRunner) -> None:
+    """Sprint qualifying for the sprint lock window, the sprint for scoring.
+
+    On the grid cadence for the same reason as the other two: sprint
+    qualifying runs Friday evening and the sprint at midday Saturday, so the
+    window between them is hours, not days.
+    """
+    season = datetime.now(timezone.utc).year
+    try:
+        await runner.ingest_sprint_sessions(season)
+    except Exception:
+        logger.exception("scheduled sprint ingest failed for %s", season)
 
 
 async def refresh_news(news_refresh: Callable[[], Awaitable[Any]]) -> None:
@@ -163,6 +178,18 @@ def start(
             next_run_time=datetime.now(timezone.utc),
         )
         logger.info("finished-race ingest scheduled every %smin", grid_check_minutes)
+
+        _scheduler.add_job(
+            ingest_sprint_sessions,
+            trigger=IntervalTrigger(minutes=grid_check_minutes),
+            args=[runner],
+            id=SPRINT_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=None,
+            next_run_time=datetime.now(timezone.utc),
+        )
+        logger.info("sprint ingest scheduled every %smin", grid_check_minutes)
 
     if news_refresh is not None and news_minutes > 0:
         _scheduler.add_job(

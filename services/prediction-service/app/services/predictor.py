@@ -22,6 +22,7 @@ from typing import List, Optional, Sequence, Tuple
 from app.models.schemas import (
     GRID_WINDOWS,
     MARKETS_BY_WINDOW,
+    SPRINT_WINDOWS,
     DataQuality,
     DriverProbability,
     FeatureSnapshot,
@@ -30,6 +31,7 @@ from app.models.schemas import (
     ModelVersion,
     Prediction,
     published_markets,
+    sprint_points_positions,
 )
 from app.services import features as feature_builder
 from app.services.ingestion_client import (
@@ -37,10 +39,15 @@ from app.services.ingestion_client import (
     IngestionClient,
     IngestionUnavailable,
 )
-from app.services.model import RaceModel
+from app.services.model import POINTS_POSITIONS, RaceModel
 from app.services.storage import PredictionStore
 
 logger = logging.getLogger(__name__)
+
+
+#: A sprint's length as a fraction of a Grand Prix's: 100 km against the
+#: 305 km minimum. Scales the retirement rate, which is measured per race.
+SPRINT_DISTANCE_FRACTION = 100.0 / 305.0
 
 
 class ConfirmedGridRequired(RuntimeError):
@@ -114,6 +121,12 @@ class Predictor:
                 logger.warning("prior season unavailable; using current season only")
 
         grid = await self._maybe_grid(season, round_number, window)
+        if window in SPRINT_WINDOWS and not grid:
+            raise GridRequired(
+                "no sprint qualifying classification ingested for {}-{}; a "
+                "sprint forecast is placed on the sprint grid or not at "
+                "all".format(season, round_number)
+            )
         if window in GRID_WINDOWS and not grid:
             raise GridRequired(
                 "no grid ingested for {}-{}; a post-quali forecast without the "
@@ -168,6 +181,7 @@ class Predictor:
             bool(grid),
             grid_is_provisional=provisional,
             grid_source=_grid_source(grid),
+            sprint=window in SPRINT_WINDOWS,
         )
         if provisional:
             logger.warning(
@@ -175,6 +189,11 @@ class Predictor:
                 "penalties not applied)", season, round_number,
             )
         seed = derive_seed(season, round_number, window)
+        if window in SPRINT_WINDOWS:
+            points_positions = sprint_points_positions(season)
+            distance = SPRINT_DISTANCE_FRACTION
+        else:
+            points_positions, distance = POINTS_POSITIONS, 1.0
 
         return Prediction(
             prediction_id=str(uuid.uuid4()),
@@ -188,11 +207,17 @@ class Predictor:
             model_version=self._model.version,
             seed=seed,
             driver_probabilities=_restrict_to_published(
-                self._model.predict(snapshot.drivers, seed=seed), window
+                self._model.predict(
+                    snapshot.drivers, seed=seed,
+                    points_positions=points_positions,
+                    distance_fraction=distance,
+                ),
+                window,
             ),
             published_markets=published_markets(window),
             feature_snapshot_ref=snapshot.snapshot_id,
             data_quality=quality,
+            points_positions=points_positions,
         ), snapshot
 
     async def lock(
@@ -244,6 +269,8 @@ class Predictor:
         if window not in GRID_WINDOWS:
             return None
         try:
+            if window in SPRINT_WINDOWS:
+                return await self._client.sprint_grid(season, round_number)
             return await self._client.grid(season, round_number)
         except IngestionUnavailable as exc:
             logger.warning("grid fetch failed for %s-%s: %s", season, round_number, exc)
@@ -256,6 +283,7 @@ class Predictor:
         has_grid: bool,
         grid_is_provisional: bool = False,
         grid_source: str = "",
+        sprint: bool = False,
     ) -> DataQuality:
         """Record what was missing, without blocking publication.
 
@@ -296,6 +324,8 @@ class Predictor:
             notes.append("{} prior round(s) missing or incomplete".format(len(missing)))
         if grid_is_provisional:
             notes.append(
+                "grid is the sprint qualifying classification; penalties not "
+                "applied" if sprint else
                 "grid is qualifying classification; penalties not yet applied"
             )
         return DataQuality(

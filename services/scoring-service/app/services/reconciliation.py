@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Sequence
 
 from app.models.schemas import (
+    RACE,
     DriverOutcome,
     Market,
     PredictionScore,
@@ -38,6 +39,8 @@ def build_outcome(
     round_number: int,
     results: Sequence[RaceResultRow],
     race_name: str = "",
+    event: str = RACE,
+    points_positions: int = POINTS_POSITIONS,
 ) -> RaceOutcome:
     """Reduce race results to the binary facts the markets ask about.
 
@@ -51,7 +54,7 @@ def build_outcome(
             classified=row.classified,
             won=row.classified and row.position == 1,
             podium=row.classified and 1 <= row.position <= PODIUM_POSITIONS,
-            points=row.classified and 1 <= row.position <= POINTS_POSITIONS,
+            points=row.classified and 1 <= row.position <= points_positions,
         )
         for row in results
     ]
@@ -61,7 +64,14 @@ def build_outcome(
         race_name=race_name,
         reconciled_at=datetime.now(timezone.utc),
         drivers=sorted(drivers, key=lambda d: d.driver),
+        event=event,
+        points_positions=points_positions,
     )
+
+
+def sprint_points_positions(season: int) -> int:
+    """Three places scored in a 2021 sprint, eight since."""
+    return 3 if season <= 2021 else 8
 
 
 def score_prediction(
@@ -99,7 +109,14 @@ def score_prediction(
             # Scoring them as a miss is what stops a bad call from vanishing.
             found = by_driver.get(row.driver)
             outcomes.append(outcome_for(market, found) if found else False)
-        markets.append(score_market(market, probabilities, outcomes))
+        markets.append(
+            score_market(
+                market, probabilities, outcomes,
+                winners=(
+                    outcome.points_positions if market is Market.POINTS else None
+                ),
+            )
+        )
 
     return PredictionScore(
         score_id=str(uuid.uuid4()),

@@ -15,11 +15,14 @@ from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 
-from app.models.schemas import PredictionScore, RaceOutcome
+from app.models.schemas import RACE, SPRINT, PredictionScore, RaceOutcome
 
 logger = logging.getLogger(__name__)
 
 OUTCOMES = "outcomes"
+#: Sprint outcomes live apart from the Grand Prix's: ``outcomes`` is unique on
+#: (season, round), and a sprint shares its round with a Grand Prix.
+SPRINT_OUTCOMES = "sprint_outcomes"
 SCORES = "scores"
 
 
@@ -28,9 +31,10 @@ class ScoringStore:
         self._db = database
 
     async def ensure_indexes(self) -> None:
-        await self._db[OUTCOMES].create_index(
-            [("season", ASCENDING), ("round", ASCENDING)], unique=True
-        )
+        for collection in (OUTCOMES, SPRINT_OUTCOMES):
+            await self._db[collection].create_index(
+                [("season", ASCENDING), ("round", ASCENDING)], unique=True
+            )
         await self._db[SCORES].create_index(
             [("prediction_id", ASCENDING)], unique=True
         )
@@ -43,26 +47,30 @@ class ScoringStore:
 
     @invalidates("scoring")
     async def save_outcome(self, outcome: RaceOutcome) -> None:
-        await self._db[OUTCOMES].replace_one(
+        await self._db[_outcomes_for(outcome.event)].replace_one(
             {"season": outcome.season, "round": outcome.round},
             outcome.model_dump(mode="json"),
             upsert=True,
         )
 
     async def get_outcome(
-        self, season: int, round_number: int
+        self, season: int, round_number: int, event: str = RACE
     ) -> Optional[RaceOutcome]:
-        doc = await self._db[OUTCOMES].find_one(
+        doc = await self._db[_outcomes_for(event)].find_one(
             {"season": season, "round": round_number}, projection={"_id": False}
         )
         return RaceOutcome(**doc) if doc else None
 
     async def list_outcomes(self, season: Optional[int] = None) -> List[RaceOutcome]:
+        """Grand Prix and sprint outcomes together, each under its own key."""
         query = {"season": season} if season is not None else {}
-        cursor = self._db[OUTCOMES].find(query, projection={"_id": False}).sort(
-            [("season", ASCENDING), ("round", ASCENDING)]
-        )
-        return [RaceOutcome(**doc) async for doc in cursor]
+        found: List[RaceOutcome] = []
+        for collection in (OUTCOMES, SPRINT_OUTCOMES):
+            cursor = self._db[collection].find(
+                query, projection={"_id": False}
+            ).sort([("season", ASCENDING), ("round", ASCENDING)])
+            found.extend([RaceOutcome(**doc) async for doc in cursor])
+        return found
 
     # ── Scores ───────────────────────────────────────────────────────────────
 
@@ -105,3 +113,7 @@ class ScoringStore:
 
     async def scored_prediction_ids(self) -> List[str]:
         return await self._db[SCORES].distinct("prediction_id")
+
+
+def _outcomes_for(event: str) -> str:
+    return SPRINT_OUTCOMES if event == SPRINT else OUTCOMES

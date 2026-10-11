@@ -106,6 +106,9 @@ reasoning-trace markers.
 BACKFILL_SESSIONS_PER_HOUR=0 \
   .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2026 --refresh
 
+# Sprint qualifying and sprint results, which live apart from the Grand Prix's.
+.venv/bin/python services/ingestion-service/scripts/backfill.py sprints 2021 2025
+
 # The FIA regulations, chunked by article. Re-run when a section is reissued.
 .venv/bin/python services/ingestion-service/scripts/ingest_regulations.py 2026
 ```
@@ -142,6 +145,20 @@ Three lock windows, each conditioned on what is actually known at the time:
 | `pre_quali` | Form and history only | podium, points |
 | `post_quali` | Qualifying classification | win, podium, points |
 | `final_grid` | Penalty-adjusted starting grid | win, podium, points |
+
+Sprint weekends add a fourth, for the sprint itself:
+
+| Window | Conditioned on | Publishes |
+|---|---|---|
+| `sprint` | Sprint qualifying classification, 12h before the sprint | win, podium, points (top 8) |
+
+It is a separate race, not a Grand Prix window: it locks against the sprint's
+start, is scored against the sprint's result, and is served only on request
+(`/predictions/{season}/{round}?event=sprint`), so everything that reads "the
+forecasts for round N" still gets the Grand Prix's. Its markets rest on the
+Grand Prix's measured grid-aware skill until
+`services/prediction-service/scripts/backtest_sprints.py` has been run on
+past sprints.
 
 A locked forecast is immutable — re-locking returns 409 — because a forecast you
 can edit after the fact is not a forecast. Sampling is seeded on the prediction

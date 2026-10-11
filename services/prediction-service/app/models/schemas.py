@@ -28,6 +28,12 @@ class LockWindow(str, Enum):
     #: pit-lane set, the largest move there is. A window whose premise is "we
     #: know where they start" cannot be satisfied eighteen hours early.
     FINAL_GRID = "final_grid"
+    #: The sprint, forecast on the sprint qualifying classification. A
+    #: separate event rather than a fourth Grand Prix window: it is scored
+    #: against the sprint's own result, locks against the sprint's own start,
+    #: and a sprint forecast compared with a Grand Prix one would be comparing
+    #: two different races.
+    SPRINT = "sprint"
 
 
 class Market(str, Enum):
@@ -46,19 +52,51 @@ class Market(str, Enum):
 #:
 #: Its podium (+28% to +38%) and points (+25% to +39%) forecasts are genuinely
 #: skilful and are published. Once the grid is known, all three are.
+#:
+#: The sprint publishes all three on the same footing as the Grand Prix
+#: post-quali window: it is the same model, conditioned on a grid, over a race
+#: a third the length — where the grid decides more, not less. That is an
+#: argument, not a measurement. ``scripts/backtest_sprints.py`` measures it on
+#: past sprints, and a market it cannot show skill on comes out of this tuple
+#: the way the pre-quali win market did.
 MARKETS_BY_WINDOW = {
     LockWindow.PRE_QUALI: (Market.PODIUM, Market.POINTS),
     LockWindow.POST_QUALI: (Market.WIN, Market.PODIUM, Market.POINTS),
     LockWindow.FINAL_GRID: (Market.WIN, Market.PODIUM, Market.POINTS),
+    LockWindow.SPRINT: (Market.WIN, Market.PODIUM, Market.POINTS),
 }
 
-#: Windows that are conditioned on a starting grid. Both use the grid block of
-#: the model; they differ in how sure that grid is.
-GRID_WINDOWS = (LockWindow.POST_QUALI, LockWindow.FINAL_GRID)
+#: Windows that are conditioned on a starting grid. All use the grid block of
+#: the model; they differ in how sure that grid is, and in which race it is for.
+GRID_WINDOWS = (LockWindow.POST_QUALI, LockWindow.FINAL_GRID, LockWindow.SPRINT)
+
+#: Windows forecasting the sprint rather than the Grand Prix. Kept as a set so
+#: every reader asks "which race is this for?" the same way.
+SPRINT_WINDOWS = (LockWindow.SPRINT,)
+
+
+class Event(str, Enum):
+    """Which race of the weekend a forecast is about."""
+
+    RACE = "race"
+    SPRINT = "sprint"
+
+
+def event_of(window: LockWindow) -> Event:
+    return Event.SPRINT if window in SPRINT_WINDOWS else Event.RACE
 
 
 def published_markets(window: LockWindow) -> List[str]:
     return [market.value for market in MARKETS_BY_WINDOW[window]]
+
+
+def sprint_points_positions(season: int) -> int:
+    """How many places score in a sprint that season.
+
+    Three in 2021, eight since. Not the Grand Prix's ten, so a points market
+    priced on ten would claim two finishing places that score nothing.
+    """
+    return 3 if season <= 2021 else 8
 
 
 class DataQuality(BaseModel):
@@ -196,7 +234,8 @@ class Prediction(BaseModel):
     race_name: str = ""
     window: LockWindow
     locked_at: datetime
-    #: When the race starts. Lets scoring confirm the lock preceded the race.
+    #: When the race starts — the sprint's own start, for a sprint forecast.
+    #: Lets scoring confirm the lock preceded the race it is about.
     race_start_utc: Optional[datetime] = None
     #: When this window opened. Stored so lateness stays derivable from the
     #: prediction alone: a forecast placed hours after its deadline had more of
@@ -216,6 +255,14 @@ class Prediction(BaseModel):
     published_markets: List[str] = Field(default_factory=list)
     feature_snapshot_ref: str
     data_quality: DataQuality = Field(default_factory=DataQuality)
+    #: Finishing places the points market counts: ten for a Grand Prix, eight
+    #: for a sprint. Stored rather than inferred so the forecast says exactly
+    #: what its ``p_points`` meant when it was locked.
+    points_positions: int = 10
+
+    @property
+    def event(self) -> Event:
+        return event_of(self.window)
 
     def publishes(self, market: str) -> bool:
         return market in self.published_markets

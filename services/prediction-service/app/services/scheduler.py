@@ -123,6 +123,7 @@ class LockScheduler:
         pre_quali_hours: int,
         post_quali_hours: int,
         final_grid_minutes: int = 45,
+        sprint_hours: int = 12,
     ) -> None:
         self._predictor = predictor
         self._client = client
@@ -131,6 +132,9 @@ class LockScheduler:
             LockWindow.POST_QUALI: timedelta(hours=post_quali_hours),
             LockWindow.FINAL_GRID: timedelta(minutes=final_grid_minutes),
         }
+        #: Kept apart from ``_leads`` because it is measured from a different
+        #: start: the sprint's, not the Grand Prix's.
+        self._sprint_lead = timedelta(hours=sprint_hours)
 
     async def tick(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """One pass over the upcoming calendar. Returns what it did and why."""
@@ -155,21 +159,38 @@ class LockScheduler:
                 outcomes.append(
                     await self._lock(weekend, window, reason)
                 )
+
+            # The sprint locks against its own start. Measured from the Grand
+            # Prix instead, a twelve-hour lead would open the window a day
+            # after the sprint had finished. No qualifying cut-off either: the
+            # only window here is already conditioned on the sprint grid.
+            sprint_start = _aware(weekend.sprint_start_utc)
+            if sprint_start is not None:
+                lock, reason = should_lock(
+                    LockWindow.SPRINT, moment, sprint_start, None,
+                    self._sprint_lead,
+                )
+                if lock:
+                    outcomes.append(
+                        await self._lock(weekend, LockWindow.SPRINT, reason)
+                    )
         return outcomes
 
     async def _lock(self, weekend, window: LockWindow, reason: str) -> Dict[str, Any]:
         key = "{}-{}".format(weekend.season, weekend.round)
+        if window is LockWindow.SPRINT:
+            start, lead = _aware(weekend.sprint_start_utc), self._sprint_lead
+        else:
+            start, lead = _aware(weekend.race_start_utc), self._leads[window]
         try:
             prediction = await self._predictor.lock(
                 season=weekend.season,
                 round_number=weekend.round,
                 window=window,
                 circuit=weekend.circuit,
-                race_start_utc=_aware(weekend.race_start_utc),
+                race_start_utc=start,
                 race_name=weekend.race_name,
-                window_opened_at=window_opens_at(
-                    _aware(weekend.race_start_utc), self._leads[window]
-                ),
+                window_opened_at=window_opens_at(start, lead),
             )
         except PredictionExists:
             # The normal path on every tick after the first. Not a failure.
@@ -184,7 +205,8 @@ class LockScheduler:
             return {"race": key, "window": window.value,
                     "action": "waiting for confirmed grid"}
         except GridRequired as exc:
-            # Qualifying has not been ingested yet. The window stays open and
+            # Qualifying (or, for the sprint, sprint qualifying) has not been
+            # ingested yet. The window stays open and
             # the next tick will retry — which is why ticks are frequent
             # relative to the grace period.
             logger.info("post-quali for %s waiting on the grid: %s", key, exc)

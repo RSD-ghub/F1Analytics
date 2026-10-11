@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import BaseModel, Field
 
+from app.models.schemas import RACE, event_of
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +71,11 @@ class LockedPrediction(BaseModel):
 
     def publishes(self, market: str) -> bool:
         return not self.published_markets or market in self.published_markets
+
+    @property
+    def event(self) -> str:
+        """Which race this forecast is about: "race" or "sprint"."""
+        return event_of(self.window)
 
     @property
     def is_late_lock(self) -> Optional[bool]:
@@ -140,18 +147,31 @@ class IngestionClient(_JsonClient):
         payload = await self._get("/data/results", {"season": season, "limit": 20000})
         return [RaceResultRow(**row) for row in payload]
 
+    async def sprint_results(
+        self, season: int, round_number: int
+    ) -> List[RaceResultRow]:
+        """The sprint's classification — its own dataset, never ``/data/results``."""
+        payload = await self._get(
+            "/data/sprint_results",
+            {"season": season, "round": round_number, "limit": 100},
+        )
+        return [RaceResultRow(**row) for row in payload]
+
 
 class PredictionClient(_JsonClient):
     async def predictions_for(
-        self, season: int, round_number: int
+        self, season: int, round_number: int, event: str = RACE
     ) -> List[LockedPrediction]:
-        payload = await self._get("/predictions/{}/{}".format(season, round_number))
+        """Forecasts for one round. ``event`` is "race", "sprint" or "all"."""
+        payload = await self._get(
+            "/predictions/{}/{}".format(season, round_number), {"event": event}
+        )
         return [LockedPrediction.from_payload(row) for row in payload]
 
     async def list_predictions(
-        self, season: Optional[int] = None, limit: int = 500
+        self, season: Optional[int] = None, limit: int = 500, event: str = RACE
     ) -> List[LockedPrediction]:
-        params: Dict[str, Any] = {"limit": limit}
+        params: Dict[str, Any] = {"limit": limit, "event": event}
         if season is not None:
             params["season"] = season
         payload = await self._get("/predictions", params)
