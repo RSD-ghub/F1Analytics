@@ -28,6 +28,7 @@ Four FastAPI services over MongoDB, with a React frontend.
 | Service | Port | Database | Public | Responsibility |
 |---|---|---|---|---|
 | mongodb | 27017 | — | no | — |
+| redis | 6379 | — | no | Read-through cache in front of the internal services (compose only) |
 | ingestion-service | 8001 | `f1_ingestion` | no | FastF1 + FIA acquisition, completeness, the regulations corpus |
 | prediction-service | 8002 | `f1_prediction` | no | Feature snapshots, training, locked forecasts |
 | scoring-service | 8003 | `f1_scoring` | no | Reconciliation and Brier scoring against baselines |
@@ -40,8 +41,15 @@ That is what makes core-api the single place authentication is enforced — if a
 internal service ever starts publishing a host port, that property is quietly
 gone. `compose-preflight.sh` checks for exactly that.
 
-Shared code lives in `shared/f1_common` (settings, Mongo, health, LLM client)
-and is installed into each service as an editable dependency.
+Shared code lives in `shared/f1_common` (settings, Mongo, health, LLM client,
+cache) and is installed into each service as an editable dependency.
+
+**Redis is a cache, never a store of record.** core-api answers the downstream
+reads listed in `services/core-api/app/services/cache_policy.py` from Redis,
+each with a TTL. Every storage write in the other services bumps a generation
+counter for its domain, which retires everything core-api cached from that
+domain at once. With `REDIS_URL` unset (the dev setup below) or Redis down,
+every read goes to the service as before.
 
 ---
 

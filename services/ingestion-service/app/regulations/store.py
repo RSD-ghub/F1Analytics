@@ -21,6 +21,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, TEXT, ReplaceOne
 from pymongo.errors import OperationFailure
@@ -110,6 +111,7 @@ class RegulationStore:
                 spec, weights=weights, name=REGULATIONS_TEXT_INDEX
             )
 
+    @invalidates("regulations")
     async def save_regulations(self, articles: Sequence[Any]) -> int:
         """Replace a season's articles for the sections supplied.
 

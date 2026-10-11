@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import DESCENDING, TEXT, UpdateOne
 from pymongo.errors import OperationFailure
@@ -89,6 +90,7 @@ class NewsStore:
                 spec, weights=NEWS_TEXT_WEIGHTS, name=NEWS_TEXT_INDEX
             )
 
+    @invalidates("news")
     async def save(self, items: Sequence[Any]) -> int:
         """Upsert headlines; returns how many were new.
 
@@ -127,6 +129,7 @@ class NewsStore:
         result = await self._db[NEWS].bulk_write(operations, ordered=False)
         return result.upserted_count or 0
 
+    @invalidates("news")
     async def prune(self, before: datetime) -> int:
         """Drop headlines published before ``before``.
 

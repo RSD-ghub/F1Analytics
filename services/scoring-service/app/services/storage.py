@@ -11,6 +11,7 @@ untouchable upstream.
 import logging
 from typing import Any, Dict, List, Optional
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 
@@ -40,6 +41,7 @@ class ScoringStore:
 
     # ── Outcomes ─────────────────────────────────────────────────────────────
 
+    @invalidates("scoring")
     async def save_outcome(self, outcome: RaceOutcome) -> None:
         await self._db[OUTCOMES].replace_one(
             {"season": outcome.season, "round": outcome.round},
@@ -64,6 +66,7 @@ class ScoringStore:
 
     # ── Scores ───────────────────────────────────────────────────────────────
 
+    @invalidates("scoring")
     async def save_score(self, score: PredictionScore) -> None:
         await self._db[SCORES].replace_one(
             {"prediction_id": score.prediction_id},

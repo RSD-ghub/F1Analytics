@@ -21,6 +21,7 @@ from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
 from app.services.usage import UsageStore
 from app.services.users import UserStore
+from f1_common import cache
 from f1_common.health import build_health_router
 
 settings = get_settings()
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
 
     try:
         await UserStore(db.db()).ensure_indexes()
@@ -48,6 +50,7 @@ async def lifespan(_: FastAPI):
         logger.error("AUTH DISABLED: %s", exc)
 
     yield
+    await cache.close()
     db.close()
 
 

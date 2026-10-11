@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING, DeleteMany, ReplaceOne, UpdateOne
 
@@ -196,6 +197,7 @@ class IngestionStore:
 
     # ── Session data ─────────────────────────────────────────────────────────
 
+    @invalidates("ingestion")
     async def save_payload(
         self, payload: SessionPayload, depth: IngestDepth = IngestDepth.FULL
     ) -> Dict[str, int]:
@@ -259,6 +261,7 @@ class IngestionStore:
 
     # ── Forward-looking data ─────────────────────────────────────────────────
 
+    @invalidates("ingestion")
     async def upsert_weekends(self, weekends: Sequence[Any]) -> int:
         if not weekends:
             return 0
@@ -282,6 +285,7 @@ class IngestionStore:
         ).sort([("season", ASCENDING), ("round", ASCENDING)])
         return [doc async for doc in cursor]
 
+    @invalidates("ingestion")
     async def save_qualifying(
         self, season: int, round_number: int, rows: Sequence[Any]
     ) -> int:
@@ -315,6 +319,7 @@ class IngestionStore:
         await self._db[QUALIFYING].bulk_write(operations, ordered=True)
         return len(rows)
 
+    @invalidates("ingestion")
     async def save_signals(
         self, season: int, round_number: int, rows: Sequence[Any]
     ) -> int:
@@ -344,6 +349,7 @@ class IngestionStore:
         await self._db[SIGNALS].bulk_write(operations, ordered=True)
         return len(rows)
 
+    @invalidates("ingestion")
     async def save_practice(
         self, season: int, round_number: int, session_name: str, rows: Sequence[Any]
     ) -> int:
@@ -418,6 +424,7 @@ class IngestionStore:
         """How many rows match. Used for cheap existence checks."""
         return await self._db[collection].count_documents(query)
 
+    @invalidates("ingestion")
     async def backfill_result_grid(self, season: int, round_number: int) -> dict:
         """Fill a finished race's starting grid from the grid we already hold.
 
@@ -565,6 +572,7 @@ class IngestionStore:
         ).limit(max(1, min(limit, 30)))
         return [doc async for doc in cursor]
 
+    @invalidates("ingestion")
     async def save_circuit_location(self, slug: str, lat: float, lon: float) -> None:
         """Where a circuit is, for the globe.
 
@@ -578,6 +586,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_imagery(
         self, slug: str, images: List[Dict[str, Any]]
     ) -> None:
@@ -593,6 +602,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_official(self, slug: str, facts: Dict[str, Any]) -> None:
         """Store the figures a circuit's official page states about itself.
 
@@ -608,6 +618,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_map(self, document: Dict[str, Any]) -> None:
         """Store a circuit's geometry, replacing any earlier derivation.
 

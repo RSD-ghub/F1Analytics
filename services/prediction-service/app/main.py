@@ -18,6 +18,7 @@ from app.services import scheduler as lock_scheduler
 from app.services.model import MODEL_STATE_DIR, ensure_state_dir
 from app.services.scheduler import LockScheduler
 from app.services.storage import PredictionStore
+from f1_common import cache
 from f1_common.health import build_health_router
 
 settings = get_settings()
@@ -39,6 +40,10 @@ async def lifespan(_: FastAPI):
         )
 
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
+    # A restart may have loaded a newly promoted model or archetype
+    # artifact, so whatever core-api remembers from this service is retired.
+    await cache.bump("prediction")
 
     # The unique index on (season, round, window) is what enforces prediction
     # immutability, so a failure here is worth shouting about — but it must not
@@ -65,6 +70,7 @@ async def lifespan(_: FastAPI):
 
     yield
     lock_scheduler.shutdown()
+    await cache.close()
     db.close()
 
 
