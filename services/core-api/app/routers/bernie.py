@@ -5,6 +5,7 @@ the frontend. A caller that forgets to render it would be presenting an AI
 persona as a person, and that must not depend on client-side discipline.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -43,6 +44,7 @@ from app.services.conversation import (
     history_for_prompt,
 )
 from app.services.downstream import ServiceClient, gather_optional
+from app.services.strategy import build_inputs, simulate, strategy_facts
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +259,16 @@ async def _weekend_facts(
         if (row.get("long_run_seconds") or 0) > 0
     ]
     if practice:
-        ranked = sorted(practice, key=lambda r: r["long_run_seconds"])[:5]
+        # The whole field, not the top five: a strategy question is as often
+        # about the car in eighth, and its race pace against the cars around
+        # it is what decides whether an offset strategy can work. One line per
+        # driver, their quickest long run, so three sessions do not triple it.
+        quickest: Dict[str, Dict[str, Any]] = {}
+        for row in practice:
+            held = quickest.get(row["driver"])
+            if held is None or row["long_run_seconds"] < held["long_run_seconds"]:
+                quickest[row["driver"]] = row
+        ranked = sorted(quickest.values(), key=lambda r: r["long_run_seconds"])
         reference = ranked[0]["long_run_seconds"]
         facts["practice long-run pace"] = [
             "{} {:+.2f}s a lap over {} laps ({})".format(
@@ -277,6 +288,69 @@ async def _weekend_facts(
         )
     return facts
 
+
+
+async def _strategy_facts(
+    settings: Settings, season: int, round_number: int
+) -> Dict[str, Any]:
+    """Simulate the race's strategy options, on every turn.
+
+    Always included, never gated on the question: "what should Norris do from
+    P8?" names no tyre, and a gate guessing which questions are about strategy
+    would be wrong in exactly the way the regulations search avoids by running
+    unconditionally.
+
+    Never empty either. With no history for a circuit — or ingestion down — the
+    simulation runs on generic figures and says so line by line. Telling a
+    reader there is no strategy because a measurement is missing is the
+    dismissal this exists to replace; a strategist at a new circuit still has
+    a plan.
+    """
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    fetched = await gather_optional(
+        profile=ingestion_client.get(
+            "/circuits/{}/{}/strategy".format(season, round_number)
+        ),
+        circuit=ingestion_client.get("/circuits/{}/{}".format(season, round_number)),
+    )
+    circuit = fetched.get("circuit") or {}
+    official = circuit.get("official") or {}
+    # Pure arithmetic, but a few hundred thousand steps of it: off the event
+    # loop so one Bernie turn does not stall every other request.
+    sim = await asyncio.to_thread(
+        lambda: simulate(build_inputs(fetched.get("profile"), official.get("scheduled_laps")))
+    )
+    facts = strategy_facts(sim)
+
+    # How much track position is worth here, which the simulation leaves out:
+    # an extra stop that is quicker on paper is no use at a circuit where the
+    # order does not change.
+    stats = circuit.get("stats") or {}
+    position: List[str] = []
+    if stats.get("mean_places_changed") is not None:
+        position.append(
+            "classified finishers here gained or lost {} places on average between "
+            "grid and flag (over {} finishes)".format(
+                stats["mean_places_changed"], stats.get("places_changed_sample", "?"))
+        )
+    if stats.get("pole_win_rate") is not None:
+        position.append("pole won {:.0%} of {} races here".format(
+            stats["pole_win_rate"], stats.get("pole_starts", "?")))
+    elif stats.get("pole_starts"):
+        position.append("pole won {} of {} races here".format(
+            stats.get("pole_wins", 0), stats["pole_starts"]))
+    if position:
+        facts["track position at this circuit"] = position
+
+    if fetched["_unavailable"]:
+        facts["note on the strategy simulation"] = (
+            "This circuit's history could not be loaded, so the simulation used "
+            "generic figures wherever its inputs say GENERIC."
+        )
+    return facts
 
 
 async def _regulation_facts(
@@ -413,6 +487,7 @@ async def start_thread(
     facts.update(await _news_facts(
         settings, request.question, request.season, request.round
     ))
+    facts.update(await _strategy_facts(settings, request.season, request.round))
     thread = await store.create(user["_id"], request.season, request.round)
     return await _turn(bernie, store, thread, request.question, facts)
 
@@ -445,6 +520,7 @@ async def continue_thread(
     facts.update(await _news_facts(
         settings, request.question, thread.season, thread.round
     ))
+    facts.update(await _strategy_facts(settings, thread.season, thread.round))
     return await _turn(bernie, store, thread, request.question, facts)
 
 

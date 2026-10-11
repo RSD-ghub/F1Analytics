@@ -15,7 +15,7 @@ import Home from './pages/Home'
  *
  * Almost everything here is public, which is a product decision rather than an
  * oversight: the forecasts and the record that scores them are the claim, and a
- * claim behind a login cannot be checked. Only Bernie needs an account — his
+ * claim behind a login cannot be checked. Only Bernie needs an account — her
  * conversations are private and are the only thing that spends model calls.
  */
 export default function App() {
