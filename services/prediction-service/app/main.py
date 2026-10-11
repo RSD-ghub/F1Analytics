@@ -15,6 +15,7 @@ from app.dependencies import get_client, get_predictor
 from app.routers import circuits as circuits_router
 from app.routers import predictions
 from app.services import scheduler as lock_scheduler
+from app.services.model import MODEL_STATE_DIR, ensure_state_dir
 from app.services.scheduler import LockScheduler
 from app.services.storage import PredictionStore
 from f1_common.health import build_health_router
@@ -26,6 +27,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Before anything loads the model. On a deployment MODEL_STATE_DIR points at
+    # a mounted volume, which is empty the first time it is created — the
+    # packaged artifact is copied across and becomes the starting champion.
+    # Every promotion after that writes to the volume and survives a rebuild.
+    seeded = ensure_state_dir()
+    if seeded:
+        logger.info(
+            "seeded %s from the packaged artifact: %s",
+            MODEL_STATE_DIR, ", ".join(seeded),
+        )
+
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
 
     # The unique index on (season, round, window) is what enforces prediction

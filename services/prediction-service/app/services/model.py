@@ -32,6 +32,7 @@ it against a 1994 race.
 import json
 import logging
 import os
+import shutil
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
@@ -123,7 +124,92 @@ GRID_FEATURES = ("grid_legacy", "grid_modern", "quali_gap_pct")
 
 SERVING_ERA_BUCKET = "modern"
 
-WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "model_weights.json")
+#: The artifact that ships inside the image, and the directory it sits in.
+#:
+#: This copy is read-only in any containerised deployment: it is part of a layer,
+#: so anything written beside it lives and dies with the container.
+PACKAGED_STATE_DIR = os.path.join(os.path.dirname(__file__), "..")
+PACKAGED_WEIGHTS_PATH = os.path.join(PACKAGED_STATE_DIR, "model_weights.json")
+
+#: Where the model artifact, its archive and the promotion history are *kept*.
+#:
+#: Defaults to the packaged location, which is what a local checkout wants —
+#: scripts/retrain.py has always written next to the weights it read, and
+#: nothing about running from source needs to change.
+#:
+#: A deployment points this at a mounted volume. Without that, a promotion
+#: writes into the container's own filesystem: the new weights, the archived
+#: predecessor and the decision history all survive exactly until the next
+#: `up --build`, which silently restores whatever was baked into the image.
+#: The retraining loop would appear to work and then undo itself, and the
+#: archive that exists to keep published forecasts reproducible would be the
+#: first thing lost.
+MODEL_STATE_DIR = os.environ.get("MODEL_STATE_DIR") or PACKAGED_STATE_DIR
+
+def state_paths(state_dir: str):
+    """The three files a promotion writes, all under one directory.
+
+    Derived together on purpose. They were computed separately — the script
+    rebuilding the archive and history paths from the directory of the weights
+    it had just read — and two definitions of one location is a thing that
+    drifts. Splitting them across an image and a volume would archive the
+    outgoing champion into a layer that disappears on the next rebuild.
+    """
+    return (
+        os.path.join(state_dir, "model_weights.json"),
+        os.path.join(state_dir, "model_archive"),
+        os.path.join(state_dir, "promotion_history.json"),
+    )
+
+
+WEIGHTS_PATH, ARCHIVE_DIR, HISTORY_PATH = state_paths(MODEL_STATE_DIR)
+
+
+def ensure_state_dir(state_dir: Optional[str] = None,
+                     packaged_dir: Optional[str] = None) -> List[str]:
+    """Seed the writable state directory from the packaged artifact.
+
+    A fresh volume is empty, and the service will not serve a forecast without
+    weights — so on first boot the packaged model is copied across and becomes
+    the starting champion. Afterwards the volume is authoritative and the
+    packaged copy is ignored, which is what makes a promotion durable. Copying
+    again on a later boot would silently demote the promoted model back to
+    whatever shipped in the image, so nothing is ever overwritten.
+
+    The archive and the promotion history come too. A promoted model whose
+    predecessor stayed behind in an image layer is not reproducible, and that is
+    the property the archive exists for.
+
+    Both directories are arguments rather than read from the module so this can
+    be exercised without reloading it. Returns what it copied, so startup can
+    say so rather than doing it silently; a no-op when the state directory is
+    the packaged one, which is every local checkout.
+    """
+    state_dir = MODEL_STATE_DIR if state_dir is None else state_dir
+    packaged_dir = PACKAGED_STATE_DIR if packaged_dir is None else packaged_dir
+
+    if os.path.abspath(state_dir) == os.path.abspath(packaged_dir):
+        return []
+
+    weights, archive, history = state_paths(state_dir)
+    packaged_weights, packaged_archive, packaged_history = state_paths(packaged_dir)
+
+    os.makedirs(state_dir, exist_ok=True)
+    seeded: List[str] = []
+
+    if not os.path.exists(weights) and os.path.exists(packaged_weights):
+        shutil.copy2(packaged_weights, weights)
+        seeded.append("model_weights.json")
+
+    if not os.path.exists(history) and os.path.exists(packaged_history):
+        shutil.copy2(packaged_history, history)
+        seeded.append("promotion_history.json")
+
+    if not os.path.exists(archive) and os.path.isdir(packaged_archive):
+        shutil.copytree(packaged_archive, archive)
+        seeded.append("model_archive/")
+
+    return seeded
 
 
 def feature_names(with_grid: bool) -> List[str]:

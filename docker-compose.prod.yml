@@ -99,6 +99,15 @@ services:
       <<: *mongo_uri
       MONGO_DATABASE: "f1_prediction"
       INGESTION_SERVICE_URL: "http://ingestion-service:8001"
+      MODEL_STATE_DIR: "/data/model"
+    # The model artifact, its archive and the promotion history. A named volume
+    # rather than the image, because a promotion writes all three and the image
+    # is restored on every `up --build` — the retraining loop would appear to
+    # work and silently revert, taking the archive that keeps published
+    # forecasts reproducible with it. Seeded from the packaged artifact the
+    # first time this volume is created.
+    volumes:
+      - model_data:/data/model
     depends_on:
       mongodb: {condition: service_healthy}
       ingestion-service: {condition: service_healthy}
@@ -173,6 +182,7 @@ services:
     # when it could have been serving every page that does not need data.
 
 volumes:
+  model_data:
   mongo_data:
   caddy_data:
   caddy_config:

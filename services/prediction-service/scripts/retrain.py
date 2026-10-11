@@ -33,7 +33,10 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.model import MODEL_VERSION, WEIGHTS_PATH, feature_names  # noqa: E402
+from app.services.model import (  # noqa: E402
+    ARCHIVE_DIR, HISTORY_PATH, MODEL_VERSION, WEIGHTS_PATH,
+    ensure_state_dir, feature_names,
+)
 from app.training import dataset, promotion  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -43,9 +46,11 @@ from train_model import TRAINING_FROM_SEASON  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("retrain")
 
+# All three come from app.services.model, so the script and the service cannot
+# disagree about where the state lives. In a container that is a mounted volume;
+# in a checkout it is the directory the weights have always sat in.
 ARTIFACT = os.path.abspath(WEIGHTS_PATH)
-ARCHIVE_DIR = os.path.join(os.path.dirname(ARTIFACT), "model_archive")
-HISTORY = os.path.join(os.path.dirname(ARTIFACT), "promotion_history.json")
+HISTORY = HISTORY_PATH
 
 
 def load_champion() -> Optional[Dict]:
@@ -132,6 +137,11 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true",
                         help="Promote if the gate passes. Otherwise report only.")
     args = parser.parse_args()
+
+    seeded = ensure_state_dir()
+    if seeded:
+        logger.info("seeded model state from the packaged artifact: %s",
+                    ", ".join(seeded))
 
     champion = load_champion()
     if champion is None:

@@ -119,6 +119,53 @@ docker compose -f docker-compose.prod.yml exec prediction-service \
 prediction-service refuses to serve forecasts without weights, so this is not
 optional.
 
+### Where the model lives
+
+The artifact ships inside the image, but it is not *kept* there. On first boot
+the packaged copy is seeded into the `model_data` volume mounted at
+`/data/model`, and from then on the volume is authoritative — the image copy is
+ignored.
+
+That split exists because a promotion writes three things: the new weights, the
+archived predecessor, and the decision history. Written into the image's own
+filesystem they would survive exactly until the next `up --build`, which
+restores the layer and puts the old champion back. Nothing would fail. The
+retraining loop would report a promotion, serve the new model, and quietly undo
+itself on the next deploy — taking the archive that keeps published forecasts
+reproducible with it.
+
+```bash
+docker compose -f docker-compose.prod.yml exec prediction-service \
+  ls -la /data/model          # weights, model_archive/, promotion_history.json
+```
+
+To retrain through the gate on the box, export the corpus and run it — the
+script is in the image:
+
+```bash
+P="docker compose -f docker-compose.prod.yml exec prediction-service"
+
+$P python -c "import asyncio,json; \
+from app.services.ingestion_client import IngestionClient; \
+from app.training import corpus; \
+r,_=asyncio.run(corpus.load(IngestionClient('http://ingestion-service:8001'),2010,2026,require_complete=False)); \
+open('/data/model/results.jsonl','w').writelines(json.dumps(x.model_dump(mode='json'))+chr(10) for x in r)"
+
+$P python scripts/retrain.py /data/model/results.jsonl           # reports only
+$P python scripts/retrain.py /data/model/results.jsonl --apply   # promotes
+```
+
+A promotion restarts nothing by itself: the service loads its weights once, at
+startup, so the new model is not served until the container is recreated.
+
+```bash
+docker compose -f docker-compose.prod.yml restart prediction-service
+```
+
+Back the volume up alongside the predictions (§7). The weights can be retrained
+from the corpus, but the archive cannot be reconstructed — it is the only record
+of which weights produced which published forecast.
+
 ---
 
 ## 5. What runs by itself
