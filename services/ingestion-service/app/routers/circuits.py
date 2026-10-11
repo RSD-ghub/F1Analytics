@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.dependencies import get_runner, get_store
 from app.services.circuit_map import CircuitMapUnavailable, slug as circuit_slug
 from app.services.circuit_stats import summarise
+from app.services.strategy_profile import summarise_strategy
 from app.services import commons, f1_site, osm_circuit
 from app.services.ingest_runner import IngestRunner
 from app.services.storage import IngestionStore
@@ -222,6 +223,37 @@ async def circuit(
         "location": location,
         "stats": summarise(name, history["results"], history["laps"]),
     }
+
+
+@router.get("/{season}/{round_number}/strategy", response_model=Dict[str, Any])
+async def strategy_profile(
+    season: int,
+    round_number: int,
+    store: IngestionStore = Depends(get_store),
+) -> Dict[str, Any]:
+    """How the circuit's recent races were run: distance, stops, tyres, safety cars.
+
+    The measured inputs to a race strategy. Every figure carries its sample,
+    and anything the stored races cannot support is absent rather than
+    estimated — the strategy simulator states its own assumptions for those.
+    """
+    weekend = await _weekend(store, season, round_number)
+    name = weekend.get("circuit") or ""
+    history = await store.circuit_strategy_history(name, before_season=season)
+    profile = summarise_strategy(
+        name,
+        history["results"],
+        history["laps"],
+        history["pit_stops"],
+        history["race_control"],
+        history["weather"],
+    )
+    profile.update(
+        season=season,
+        round=round_number,
+        race_name=weekend.get("race_name", ""),
+    )
+    return profile
 
 
 @router.post("/{season}/{round_number}", response_model=Dict[str, Any])

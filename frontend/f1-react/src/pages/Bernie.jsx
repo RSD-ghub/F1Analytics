@@ -10,7 +10,7 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * Bernie — a conversational pit-wall strategist.
  *
  * The disclaimer is rendered from the server's own payload rather than
- * hardcoded here. Bernie is an AI persona and the product must not present him
+ * hardcoded here. Bernie is an AI persona and the product must not present her
  * as a person; making that depend on the frontend remembering to add a line
  * would be the wrong place for the guarantee to live.
  *
@@ -44,24 +44,27 @@ export default function Bernie() {
      * The signed-out state used to be a bare panel headed "Sign in to talk to
      * Bernie", which asked for an account without ever saying what the
      * account was for. Someone arriving from the masthead had no way to know
-     * what Bernie knows or why he is worth the sign-up.
+     * what Bernie knows or why she is worth the sign-up.
      */
     return (
       <div className="stack">
         <header className="page-head">
           <p className="eyebrow">Bernie</p>
-          <h1>Ask about the weekend</h1>
+          <h1>Plan the race with Bernie</h1>
           <p className="lede">
-            Bernie answers from the stored record — practice pace, qualifying,
-            the confirmed grid and its penalties, the locked forecast, and the
-            text of the FIA regulations. He cites the article when he leans on
-            a rule, and says he does not know when the record does not cover
-            the question.
+            Bernie is a race strategist. Ask for a plan and she simulates the
+            options from this circuit's recent races — tyre wear, what a stop
+            costs, how often the safety car comes out — then weighs them
+            against the grid, practice pace and the forecast. She also answers
+            from the stored record and the FIA regulations, citing the article
+            when she leans on a rule.
           </p>
         </header>
 
-        <Panel title="What he can be asked">
+        <Panel title="What she can be asked">
           <ul className="examples">
+            <li>What's the best strategy for a car starting tenth?</li>
+            <li>One stop or two here, and when should the leader pit?</li>
             <li>Why does a driver start further back than they qualified?</li>
             <li>How many power unit elements are allowed before a penalty?</li>
             <li>What did the forecast say about this race, and how did it score?</li>
@@ -155,7 +158,7 @@ export default function Bernie() {
           <Input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={active ? 'Ask a follow-up…' : 'Who looks strongest this weekend?'}
+            placeholder={active ? 'Ask a follow-up…' : 'What strategy would you run from P5?'}
             disabled={busy || !race}
             aria-label="Ask Bernie about this weekend"
           />
@@ -166,7 +169,7 @@ export default function Bernie() {
 
         <p className="disclaimer">
           Bernie is an AI pit-wall strategist inspired by the role of a real race
-          strategist. He is not a real person and does not represent anyone.
+          strategist. She is not a real person and does not represent anyone.
         </p>
       </section>
     </div>
@@ -183,7 +186,7 @@ function BernieError({ error }) {
   // by the component, so repeating it reads as a stutter.
   const messages = {
     not_configured: 'No language model is configured on this deployment. Everything else on the site works without one.',
-    billing: 'The language model account needs credit before he can answer.',
+    billing: 'The language model account needs credit before she can answer.',
     provider_error: 'The language model could not be reached just now — try again shortly.',
   }
   return <Unavailable what="Bernie" reason={messages[reason] ?? error.message} />

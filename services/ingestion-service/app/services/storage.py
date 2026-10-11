@@ -559,6 +559,57 @@ class IngestionStore:
             ]
         return {"results": results, "laps": laps}
 
+    async def circuit_strategy_history(
+        self, circuit: str, before_season: int, visits: int = 4
+    ) -> Dict[str, Any]:
+        """The circuit's most recent races, with what a strategy is built from.
+
+        Recent visits only. Tyre compounds are redesigned most winters and a
+        2019 medium says little about a 2026 one, so four visits trades a
+        smaller sample for one that still describes the tyres being raced.
+        Only seasons before ``before_season``: that season's own visit is the
+        race being planned, not history. Joined on (season, race name) pairs
+        for the reason ``circuit_history`` gives.
+        """
+        names = await self._circuit_names(circuit)
+        results = [
+            row async for row in
+            self._db[DATA_COLLECTIONS["results"]].find(
+                {"circuit": {"$in": names}, "season": {"$lt": before_season}},
+                {"_id": 0},
+            )
+        ]
+        pairs = sorted({
+            (row["season"], row["race_name"]) for row in results
+            if row.get("race_name") and row.get("season")
+        }, reverse=True)[:visits]
+        wanted = set(pairs)
+        results = [r for r in results if (r.get("season"), r.get("race_name")) in wanted]
+
+        async def rows(dataset: str, fields: List[str]) -> List[Dict[str, Any]]:
+            if not pairs:
+                return []
+            projection = {"_id": 0, "season": 1, "round": 1}
+            projection.update({field: 1 for field in fields})
+            return [
+                row async for row in self._db[DATA_COLLECTIONS[dataset]].find(
+                    {"$or": [
+                        {"season": season, "race_name": name} for season, name in pairs
+                    ]},
+                    projection,
+                )
+            ]
+
+        return {
+            "results": results,
+            "laps": await rows(
+                "laps", ["driver", "lap", "lap_time_seconds", "compound", "stint"]
+            ),
+            "pit_stops": await rows("pit_stops", ["driver", "stop", "lap"]),
+            "race_control": await rows("race_control", ["message", "lap"]),
+            "weather": await rows("weather", ["rainfall"]),
+        }
+
     async def circuit_outlines(self, limit: int = 12) -> List[Dict[str, Any]]:
         """Circuit shapes only, for decorative use.
 
