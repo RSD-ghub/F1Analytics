@@ -169,3 +169,51 @@ async def test_a_finished_sprints_grid_is_only_fetched_for_a_backfill():
 
     await runner.ingest_sprint_sessions(2026, include_finished=True)
     assert source.calls == [("quali", 6, "Sprint Shootout")]
+
+
+def test_sprint_qualifying_order_is_rebuilt_from_its_laps():
+    """Upstream never classifies sprint qualifying, so every row arrives with
+    no position. The knockout rule recovers it: the last segment reached
+    ranks first, then the best counting lap within it."""
+    from datetime import timedelta as td
+
+    import pandas as pd
+
+    from app.services.transforms import knockout_classification
+
+    def laps(rows):
+        return pd.DataFrame(
+            [{"DriverNumber": n, "LapTime": td(seconds=t), "Deleted": d}
+             for n, t, d in rows]
+        )
+
+    order = knockout_classification([
+        laps([("1", 91.0, False), ("4", 90.5, False), ("16", 92.0, False),
+              ("44", 93.0, False)]),
+        laps([("1", 90.2, False), ("4", 90.1, False), ("16", 90.9, False)]),
+        # 4's quicker lap was deleted for track limits and does not count.
+        laps([("1", 89.8, False), ("4", 89.5, True), ("4", 89.9, False)]),
+    ])
+
+    assert {n: p for n, (p, _) in order.items()} == {
+        "1": 1, "4": 2, "16": 3, "44": 4,
+    }
+    assert order["4"][1] == [90.5, 90.1, 89.9]
+
+
+def test_a_driver_without_a_lap_in_their_last_segment_goes_behind_it():
+    from datetime import timedelta as td
+
+    import pandas as pd
+
+    from app.services.transforms import knockout_classification
+
+    q1 = pd.DataFrame([
+        {"DriverNumber": "10", "LapTime": td(seconds=91), "Deleted": False},
+        {"DriverNumber": "22", "LapTime": pd.NaT, "Deleted": False},
+        {"DriverNumber": "31", "LapTime": td(seconds=92), "Deleted": False},
+    ])
+    order = knockout_classification([q1, None, None])
+    assert [n for n, _ in sorted(order.items(), key=lambda kv: kv[1][0])] == [
+        "10", "31", "22",
+    ]

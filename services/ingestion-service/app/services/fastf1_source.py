@@ -409,6 +409,40 @@ class FastF1Source:
             session=self._with_actual_date(expected, session), results=results
         )
 
+    @staticmethod
+    def _classify_from_laps(session: Any, rows, expected: ExpectedSession):
+        """Fill positions and segment times on an unclassified knockout session.
+
+        Costs a second, heavier load — laps and session status — paid only on
+        the sessions upstream cannot classify. Any failure leaves the rows as
+        they were, which the caller already treats as "not classified yet".
+        """
+        try:
+            session.load(laps=True, telemetry=False, weather=False, messages=False)
+            parts = session.laps.split_qualifying_sessions()
+        except Exception as exc:
+            logger.info(
+                "could not rebuild %s classification from laps: %s",
+                expected.key, str(exc)[:120],
+            )
+            return rows
+
+        order = transforms.knockout_classification(
+            [None if part is None else _as_frame(part) for part in parts]
+        )
+        classified = []
+        for row in rows:
+            found = order.get(str(row.driver_number))
+            if found is None:
+                classified.append(row)
+                continue
+            position, (q1, q2, q3) = found
+            classified.append(row.model_copy(update={
+                "position": position, "q1_seconds": q1,
+                "q2_seconds": q2, "q3_seconds": q3,
+            }))
+        return classified
+
     def load_sprint_results(
         self, expected: ExpectedSession, session_name: str = "Sprint"
     ) -> List[ResultRow]:
@@ -529,6 +563,10 @@ class FastF1Source:
         rows = transforms.extract_qualifying(
             expected, _session_frame(session, "results")
         )
+        if session_name != "Q" and rows and not any(r.position < 999 for r in rows):
+            # Sprint qualifying is never classified upstream (see
+            # ``knockout_classification``), so rebuild the order from its laps.
+            rows = self._classify_from_laps(session, rows, expected)
         # A qualifying session that ran but yields no classification is a failed
         # fetch, not an empty session — upstream returns an empty frame under
         # rate limiting rather than an error. Returning [] here reads as "no
