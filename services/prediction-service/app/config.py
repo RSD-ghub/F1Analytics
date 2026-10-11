@@ -31,6 +31,12 @@ class Settings(ServiceSettings):
     # margin after the document appears.
     final_grid_lock_minutes_before: int = 45
 
+    # The sprint window, before the sprint's own start. Sprint qualifying ends
+    # about eighteen hours before the sprint, so twelve leaves hours for its
+    # classification to be ingested; like post-quali, the window then stays
+    # open until the lights go out.
+    sprint_lock_hours_before: int = 12
+
     # Sampling iterations for a single race forecast. Higher is smoother but
     # slower; 20k puts the Monte Carlo error on a p_win well below a point.
     prediction_runs: int = 20000

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.models.schemas import (
     ChampionshipForecast,
+    Event,
     FeatureSnapshot,
     LockWindow,
     ModelVersion,
@@ -93,11 +94,14 @@ class FakeStore:
         self.predictions[key] = prediction
         return prediction
 
-    async def list_predictions(self, season=None, round_number=None, limit=200):
+    async def list_predictions(
+        self, season=None, round_number=None, limit=200, event=Event.RACE
+    ):
         return [
             p for p in self.predictions.values()
             if (season is None or p.season == season)
             and (round_number is None or p.round == round_number)
+            and (event is None or p.event is event)
         ][:limit]
 
     async def get_prediction(self, season, round_number, window):

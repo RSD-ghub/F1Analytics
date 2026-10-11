@@ -9,7 +9,15 @@ score is much harder to explain away later than a delayed one.
 import logging
 from typing import List, Optional, Sequence, Tuple
 
-from app.models.schemas import Market, PredictionScore, RaceOutcome, TrackRecord
+from app.models.schemas import (
+    RACE,
+    SPRINT,
+    Market,
+    PredictionScore,
+    RaceOutcome,
+    TrackRecord,
+    outcome_key,
+)
 from app.services import track_record as record_builder
 from app.services.clients import (
     IngestionClient,
@@ -17,7 +25,12 @@ from app.services.clients import (
     PredictionClient,
     UpstreamUnavailable,
 )
-from app.services.reconciliation import build_outcome, score_prediction
+from app.services.reconciliation import (
+    POINTS_POSITIONS,
+    build_outcome,
+    score_prediction,
+    sprint_points_positions,
+)
 from app.services.storage import ScoringStore
 
 logger = logging.getLogger(__name__)
@@ -35,27 +48,43 @@ class Reconciler:
         self._store = store
 
     async def reconcile_race(
-        self, season: int, round_number: int
+        self, season: int, round_number: int, event: str = RACE
     ) -> Tuple[Optional[RaceOutcome], List[PredictionScore]]:
         """Score every locked prediction for one race.
+
+        ``event`` picks the Grand Prix or the sprint. Each is scored only
+        against its own result: a sprint forecast read against the Grand Prix
+        classification would be a confident, well-formed and entirely wrong
+        score.
 
         Returns ``(None, [])`` when the race has no usable result yet — that is
         the normal state for an upcoming race, not a failure.
         """
-        results = await self._ingestion.race_results(season, round_number)
+        if event == SPRINT:
+            results = await self._ingestion.sprint_results(season, round_number)
+            points_positions = sprint_points_positions(season)
+        else:
+            results = await self._ingestion.race_results(season, round_number)
+            points_positions = POINTS_POSITIONS
         if not _has_classified_winner(results):
             logger.info(
-                "skipping %s-%s: no classified winner in ingested results",
+                "skipping %s-%s %s: no classified winner in ingested results",
                 season,
                 round_number,
+                event,
             )
             return None, []
 
         race_name = next((r.race_name for r in results if r.race_name), "")
-        outcome = build_outcome(season, round_number, results, race_name)
+        outcome = build_outcome(
+            season, round_number, results, race_name,
+            event=event, points_positions=points_positions,
+        )
         await self._store.save_outcome(outcome)
 
-        predictions = await self._predictions.predictions_for(season, round_number)
+        predictions = await self._predictions.predictions_for(
+            season, round_number, event=event
+        )
         scores: List[PredictionScore] = []
         for prediction in predictions:
             if prediction.is_late_lock:
@@ -87,27 +116,32 @@ class Reconciler:
             scores.append(score)
 
         logger.info(
-            "reconciled %s-%s: %s prediction(s) scored", season, round_number, len(scores)
+            "reconciled %s-%s %s: %s prediction(s) scored",
+            season, round_number, event, len(scores),
         )
         return outcome, scores
 
     async def reconcile_season(self, season: int) -> List[PredictionScore]:
-        """Sweep every round that has a locked prediction and a finished race."""
+        """Sweep every race and sprint that has a locked prediction and a result."""
         try:
-            predictions = await self._predictions.list_predictions(season)
+            predictions = await self._predictions.list_predictions(
+                season, event="all"
+            )
         except UpstreamUnavailable as exc:
             logger.error("cannot list predictions for %s: %s", season, exc)
             raise
 
         scored: List[PredictionScore] = []
-        for round_number in sorted({p.round for p in predictions}):
+        for round_number, event in sorted({(p.round, p.event) for p in predictions}):
             try:
-                _, scores = await self.reconcile_race(season, round_number)
+                _, scores = await self.reconcile_race(season, round_number, event)
                 scored.extend(scores)
             except UpstreamUnavailable as exc:
                 # One unreachable round must not abandon the rest of the sweep;
                 # the next run picks it up because reconciliation is idempotent.
-                logger.warning("skipping %s-%s: %s", season, round_number, exc)
+                logger.warning(
+                    "skipping %s-%s %s: %s", season, round_number, event, exc
+                )
         return scored
 
     async def track_record(
@@ -138,7 +172,7 @@ class Reconciler:
         refused forecast masquerade as a backlog.
         """
         try:
-            locked = await self._predictions.list_predictions(season)
+            locked = await self._predictions.list_predictions(season, event="all")
         except UpstreamUnavailable:
             logger.warning("cannot count pending predictions; reporting 0")
             return 0, 0
@@ -165,7 +199,7 @@ class Reconciler:
         for score in scores:
             try:
                 predictions = await self._predictions.predictions_for(
-                    score.season, score.round
+                    score.season, score.round, event="all"
                 )
             except UpstreamUnavailable:
                 continue
@@ -193,7 +227,7 @@ def _probability_rows(
     exactly the sort of divergence that makes "absent means absent" a rule worth
     enforcing in one place rather than remembering in two.
     """
-    key_prefix = "{}-{}".format(prediction.season, prediction.round)
+    key_prefix = outcome_key(prediction.season, prediction.round, prediction.event)
     rows: List[Tuple[str, Market, str, float]] = []
     for row in prediction.driver_probabilities:
         key = "{}|{}".format(key_prefix, row.driver)

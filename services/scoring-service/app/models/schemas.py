@@ -41,6 +41,26 @@ class DriverOutcome(BaseModel):
     points: bool = False
 
 
+#: Windows that forecast the sprint rather than the Grand Prix. Mirrors
+#: prediction-service's ``SPRINT_WINDOWS``; the services share a wire
+#: contract, not code.
+SPRINT_WINDOWS = ("sprint",)
+
+RACE = "race"
+SPRINT = "sprint"
+
+
+def event_of(window: str) -> str:
+    return SPRINT if window in SPRINT_WINDOWS else RACE
+
+
+def outcome_key(season: int, round_number: int, event: str = RACE) -> str:
+    """One race's key. A sprint gets its own, or it would be read as the
+    Grand Prix of the same round and every sprint call scored against it."""
+    base = f"{season}-{round_number}"
+    return base if event == RACE else f"{base}-{event}"
+
+
 class RaceOutcome(BaseModel):
     """What actually happened. Written once the race results are ingested."""
 
@@ -49,10 +69,15 @@ class RaceOutcome(BaseModel):
     race_name: str = ""
     reconciled_at: datetime
     drivers: List[DriverOutcome] = Field(default_factory=list)
+    #: "race" for the Grand Prix, "sprint" for the sprint.
+    event: str = RACE
+    #: Places that scored in this race: ten in a Grand Prix, eight in a sprint
+    #: since 2022. The points market is defined by it, and so is its baseline.
+    points_positions: int = 10
 
     @property
     def key(self) -> str:
-        return f"{self.season}-{self.round}"
+        return outcome_key(self.season, self.round, self.event)
 
 
 class MarketScore(BaseModel):

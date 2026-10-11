@@ -23,6 +23,8 @@ from app.models.schemas import (
     ChampionshipForecast,
     FeatureSnapshot,
     LockWindow,
+    SPRINT_WINDOWS,
+    Event,
     ModelVersion,
     Prediction,
 )
@@ -97,12 +99,25 @@ class PredictionStore:
         season: Optional[int] = None,
         round_number: Optional[int] = None,
         limit: int = 200,
+        event: Optional[Event] = Event.RACE,
     ) -> List[Prediction]:
+        """Locked forecasts, the Grand Prix's unless ``event`` says otherwise.
+
+        Grand Prix by default because every reader written before the sprint
+        existed — scoring, the blog, Bernie, the last-race panel — takes "the
+        forecasts for round 6" to mean the Grand Prix's, and several fall back
+        to the first row they are handed. ``None`` returns both.
+        """
         query: Dict[str, Any] = {}
         if season is not None:
             query["season"] = season
         if round_number is not None:
             query["round"] = round_number
+        sprint_windows = [window.value for window in SPRINT_WINDOWS]
+        if event is Event.RACE:
+            query["window"] = {"$nin": sprint_windows}
+        elif event is Event.SPRINT:
+            query["window"] = {"$in": sprint_windows}
 
         cursor = (
             self._db[PREDICTIONS]

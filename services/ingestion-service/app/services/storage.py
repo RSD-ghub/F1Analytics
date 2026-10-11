@@ -89,9 +89,23 @@ SIGNALS = "extracted_signals"
 #: weekend look incompletely ingested.
 CIRCUITS = "circuits"
 
+#: Sprint weekends' two extra sessions: the classification that sets the
+#: sprint grid, and the sprint's own result. Outside ``DATA_COLLECTIONS`` and
+#: apart from ``results`` and ``qualifying`` on purpose. Everything that reads
+#: those two — features, standings, completeness, scoring — means the Grand
+#: Prix by them, and a sprint row mixed in would be read as a second race in
+#: the same round.
+SPRINT_QUALIFYING = "sprint_qualifying"
+SPRINT_RESULTS = "sprint_results"
+
 #: Everything the read API may serve.
 READABLE_COLLECTIONS = dict(
-    DATA_COLLECTIONS, qualifying=QUALIFYING, signals=SIGNALS, practice=PRACTICE
+    DATA_COLLECTIONS,
+    qualifying=QUALIFYING,
+    signals=SIGNALS,
+    practice=PRACTICE,
+    sprint_qualifying=SPRINT_QUALIFYING,
+    sprint_results=SPRINT_RESULTS,
 )
 
 #: Field holding the ingest run id. Underscore-prefixed to mark it as
@@ -285,7 +299,6 @@ class IngestionStore:
         ).sort([("season", ASCENDING), ("round", ASCENDING)])
         return [doc async for doc in cursor]
 
-    @invalidates("ingestion")
     async def save_qualifying(
         self, season: int, round_number: int, rows: Sequence[Any]
     ) -> int:
@@ -293,6 +306,18 @@ class IngestionStore:
 
         Unlike the race payload this never clears on empty: a failed or
         not-yet-run qualifying session must not delete a grid we already have.
+        """
+        return await self.save_session_rows(QUALIFYING, season, round_number, rows)
+
+    @invalidates("ingestion")
+    async def save_session_rows(
+        self, collection: str, season: int, round_number: int, rows: Sequence[Any]
+    ) -> int:
+        """Replace one round's rows for a session ingested on its own schedule.
+
+        Qualifying and the sprint's two sessions all go through here: each is a
+        single classification per round, fetched apart from the race payload,
+        with the same reason never to clear on empty.
         """
         if not rows:
             return 0
@@ -316,7 +341,7 @@ class IngestionStore:
                 }
             )
         )
-        await self._db[QUALIFYING].bulk_write(operations, ordered=True)
+        await self._db[collection].bulk_write(operations, ordered=True)
         return len(rows)
 
     @invalidates("ingestion")

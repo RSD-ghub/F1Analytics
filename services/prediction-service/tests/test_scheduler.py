@@ -125,10 +125,12 @@ def test_pre_quali_locks_when_the_calendar_has_no_qualifying_time():
 
 
 class FakeWeekend:
-    def __init__(self, season=2026, round_number=13, race_start=RACE, quali=QUALI):
+    def __init__(self, season=2026, round_number=13, race_start=RACE, quali=QUALI,
+                 sprint_start=None):
         self.season, self.round = season, round_number
         self.race_name, self.circuit = "Test GP", "Monza"
         self.race_start_utc, self.qualifying_start_utc = race_start, quali
+        self.sprint_start_utc = sprint_start
 
 
 class FakeClient:
@@ -148,6 +150,7 @@ class FakePredictor:
                    race_start_utc=None, race_name="", window_opened_at=None):
         self.calls.append((season, round_number, window))
         self.window_opened_at = window_opened_at
+        self.race_start_utc = race_start_utc
         outcome = self._behaviour.get(window)
         if isinstance(outcome, Exception):
             raise outcome
@@ -288,3 +291,75 @@ async def test_a_lock_tick_missed_while_the_host_slept_still_runs():
         )
     finally:
         lock_scheduler.shutdown()
+
+
+# ── The sprint ───────────────────────────────────────────────────────────────
+
+#: A 2024-format weekend: the sprint runs Saturday midday, a day before the
+#: Grand Prix, and its qualifying the evening before that.
+SPRINT = RACE - timedelta(hours=25)
+
+
+async def test_the_sprint_locks_against_its_own_start():
+    """Measured from the Grand Prix, a twelve-hour lead would open the sprint
+    window the morning after the sprint had already been run."""
+    predictor = FakePredictor()
+    outcomes = await _service(predictor, [FakeWeekend(sprint_start=SPRINT)]).tick(
+        now=SPRINT - timedelta(hours=11)
+    )
+
+    # The Grand Prix's pre-quali window is open too at this hour; it locks
+    # beside the sprint rather than instead of it.
+    assert [c[2] for c in predictor.calls] == [LockWindow.PRE_QUALI, LockWindow.SPRINT]
+    sprint = next(o for o in outcomes if o["window"] == "sprint")
+    assert sprint["action"] == "locked"
+    # Scoring refuses a forecast locked after the start it is given, so this
+    # has to be the sprint's or a late sprint lock would pass as on time.
+    assert predictor.race_start_utc == SPRINT
+    assert predictor.window_opened_at == SPRINT - timedelta(hours=12)
+
+
+async def test_no_sprint_forecast_once_the_sprint_has_started():
+    predictor = FakePredictor()
+    await _service(predictor, [FakeWeekend(sprint_start=SPRINT)]).tick(
+        now=SPRINT + timedelta(minutes=1)
+    )
+    assert LockWindow.SPRINT not in [c[2] for c in predictor.calls]
+
+
+async def test_a_grand_prix_only_weekend_never_tries_the_sprint_window():
+    predictor = FakePredictor()
+    await _service(predictor, [FakeWeekend()]).tick(now=RACE - timedelta(hours=17))
+    assert LockWindow.SPRINT not in [c[2] for c in predictor.calls]
+
+
+async def test_the_sprint_waits_for_its_grid():
+    from app.services.predictor import GridRequired
+
+    predictor = FakePredictor({LockWindow.SPRINT: GridRequired("no sprint grid")})
+    outcomes = await _service(predictor, [FakeWeekend(sprint_start=SPRINT)]).tick(
+        now=SPRINT - timedelta(hours=2)
+    )
+    sprint = next(o for o in outcomes if o["window"] == "sprint")
+    assert sprint["action"] == "waiting for grid"
+
+
+def test_a_stored_weekend_finds_its_sprint_in_the_timetable():
+    """Weekends stored before ingestion recorded sprint times carry only the
+    session names; the window must not skip a sprint until the calendar is
+    next refreshed."""
+    from app.services.ingestion_client import Weekend
+
+    current = Weekend(
+        season=2026, round=6,
+        sessions={"Sprint Qualifying": SPRINT - timedelta(hours=19),
+                  "Sprint": SPRINT, "Race": RACE},
+    )
+    assert current.sprint_start_utc == SPRINT
+    assert current.sprint_qualifying_start_utc == SPRINT - timedelta(hours=19)
+
+    # 2021: "Sprint Qualifying" was the sprint itself, and its grid came from
+    # Friday qualifying. Not a weekend this window can forecast.
+    legacy = Weekend(season=2021, round=10, sessions={"Sprint Qualifying": SPRINT})
+    assert legacy.sprint_start_utc is None
+    assert legacy.sprint_qualifying_start_utc is None

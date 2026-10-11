@@ -65,11 +65,11 @@ class _Predictions:
     def __init__(self, predictions):
         self._p = predictions
 
-    async def predictions_for(self, season, round_number):
-        return self._p
+    async def predictions_for(self, season, round_number, event="race"):
+        return [p for p in self._p if event == "all" or p.event == event]
 
-    async def list_predictions(self, season=None):
-        return self._p
+    async def list_predictions(self, season=None, event="race"):
+        return [p for p in self._p if event == "all" or p.event == event]
 
 
 class _Store:

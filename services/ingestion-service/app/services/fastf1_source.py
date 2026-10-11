@@ -26,6 +26,7 @@ from app.models.schemas import (
     RaceWeekend,
     ResultRow,
     TelemetryRow,
+    sprint_session_names,
 )
 from app.services import practice_pace, transforms
 from app.services.transforms import (
@@ -278,6 +279,7 @@ class FastF1Source:
                 if name and start:
                     sessions[name] = start
 
+            sprint_quali_name, sprint_name = sprint_session_names(sessions)
             weekends.append(
                 RaceWeekend(
                     season=season,
@@ -294,6 +296,10 @@ class FastF1Source:
                     ),
                     is_sprint_weekend=any(
                         "sprint" in name.lower() for name in sessions
+                    ),
+                    sprint_start_utc=_named_session(sessions, (sprint_name,)),
+                    sprint_qualifying_start_utc=_named_session(
+                        sessions, (sprint_quali_name,)
                     ),
                 )
             )
@@ -403,6 +409,42 @@ class FastF1Source:
             session=self._with_actual_date(expected, session), results=results
         )
 
+    def load_sprint_results(
+        self, expected: ExpectedSession, session_name: str = "Sprint"
+    ) -> List[ResultRow]:
+        """The sprint's classification, by the name the timetable gives it.
+
+        The name rather than FastF1's "S" code, because the 2021 sprint was
+        published as "Sprint Qualifying" — see ``sprint_session_names``. Same
+        guards as a race: a sprint that has not run is unavailable rather than
+        failed, and an empty or unordered classification is a failed fetch,
+        never "nobody finished".
+        """
+        if self._is_future(expected):
+            raise SessionUnavailableError(
+                "sprint has not run yet (scheduled {})".format(
+                    expected.session_start_utc or "unknown"
+                )
+            )
+
+        fastf1 = self._fastf1()
+        try:
+            session = fastf1.get_session(expected.season, expected.round, session_name)
+            session.load(laps=False, telemetry=False, weather=False, messages=False)
+        except Exception as exc:
+            raise SessionFetchError(
+                "sprint load failed for {}: {}".format(expected.key, exc)
+            ) from exc
+
+        rows = transforms.extract_results(expected, _session_frame(session, "results"))
+        if not any(1 <= row.position < 999 for row in rows):
+            raise SessionUnavailableError(
+                "sprint for {} has no classification yet ({} rows)".format(
+                    expected.key, len(rows)
+                )
+            )
+        return rows
+
     #: FastF1 session codes for the practice sessions, in running order.
     PRACTICE_SESSIONS = ("FP1", "FP2", "FP3")
 
@@ -459,7 +501,9 @@ class FastF1Source:
             expected, session_code, laps, names
         )
 
-    def load_qualifying(self, expected: ExpectedSession) -> List[QualifyingRow]:
+    def load_qualifying(
+        self, expected: ExpectedSession, session_name: str = "Q"
+    ) -> List[QualifyingRow]:
         """Load a qualifying session and return the grid.
 
         The forward-looking counterpart to ``load_race``: for an upcoming
@@ -470,11 +514,16 @@ class FastF1Source:
         """
         fastf1 = self._fastf1()
         try:
-            session = fastf1.get_session(expected.season, expected.round, "Q")
+            session = fastf1.get_session(
+                expected.season, expected.round, session_name
+            )
             session.load(laps=False, telemetry=False, weather=False, messages=False)
         except Exception as exc:
             raise SessionFetchError(
-                "qualifying load failed for {}: {}".format(expected.key, exc)
+                "{} load failed for {}: {}".format(
+                    "qualifying" if session_name == "Q" else session_name,
+                    expected.key, exc,
+                )
             ) from exc
 
         rows = transforms.extract_qualifying(

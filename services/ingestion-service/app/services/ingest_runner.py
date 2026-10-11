@@ -31,6 +31,7 @@ from app.models.schemas import (
     SessionIngestState,
     SessionPayload,
     SessionState,
+    sprint_session_names,
 )
 from app.services.completeness import run_integrity_checks, summarise
 from app.services.fastf1_source import (
@@ -43,7 +44,12 @@ from app.services.fastf1_source import (
 from app.services.storage import IngestionStore
 from app.services import fia_documents, grid_resolution, jolpica
 from app.services.transforms import stable_id
-from app.services.storage import DATA_COLLECTIONS, QUALIFYING
+from app.services.storage import (
+    DATA_COLLECTIONS,
+    QUALIFYING,
+    SPRINT_QUALIFYING,
+    SPRINT_RESULTS,
+)
 from app.services import signals, transforms
 from f1_common.llm import LLMClient
 
@@ -505,6 +511,87 @@ class IngestRunner:
             logger.info("ingested finished races: %s", ", ".join(ingested))
         return {"ingested": ingested, "waiting": waiting, "failed": failed}
 
+    async def ingest_sprint_sessions(
+        self, season: int, include_finished: bool = False
+    ) -> dict:
+        """Pull each sprint weekend's grid-setting session and its result.
+
+        The sprint's own version of ``refresh_pending_grids`` and
+        ``ingest_finished_races`` together, because a sprint weekend has both
+        shapes inside one day: sprint qualifying on Friday sets a grid a lock
+        window waits on, and the sprint on Saturday leaves a result scoring
+        waits on. Each is fetched once its session has run and never again once
+        it is stored, so outside a sprint weekend this costs one query a round.
+
+        ``include_finished`` also fetches sprint qualifying for weekends whose
+        sprint has already run. Off for the scheduled job, which has no use for
+        a grid it can no longer forecast on; on for a historical backfill, where
+        that grid is what a backtest conditions on.
+        """
+        ingested, waiting, failed = [], [], []
+        for weekend in await self._store.list_weekends(season, season):
+            sessions = weekend.get("sessions") or {}
+            quali_name, sprint_name = sprint_session_names(sessions)
+            if sprint_name is None:
+                continue
+            round_number = weekend["round"]
+            key = "{}-{}".format(season, round_number)
+            where = {"season": season, "round": round_number}
+            sprint_stored = await self._store.count_matching(SPRINT_RESULTS, where)
+
+            if (
+                quali_name
+                and _has_run(sessions.get(quali_name))
+                and (include_finished or not sprint_stored)
+                and not await self._has_usable_rows(SPRINT_QUALIFYING, where)
+            ):
+                label = "{} {}".format(key, quali_name)
+                try:
+                    rows = await asyncio.to_thread(
+                        self._source.load_qualifying,
+                        _sprint_expected(weekend, sessions.get(quali_name)),
+                        quali_name,
+                    )
+                    saved = await self._store.save_session_rows(
+                        SPRINT_QUALIFYING, season, round_number, rows
+                    )
+                    ingested.append("{} ({} rows)".format(label, saved))
+                except SessionFetchError as exc:
+                    logger.info("%s not ingestable yet: %s", label, exc)
+                    waiting.append(label)
+                except Exception:
+                    logger.exception("could not ingest %s", label)
+                    failed.append(label)
+
+            if not sprint_stored and _has_run(sessions.get(sprint_name)):
+                label = "{} {}".format(key, sprint_name)
+                try:
+                    rows = await asyncio.to_thread(
+                        self._source.load_sprint_results,
+                        _sprint_expected(weekend, sessions.get(sprint_name)),
+                        sprint_name,
+                    )
+                    saved = await self._store.save_session_rows(
+                        SPRINT_RESULTS, season, round_number, rows
+                    )
+                    ingested.append("{} ({} rows)".format(label, saved))
+                except SessionUnavailableError:
+                    # Same as a race: upstream publishes at its own pace after
+                    # the flag, and "not yet" is the normal state for a while.
+                    waiting.append(label)
+                except Exception:
+                    logger.exception("could not ingest %s", label)
+                    failed.append(label)
+
+        if ingested:
+            logger.info("ingested sprint sessions: %s", ", ".join(ingested))
+        return {"ingested": ingested, "waiting": waiting, "failed": failed}
+
+    async def _has_usable_rows(self, collection: str, where: dict) -> bool:
+        """At least one classified position — an entry list is not a grid."""
+        rows = await self._store.find_rows(collection, where)
+        return any((row.get("position") or 999) < 999 for row in rows)
+
     async def refresh_pending_grids(self, season: int) -> dict:
         """Try to confirm the grid for any round still running on a stand-in.
 
@@ -903,6 +990,27 @@ class IngestRunner:
         return summarise(
             from_season, to_season, [s.key for s in expected], states, depth=depth
         )
+
+
+def _sprint_expected(weekend: dict, start: Any) -> ExpectedSession:
+    """The weekend as an ``ExpectedSession`` timed to one sprint session.
+
+    The start time is the sprint session's, not the race's, so the source's
+    "has this run yet?" guard asks about the session actually being fetched.
+    """
+    when = start
+    if isinstance(when, str):
+        try:
+            when = datetime.fromisoformat(when.replace("Z", "+00:00"))
+        except ValueError:
+            when = None
+    return ExpectedSession(
+        season=weekend["season"],
+        round=weekend["round"],
+        race_name=weekend.get("race_name", ""),
+        circuit=weekend.get("circuit", ""),
+        session_start_utc=when,
+    )
 
 
 def build_payload(frames: SessionFrames) -> SessionPayload:

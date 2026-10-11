@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 WINDOW_PREFERENCE = ("final_grid", "post_quali", "pre_quali")
 
 
+def race_scores(scores):
+    """Scores of Grand Prix forecasts only.
+
+    The scored record also holds sprint forecasts, which share their round
+    with the Grand Prix and are scored before it. Every reader here means the
+    Grand Prix by "this round's score", so a sprint score must not stand in
+    for one — or make a round look scored before its Grand Prix has run.
+    """
+    return [s for s in scores if s.get("window") in WINDOW_PREFERENCE]
+
+
 def most_informed(predictions):
     """The best available forecast for a race, or None."""
     for window in WINDOW_PREFERENCE:
@@ -130,7 +141,7 @@ async def feed(
         calendar=ingestion.get("/forward/calendar/{}".format(chosen)),
         scores=scoring.get("/scores", {"season": chosen, "limit": 200}),
     )
-    scores = fetched.get("scores") or []
+    scores = race_scores(fetched.get("scores") or [])
     now = datetime.now(timezone.utc)
 
     rounds = []
@@ -341,7 +352,7 @@ async def index(
 
     # Which rounds were scored, in one pass rather than a call per round.
     scored_rounds = {
-        s["round"] for s in (fetched.get("scores") or []) if s.get("round")
+        s["round"] for s in race_scores(fetched.get("scores") or []) if s.get("round")
     }
     now = datetime.now(timezone.utc)
 

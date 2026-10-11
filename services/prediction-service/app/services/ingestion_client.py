@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +170,27 @@ class Weekend(BaseModel):
     race_start_utc: Optional[datetime] = None
     qualifying_start_utc: Optional[datetime] = None
     is_sprint_weekend: bool = False
+    sprint_start_utc: Optional[datetime] = None
+    sprint_qualifying_start_utc: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _sprint_from_sessions(self) -> "Weekend":
+        """Fill the sprint times from the timetable when ingestion did not.
+
+        A weekend stored before ingestion knew these fields carries only its
+        session names until the next calendar refresh, and the sprint lock
+        window must not quietly skip a sprint for that. The naming rule
+        mirrors ingestion's ``sprint_session_names``: "Sprint" is the race
+        from 2022, and only beside it does "Sprint Qualifying" mean the grid.
+        """
+        if self.sprint_start_utc is None and "Sprint" in self.sessions:
+            self.sprint_start_utc = self.sessions["Sprint"]
+        if self.sprint_qualifying_start_utc is None and "Sprint" in self.sessions:
+            for name in ("Sprint Qualifying", "Sprint Shootout"):
+                if name in self.sessions:
+                    self.sprint_qualifying_start_utc = self.sessions[name]
+                    break
+        return self
 
 
 class CompletenessStatus(BaseModel):
@@ -221,6 +242,32 @@ class IngestionClient:
             "/data/qualifying", {"season": season, "round": round_number, "limit": 100}
         )
         return [GridSlot(**row) for row in payload]
+
+    async def sprint_grid(self, season: int, round_number: int) -> List[GridSlot]:
+        """The sprint qualifying classification, as the sprint's grid.
+
+        Served from its own dataset, never ``/data/qualifying``: that is the
+        Grand Prix grid, and on a 2024-format weekend it does not exist yet
+        when the sprint locks — or, worse, on a 2023-format one it does and
+        sets a different order.
+
+        Rows carry no ``grid_source``, so every slot reads as unconfirmed and
+        the forecast is flagged provisional. That is the truth: no stewards'
+        grid for the sprint is read, so a penalty taken in the sprint is not
+        applied.
+        """
+        payload = await self._get(
+            "/data/sprint_qualifying",
+            {"season": season, "round": round_number, "limit": 100},
+        )
+        return [GridSlot(**row) for row in payload]
+
+    async def sprint_results(self, season: int) -> List[RaceResult]:
+        """Every ingested sprint classification for a season. Backtests only."""
+        payload = await self._get(
+            "/data/sprint_results", {"season": season, "limit": 20000}
+        )
+        return [RaceResult(**row) for row in payload]
 
     async def weekends(self, season: int) -> List[Weekend]:
         payload = await self._get("/forward/upcoming", {"limit": 25})

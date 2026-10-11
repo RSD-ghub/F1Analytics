@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.models.schemas import HealthSummary, SystemStatus
-from app.routers.blog import WINDOW_PREFERENCE
+from app.routers.blog import WINDOW_PREFERENCE, race_scores
 from app.services.downstream import ServiceClient, gather_optional
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,11 @@ class Unavailable(BaseModel):
 class NextRaceView(BaseModel):
     weekend: Optional[Dict[str, Any]] = None
     predictions: List[Dict[str, Any]] = Field(default_factory=list)
+    #: The sprint's forecast on a sprint weekend. Its own field rather than
+    #: mixed into ``predictions``: it is about a different race, scored
+    #: against a different result, and a reader of either list should never
+    #: have to check which race each row is for.
+    sprint_predictions: List[Dict[str, Any]] = Field(default_factory=list)
     qualifying_freshness: Optional[Dict[str, Any]] = None
     #: The track itself: shape, corners, and what our corpus knows about it.
     #: Optional on purpose — a circuit whose geometry was never derived still
@@ -137,7 +142,7 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         return NextRaceView(unavailable=Unavailable(panels=["weekend"]))
 
     season, round_number = weekend["season"], weekend["round"]
-    fetched = await gather_optional(
+    calls = dict(
         predictions=clients["prediction"].get(
             "/predictions/{}/{}".format(season, round_number)
         ),
@@ -148,12 +153,18 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
             "/circuits/{}/{}".format(season, round_number)
         ),
     )
+    if weekend.get("is_sprint_weekend"):
+        calls["sprint"] = clients["prediction"].get(
+            "/predictions/{}/{}".format(season, round_number), {"event": "sprint"}
+        )
+    fetched = await gather_optional(**calls)
 
     circuit = await _with_character(clients, fetched.get("circuit"))
 
     return NextRaceView(
         weekend=weekend,
         predictions=fetched.get("predictions") or [],
+        sprint_predictions=fetched.get("sprint") or [],
         qualifying_freshness=fetched.get("freshness"),
         circuit=circuit,
         unavailable=Unavailable(panels=fetched["_unavailable"]),
@@ -332,7 +343,7 @@ async def last_race(settings: Settings = Depends(get_settings)):
     fetched = await gather_optional(
         scores=clients["scoring"].get("/scores", {"limit": 20})
     )
-    scores = fetched.get("scores") or []
+    scores = race_scores(fetched.get("scores") or [])
     if not scores:
         return None
 

@@ -31,7 +31,8 @@ export default function NextRace() {
     return <Unavailable what="The next race" reason={state.error.message} />
 
   const {
-    weekend, predictions = [], qualifying_freshness: freshness, circuit, unavailable,
+    weekend, predictions = [], sprint_predictions: sprintPredictions = [],
+    qualifying_freshness: freshness, circuit, unavailable,
   } = state.data
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
@@ -71,6 +72,13 @@ export default function NextRace() {
         </div>
       )}
 
+      {/* The sprint runs first, so its forecast leads while it is the next
+          thing to happen. It is a separate race with its own grid and its own
+          result, and is never folded into the Grand Prix forecasts below. */}
+      {sprintPredictions.map((prediction) => (
+        <Forecast key={prediction.prediction_id} prediction={prediction} sprint />
+      ))}
+
       {predictions.length === 0 && (
         <Panel title="No forecast locked yet">
           <p className="muted">
@@ -109,7 +117,7 @@ export default function NextRace() {
   )
 }
 
-function Forecast({ prediction }) {
+function Forecast({ prediction, sprint = false }) {
   const publishes = new Set(prediction.published_markets || [])
   const callsWinner = publishes.has('win')
   const rows = [...(prediction.driver_probabilities || [])].sort(
@@ -120,10 +128,15 @@ function Forecast({ prediction }) {
   const leader = callsWinner
     ? [...rows].sort((a, b) => (b.p_win ?? 0) - (a.p_win ?? 0))[0]
     : rows[0]
+  const race = sprint ? 'sprint' : 'race'
+  const pointsPlaces = prediction.points_positions ?? 10
+  const title = sprint
+    ? 'Sprint forecast — sprint grid set'
+    : callsWinner ? 'Forecast — grid set' : 'Forecast — before qualifying'
 
   return (
     <Panel
-      title={callsWinner ? 'Forecast — grid set' : 'Forecast — before qualifying'}
+      title={title}
       subtitle={`Locked ${new Date(prediction.locked_at).toLocaleString()} · model ${prediction.model_version}`}
       footer={<Caveats quality={prediction.data_quality} />}
     >
@@ -133,19 +146,22 @@ function Forecast({ prediction }) {
             leader={leader?.driver}
             win={callsWinner ? leader?.p_win : null}
             podium={leader?.p_podium}
+            race={race}
           />
           <p className="small muted">
             Each bar below is one driver&rsquo;s chances, nested: the pale band
             is a points finish, the middle band a podium, the bright tip a win.
             Every win is a podium and every podium scores, which is why they
             sit inside one another rather than side by side.
+            {sprint && ` In a sprint only the top ${pointsPlaces} score, so the points band is narrower than on Sunday.`}
           </p>
         </div>
         {leader && (
           <HundredRaces
             probability={callsWinner ? leader.p_win : leader.p_podium}
+            unit={sprint ? 'sprints' : 'races'}
             label={callsWinner
-              ? `Races out of 100 that ${leader.driver} wins`
+              ? `${sprint ? 'Sprints' : 'Races'} out of 100 that ${leader.driver} wins`
               : `Races out of 100 that ${leader.driver} finishes on the podium`}
           />
         )}
