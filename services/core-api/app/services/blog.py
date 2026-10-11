@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from app.models.blog import BlogEntry, BlogFact, EntryKind, WeekendBlog
 from app.services.bernie import Bernie, BernieUnavailable
+from app.services.news import spread_outlets
 
 logger = logging.getLogger(__name__)
 
@@ -557,12 +558,15 @@ def news_entry(
     to the original, the summary says the reports are unchecked and unused by
     the forecast, and the sources name the feeds rather than our data.
 
+    The headlines are the newest in the window, reordered so that no one
+    outlet fills more than two rows in a row — see ``spread_outlets``.
+
     Never narrated — see ``narrate``.
     """
-    items = [
+    items = spread_outlets([
         item for item in ((weekend_news or {}).get("items") or [])
         if item.get("title") and item.get("url")
-    ][:MAX_HEADLINES]
+    ][:MAX_HEADLINES])
     if not items:
         return None
 

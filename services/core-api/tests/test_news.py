@@ -7,6 +7,7 @@ checked it, and it is never retold in our voice.
 """
 
 from datetime import datetime, timedelta, timezone
+from itertools import groupby
 
 from app.config import Settings
 from app.models.blog import BlogEntry, EntryKind
@@ -20,6 +21,7 @@ from app.services.bernie import (
     SYSTEM_PROMPT,
     news_facts,
 )
+from app.services.news import lead_with_picture, spread_outlets
 
 
 def _story(n, outlet="Autosport", **extra):
@@ -266,3 +268,90 @@ async def test_the_weekend_route_returns_its_window(monkeypatch):
     page = await news_router.weekend(2026, 18, limit=12, settings=Settings())
     assert page.since == WEEK["since"]
     assert len(page.items) == 3
+
+
+# ── Ordering on the page ─────────────────────────────────────────────────────
+#
+# Formula1.com dates nothing it publishes, so its stories are all stamped with
+# the moment we read them and would otherwise own the top of the page.
+
+
+def test_no_outlet_fills_more_than_two_cards_in_a_row():
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 9)]
+            + [_story(n, outlet="Autosport") for n in range(9, 13)])
+
+    sources = [item["source"] for item in spread_outlets(rows)]
+
+    assert max(len(list(run)) for _, run in groupby(sources)) == 2
+
+
+def test_spreading_drops_nothing_and_invents_nothing():
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 9)]
+            + [_story(n, outlet="Autosport") for n in range(9, 13)])
+
+    spread = spread_outlets(rows)
+
+    assert sorted(item["id"] for item in spread) == sorted(item["id"] for item in rows)
+    assert len(spread) == len(rows)
+
+
+def test_one_outlet_alone_keeps_its_own_order():
+    rows = [_story(n, outlet="Formula1.com") for n in range(1, 6)]
+
+    assert [item["id"] for item in spread_outlets(rows)] == [item["id"] for item in rows]
+
+
+def test_an_outlets_own_stories_stay_newest_first():
+    rows = ([_story(n, outlet="Formula1.com") for n in (8, 7, 6, 5)]
+            + [_story(n, outlet="Autosport") for n in (4, 3)])
+
+    spread = spread_outlets(rows)
+
+    for outlet in ("formula1.com", "autosport"):
+        mine = [item["id"] for item in spread if item["source"] == outlet]
+        assert mine == [item["id"] for item in rows if item["source"] == outlet]
+
+
+def test_nothing_to_spread_is_not_an_error():
+    assert spread_outlets([]) == []
+
+
+async def test_the_public_route_spreads_the_outlets(monkeypatch):
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 7)]
+            + [_story(n, outlet="Autosport") for n in range(7, 10)])
+    monkeypatch.setattr(news_router, "ServiceClient",
+                        lambda *a, **k: _Client({"/news": rows}))
+
+    page = await news_router.latest(limit=30, source=None, settings=Settings())
+
+    sources = [item.source for item in page.items]
+    assert len(page.items) == len(rows)
+    assert max(len(list(run)) for _, run in groupby(sources)) == 2
+
+
+def test_the_lead_card_carries_a_photograph():
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 5)]
+            + [_story(9, outlet="Autosport", image_url="https://img/9.jpg")])
+
+    led = lead_with_picture(rows)
+
+    assert led[0]["id"] == "id9"
+    assert sorted(item["id"] for item in led) == sorted(item["id"] for item in rows)
+
+
+def test_a_page_with_no_photographs_still_leads_with_the_newest():
+    rows = [_story(n, outlet="Formula1.com") for n in (4, 3, 2)]
+
+    assert [item["id"] for item in lead_with_picture(rows)] == ["id4", "id3", "id2"]
+
+
+def test_moving_the_lead_up_does_not_make_a_run_of_three():
+    # The pictured story is the fifth, so promoting it leaves four from one
+    # outlet behind it and three from the other — enough of both to interleave.
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 5)]
+            + [_story(5, outlet="Autosport", image_url="https://img/5.jpg")]
+            + [_story(n, outlet="Autosport") for n in range(6, 9)])
+
+    sources = [item["source"] for item in lead_with_picture(rows)]
+
+    assert max(len(list(run)) for _, run in groupby(sources)) == 2

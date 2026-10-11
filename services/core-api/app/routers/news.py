@@ -3,9 +3,12 @@
 Public, like One Blog: headlines link out to the outlets that published them
 and spend no model calls, so there is nothing to meter and nothing private.
 
-core-api adds nothing to the items but a label. It does not rank, rewrite or
+core-api adds nothing to the items but a label. It does not rewrite, score or
 summarise them, because anything it said about a story would be a claim of
-ours stacked on a report we have not checked.
+ours stacked on a report we have not checked. The one thing it does do is
+reorder them, so that one outlet's run of stories cannot fill the whole page —
+a presentation rule that drops nothing and leaves every timestamp alone. See
+``app.services.news``.
 """
 
 from typing import Any, Dict, List, Optional
@@ -15,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.services.downstream import ServiceClient
+from app.services.news import lead_with_picture, spread_outlets
 
 router = APIRouter(prefix="/news", tags=["news"])
 
@@ -76,7 +80,7 @@ async def latest(
     if source:
         params["source"] = source
     rows = await _client(settings).get("/news", params)
-    return NewsPage(items=_items(rows or []))
+    return NewsPage(items=_items(lead_with_picture(rows or [])))
 
 
 @router.get("/weekend/{season}/{round_number}", response_model=NewsPage)
@@ -91,7 +95,7 @@ async def weekend(
         "/news/weekend/{}/{}".format(season, round_number), {"limit": limit}
     ) or {}
     return NewsPage(
-        items=_items(payload.get("items") or []),
+        items=_items(spread_outlets(payload.get("items") or [])),
         since=payload.get("since"),
         until=payload.get("until"),
     )
