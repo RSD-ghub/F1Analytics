@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import Bernie from './pages/Bernie'
 import Championship from './pages/Championship'
 import Login from './pages/Login'
+import News from './pages/News'
 import NextRace from './pages/NextRace'
 import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
@@ -30,6 +31,7 @@ export default function App() {
         {/* The entries moved under /blog when One Blog got a front door.
             Old links stay working. */}
         <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
+        <Route path="/news" element={<News />} />
         <Route path="/bernie" element={<Bernie />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login mode="register" />} />

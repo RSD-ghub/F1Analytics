@@ -21,10 +21,16 @@ Ordered by what blocks what. Checked items are verified in the tree, not assumed
 - [x] **Surface grid penalties in One Blog.** Done 26 Sep. The panel was inferring penalties
       from position movement and published one Stroll never received; it now reads the
       stewards' data. Two React key collisions fixed alongside it.
-- [ ] **Paddock news is the remaining half of roadmap item 1.** Penalties are done in both
-      Bernie and One Blog; news is not started.
-- [ ] **Paddock news in One Blog**, and the same feed into Bernie so she can correlate.
-      Not started. Needs a source decision first.
+- [x] **Paddock news is the remaining half of roadmap item 1.** Built 11 Oct. Source:
+      the Formula1.com and Autosport RSS feeds (no key), read every 30 min by
+      ingestion-service into `paddock_news`. Public page at /news.
+- [x] **Paddock news in One Blog**, and the same feed into Bernie so she can correlate.
+      Built 11 Oct. One Blog gets a race-week entry (never narrated); Bernie gets the
+      week's headlines plus question matches, labelled as unverified reports.
+- [ ] **Paddock news has not read a live feed yet.** Parsing is tested against
+      synthetic RSS and Atom only — the build sandbox could not reach either outlet.
+      After deploying, `curl -X POST localhost:8001/news/refresh` and check both
+      outlets report `new` rather than `error`.
 - [ ] **The Vite dev server had been serving a pre-proxy config for 20 days**, so every
       /api call returned index.html and the whole frontend was broken against core-api.
       Restarted. Worth a startup check that catches this rather than a person noticing.

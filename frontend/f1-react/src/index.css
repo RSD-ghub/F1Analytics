@@ -405,6 +405,62 @@ tr.thin td { opacity: 0.55; }
 .sources ul { margin: 6px 0 0; padding-left: 18px; }
 .caveats { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
 
+/* ── Paddock news ─────────────────────────────────────────────────────────── */
+/* Cards in the manner of Formula1.com's latest news: picture on top at 16:9,
+   the outlet in small caps above a bold headline, the whole card one link.
+   The outlet leads so the headline is framed as somebody's report before the
+   words of the report arrive. */
+.news-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+.news-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.news-grid > li { display: flex; min-width: 0; }
+.news-card {
+  display: flex; flex-direction: column; width: 100%;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius, 10px);
+  overflow: hidden; color: var(--ink); text-decoration: none;
+  transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+.news-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.news-card-art { position: relative; aspect-ratio: 16 / 9; background: var(--panel-soft); overflow: hidden; }
+.news-card-art img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 300ms ease; }
+/* No picture from the feed: a dark tile carrying the outlet's name, with the
+   red stripe along the top edge that the F1 site uses on its own tiles. */
+.news-card-fallback {
+  display: flex; align-items: flex-end; padding: 14px 16px;
+  background: linear-gradient(135deg, #15171c 0%, #2a2d35 100%);
+  border-top: 4px solid var(--accent);
+}
+.news-card-fallback span {
+  color: #fff; font-weight: 800; font-size: 20px; letter-spacing: -0.01em; line-height: 1;
+  text-transform: uppercase;
+}
+.news-card-body { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 18px; flex: 1; }
+.news-meta { margin: 0; display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.news-outlet { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-deep); }
+.news-title { margin: 0; font-weight: 700; font-size: 17px; line-height: 1.3; color: var(--ink); }
+.news-title svg { display: inline; margin-left: 5px; vertical-align: -1px; color: var(--muted); }
+.news-summary {
+  margin: 0; font-size: 14px; line-height: 1.5; color: var(--prose);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+@media (hover: hover) {
+  .news-card:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.10); transform: translateY(-2px); }
+  .news-card:hover .news-card-art img { transform: scale(1.03); }
+  .news-card:hover .news-title { text-decoration: underline; text-underline-offset: 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-card, .news-card-art img { transition: none; }
+  .news-card:hover, .news-card:hover .news-card-art img { transform: none; }
+}
+/* The newest story leads, two columns wide, as the top story does on the F1 site. */
+@media (min-width: 720px) {
+  .news-grid-featured > li:first-child { grid-column: span 2; }
+  .news-grid-featured > li:first-child .news-title { font-size: 22px; }
+}
+
 /* ── Bernie ───────────────────────────────────────────────────────────────── */
 .bernie { display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: start; }
 .threads { display: flex; flex-direction: column; gap: 6px; }

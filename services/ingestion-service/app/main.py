@@ -11,7 +11,10 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
-from app.dependencies import get_runner
+from app.dependencies import get_news_store, get_runner
+from app.news import NewsStore
+from app.news import router as news_router
+from app.news import source as news_source
 from app.regulations import RegulationStore
 from app.regulations import router as regulations_router
 from app.routers import circuits as circuits_router
@@ -35,6 +38,7 @@ async def lifespan(_: FastAPI):
     try:
         await IngestionStore(db.db()).ensure_indexes()
         await RegulationStore(db.db()).ensure_indexes()
+        await NewsStore(db.db()).ensure_indexes()
     except Exception:
         logger.exception("index creation failed; continuing without it")
 
@@ -42,6 +46,10 @@ async def lifespan(_: FastAPI):
         get_runner(),
         settings.auto_refresh_hours,
         settings.grid_check_minutes,
+        news_refresh=lambda: news_source.refresh(
+            get_news_store(), retention_days=settings.news_retention_days
+        ),
+        news_minutes=settings.news_refresh_minutes,
     )
     yield
     scheduler.shutdown()
@@ -63,3 +71,4 @@ app.include_router(forward.router)
 app.include_router(data.router)
 app.include_router(regulations_router.router)
 app.include_router(circuits_router.router)
+app.include_router(news_router.router)

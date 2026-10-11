@@ -12,6 +12,7 @@ from typing import Tuple
 
 from app import db
 from app.config import Settings, get_settings
+from app.news.store import NewsStore
 from app.regulations.store import RegulationStore
 from app.services.fastf1_source import FastF1Source
 from app.services.ingest_runner import IngestRunner
@@ -33,6 +34,11 @@ def get_store() -> IngestionStore:
 def get_regulation_store() -> RegulationStore:
     """The corpus store. Same Motor client, separate domain."""
     return RegulationStore(db.db())
+
+
+def get_news_store() -> NewsStore:
+    """Paddock headlines. Same Motor client, separate domain."""
+    return NewsStore(db.db())
 
 
 @lru_cache

@@ -32,6 +32,7 @@ from app.services.bernie import (
     Bernie,
     BernieUnavailable,
     grid_penalty_facts,
+    news_facts,
     regulation_facts,
     why_this_prediction_facts,
 )
@@ -331,6 +332,47 @@ async def _regulation_facts(
     return regulation_facts(hits or [])
 
 
+async def _news_facts(
+    settings: Settings, question: str, season: int, round_number: int
+) -> Dict[str, Any]:
+    """Race-week headlines for **this** question, on every turn.
+
+    Two calls: the week's newest headlines, and the week's headlines matching
+    the question. Per turn rather than per thread for the reason the weekend
+    facts are — news lands during a weekend, and a thread started on Thursday
+    should know on Saturday what was reported on Friday.
+    """
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    question = clamp_question(question)
+    calls = {
+        "latest": ingestion_client.get(
+            "/news/weekend/{}/{}".format(season, round_number), {"limit": 6}
+        ),
+    }
+    if len(question) >= 2:
+        calls["matching"] = ingestion_client.get(
+            "/news/search",
+            {"q": question, "season": season, "round": round_number, "limit": 4},
+        )
+    fetched = await gather_optional(**calls)
+
+    latest = (fetched.get("latest") or {}).get("items") or []
+    facts = news_facts(fetched.get("matching") or [], latest)
+    if fetched["_unavailable"] and not facts:
+        # Stated rather than swallowed, as with the regulations: without it a
+        # question about the paddock gets "I have no news" with nothing to say
+        # the news was simply unreachable. A round with no known start date
+        # lands here too, and the note is still true of it.
+        facts["note on paddock news"] = (
+            "Race-week news could not be loaded for this question. Say so if "
+            "asked about the news rather than answering from memory."
+        )
+    return facts
+
+
 async def _charge(usage: UsageStore, settings: Settings, user) -> None:
     """Spend one unit of this caller's daily allowance, or 429.
 
@@ -368,6 +410,9 @@ async def start_thread(
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, request.season, request.round)
     facts.update(await _regulation_facts(settings, request.question, request.season))
+    facts.update(await _news_facts(
+        settings, request.question, request.season, request.round
+    ))
     thread = await store.create(user["_id"], request.season, request.round)
     return await _turn(bernie, store, thread, request.question, facts)
 
@@ -397,6 +442,9 @@ async def continue_thread(
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, thread.season, thread.round)
     facts.update(await _regulation_facts(settings, request.question, thread.season))
+    facts.update(await _news_facts(
+        settings, request.question, thread.season, thread.round
+    ))
     return await _turn(bernie, store, thread, request.question, facts)
 
 

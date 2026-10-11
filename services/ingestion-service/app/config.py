@@ -31,6 +31,15 @@ class Settings(ServiceSettings):
     # needing four passes across four hours. 0 disables pacing.
     backfill_sessions_per_hour: int = 55
 
+    # Paddock news. Outlets refresh their feeds every few minutes during a race
+    # weekend, but nothing downstream needs a headline within minutes of it
+    # being written, and a polite interval is part of reading a feed at all.
+    # 0 disables the scheduled read; POST /news/refresh still works.
+    news_refresh_minutes: int = 30
+    # Headlines older than this are dropped. Long enough to cover a race week
+    # and the fortnight either side of it; the outlets keep the archive.
+    news_retention_days: int = 60
+
     # Upstream schedule/results API used alongside FastF1 for forward-looking data.
     ergast_base_url: str = "https://api.jolpi.ca/ergast"
 

@@ -17,6 +17,7 @@ gap — which is what a good strategist does anyway.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from f1_common.llm import LLMBillingRequired, LLMClient
@@ -71,6 +72,19 @@ of it. The marker belongs to the article it sits beside and to no other — a \
 complete passage next to a truncated one is still complete.
 - Regulations describe what is permitted, not what will happen. A rule allowing \
 something is not a prediction that anyone will do it.
+
+Paddock news:
+- Some facts arrive as news headlines from race week, each labelled with the \
+outlet that published it and the date. They are that outlet's report, not \
+something this service has checked. Attribute every one you use — "Autosport \
+reports that..." — and never restate a report as established fact.
+- A headline and its short summary are all you have. Do not describe what the \
+rest of the article says, and do not quote anyone the headline does not quote.
+- The forecast does not use the news. Never say a story is reflected in the \
+probabilities, and never adjust a probability because of one. You may say a \
+report could matter and that the model has not taken it into account.
+- The headlines were found partly by keyword search against the question. Ones \
+that do not bear on the question are not answers; ignore them without comment.
 
 Reading a Formula 1 grid:
 - The grid is two cars per row. Row 1 is P1 and P2, row 2 is P3 and P4, row 3 \
@@ -380,6 +394,68 @@ def regulation_facts(
             )
         )
     return {REGULATIONS_KEY: passages}
+
+
+# ── Paddock news ─────────────────────────────────────────────────────────────
+
+#: Where headlines sit in the facts pack. The label carries the caveat because
+#: it is the one part of the pack a reader of ``grounded_on`` will see beside
+#: every item, and a headline shown without it reads as something we assert.
+NEWS_KEY = "paddock news (outlets' reports, not verified by us)"
+
+#: Headlines handed to Bernie per turn. A race week produces forty or fifty
+#: across two outlets; eight is enough to cover what bears on a question
+#: without the news outweighing the forecast in the prompt.
+MAX_NEWS_ITEMS = 8
+
+#: Summary characters per headline in the facts. The feed's standfirst is
+#: already short; this keeps eight of them from crowding out the grid.
+MAX_NEWS_SUMMARY_CHARS = 200
+
+
+def _news_line(item: Dict[str, Any]) -> str:
+    when = str(item.get("published_at") or "")[:10]
+    try:
+        day = datetime.fromisoformat(when)
+        when = "{} {}".format(day.day, day.strftime("%b"))
+    except ValueError:
+        pass
+    if item.get("published_estimated"):
+        when = "first seen {}".format(when)
+    summary = " ".join((item.get("summary") or "").split())
+    if len(summary) > MAX_NEWS_SUMMARY_CHARS:
+        summary = summary[:MAX_NEWS_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
+    line = "{}, {}: {}".format(item.get("outlet") or "Unknown outlet", when, item["title"])
+    return "{} — {}".format(line, summary) if summary else line
+
+
+def news_facts(
+    matching: Sequence[Dict[str, Any]],
+    latest: Sequence[Dict[str, Any]],
+    limit: int = MAX_NEWS_ITEMS,
+) -> Dict[str, Any]:
+    """Render race-week headlines as facts: question matches first, then the newest.
+
+    Both, because each covers the other's blind spot. Search finds the story
+    about the driver someone asked after, which the newest eight may not
+    include; the newest eight carry the story nobody thought to ask about —
+    an injury, a team order — that a strategist would still want in front of
+    them.
+
+    Every line names its outlet. Returns ``{}`` when there is nothing, so a
+    weekend before the feeds were running carries no empty heading.
+    """
+    seen = set()
+    lines: List[str] = []
+    for item in list(matching) + list(latest):
+        key = item.get("id") or item.get("url")
+        if not item.get("title") or key in seen:
+            continue
+        seen.add(key)
+        lines.append(_news_line(item))
+        if len(lines) >= limit:
+            break
+    return {NEWS_KEY: lines} if lines else {}
 
 
 def why_this_prediction_facts(
