@@ -6,7 +6,7 @@ import { Panel, Loading, Unavailable, Probability } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import VenuePhotos from '../components/VenuePhotos'
-import NewsList from '../components/NewsList'
+import NewsCards from '../components/NewsCards'
 
 /**
  * One Blog — a race weekend as an append-only timeline.
@@ -166,7 +166,7 @@ function Entry({ entry }) {
         }
       >
         {entry.summary && <p className="lede">{entry.summary}</p>}
-        <NewsList items={entry.table || []} showSummary={false} />
+        <NewsCards items={entry.table || []} showSummary={false} />
       </Panel>
     )
   }

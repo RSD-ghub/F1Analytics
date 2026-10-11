@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { getNews } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Loading, Panel, Unavailable } from '../components/Panel'
-import NewsList from '../components/NewsList'
+import NewsCards from '../components/NewsCards'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -64,9 +64,7 @@ export default function News() {
       )}
 
       {shown.length > 0 ? (
-        <Panel>
-          <NewsList items={shown} />
-        </Panel>
+        <NewsCards items={shown} featureFirst />
       ) : (
         <Panel title="No headlines yet">
           <p className="muted">

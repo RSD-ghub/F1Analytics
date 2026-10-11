@@ -37,6 +37,8 @@ class NewsItem(BaseModel):
     published_at: Optional[str] = None
     #: The feed gave no date; ``published_at`` is when we first saw the item.
     published_estimated: bool = False
+    #: The feed's own picture for the item; "" when the outlet sends none.
+    image_url: str = ""
 
 
 class NewsPage(BaseModel):

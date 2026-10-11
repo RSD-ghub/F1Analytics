@@ -89,6 +89,51 @@ def test_rss_items_are_parsed_with_outlet_and_utc_time():
     assert upgrade.published_estimated is False
 
 
+def _one_item(extra: str) -> bytes:
+    return ("""<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><item>
+  <title>Pictured story</title>
+  <link>https://example.com/f1/news/pictured/</link>
+  <pubDate>Wed, 08 Oct 2026 10:00:00 GMT</pubDate>
+  {}
+</item></channel></rss>""".format(extra)).encode("utf-8")
+
+
+def test_an_image_enclosure_becomes_the_items_picture():
+    item, = parse_feed(_one_item(
+        '<enclosure url="https://cdn.example.com/img/a.jpg?w=640&amp;sig=x" '
+        'type="image/jpeg" length="1"/>'
+    ), FEED, now=NOW)
+    # The query is kept: image CDNs put the size and signature there.
+    assert item.image_url == "https://cdn.example.com/img/a.jpg?w=640&sig=x"
+
+
+def test_media_rss_content_and_thumbnail_are_read():
+    item, = parse_feed(_one_item(
+        '<media:content url="https://cdn.example.com/b.jpg" medium="image"/>'
+    ), FEED, now=NOW)
+    assert item.image_url == "https://cdn.example.com/b.jpg"
+    item, = parse_feed(_one_item(
+        '<media:thumbnail url="https://cdn.example.com/c.jpg"/>'
+    ), FEED, now=NOW)
+    assert item.image_url == "https://cdn.example.com/c.jpg"
+
+
+def test_a_non_image_enclosure_or_a_script_url_is_not_a_picture():
+    item, = parse_feed(_one_item(
+        '<enclosure url="https://cdn.example.com/a.mp3" type="audio/mpeg" length="1"/>'
+    ), FEED, now=NOW)
+    assert item.image_url == ""
+    item, = parse_feed(_one_item(
+        '<enclosure url="javascript:alert(1)" type="image/jpeg" length="1"/>'
+    ), FEED, now=NOW)
+    assert item.image_url == ""
+
+
+def test_an_item_without_a_picture_has_none():
+    assert all(item.image_url == "" for item in parse_feed(RSS, FEED, now=NOW))
+
+
 def test_markup_is_stripped_from_summaries():
     upgrade = parse_feed(RSS, FEED, now=NOW)[0]
     assert upgrade.summary == "The team will run a revised floor this weekend ."

@@ -612,6 +612,7 @@ def news_entry(
                 "title": item["title"],
                 "summary": item.get("summary") or "",
                 "url": item["url"],
+                "image_url": item.get("image_url") or "",
             }
             for item in items
         ],

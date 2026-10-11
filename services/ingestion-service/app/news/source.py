@@ -7,7 +7,8 @@ for a panel of headlines, and scraping article pages would be taking what was
 not offered.
 
 **Headlines, not articles.** What is kept is the title, the feed's own short
-summary, the link and the time. The article stays on the outlet's site and the
+summary, the link, the time and the picture the feed attaches to the item, if
+it attaches one. The article stays on the outlet's site and the
 reader goes there for it. That keeps this on the right side of what a feed
 grants, and it keeps Bernie honest: he is handed a headline and knows it is a
 headline, rather than a scraped body he could quote as if he had read it.
@@ -54,6 +55,7 @@ FUTURE_TOLERANCE = timedelta(hours=1)
 UNDATED_SPACING = timedelta(seconds=1)
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
+_MEDIA = "{http://search.yahoo.com/mrss/}"
 _TAG = re.compile(r"<[^>]+>")
 
 #: Query parameters that identify a campaign rather than an article. Stripped
@@ -96,6 +98,10 @@ class NewsItem:
     #: we first saw the item. Kept so nothing downstream reads an estimate as
     #: the outlet's own timestamp.
     published_estimated: bool = False
+    #: The picture the feed attached to the item, or "" when it attached none.
+    #: Formula1.com's feed carries no pictures at all; Autosport's carries one
+    #: per item as an ``<enclosure>``.
+    image_url: str = ""
     fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -118,6 +124,38 @@ def canonical_url(url: str) -> Optional[str]:
     ])
     path = parts.path.rstrip("/") or "/"
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, query, ""))
+
+
+def image_url(url: Optional[str]) -> str:
+    """A picture's address if it is a web link, else "".
+
+    Unlike ``canonical_url`` the query is left alone: image CDNs put the size
+    and the signature there, and stripping it can break the picture.
+    """
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return ""
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return ""
+    return urlunsplit(parts)
+
+
+def _rss_image(item: ElementTree.Element) -> str:
+    """The first picture an RSS item carries: an image ``<enclosure>``, else Media RSS."""
+    for enclosure in item.findall("enclosure"):
+        if (enclosure.get("type") or "").lower().startswith("image/") and enclosure.get("url"):
+            return enclosure.get("url")
+    for path in (_MEDIA + "content", _MEDIA + "group/" + _MEDIA + "content"):
+        for media in item.findall(path):
+            medium = (media.get("medium") or "").lower()
+            kind = (media.get("type") or "").lower()
+            if media.get("url") and (medium == "image" or kind.startswith("image/")):
+                return media.get("url")
+    thumbnail = item.find(_MEDIA + "thumbnail")
+    if thumbnail is not None and thumbnail.get("url"):
+        return thumbnail.get("url")
+    return ""
 
 
 def item_id(url: str) -> str:
@@ -212,6 +250,7 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
                 _atom_link(entry),
                 _text(entry, _ATOM + "summary", _ATOM + "content"),
                 _text(entry, _ATOM + "published", _ATOM + "updated"),
+                "",
             )
             for entry in root.findall(_ATOM + "entry")
         ]
@@ -222,6 +261,7 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
                 _text(item, "link") or _guid_link(item),
                 _text(item, "description"),
                 _text(item, "pubDate", "{http://purl.org/dc/elements/1.1/}date"),
+                _rss_image(item),
             )
             for item in root.iter("item")
         ]
@@ -231,7 +271,7 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
     items: List[NewsItem] = []
     seen = set()
     undated = 0
-    for title, link, summary, published in raw_items:
+    for title, link, summary, published, picture in raw_items:
         title = clean_text(title)
         url = canonical_url(link)
         if not title or not url:
@@ -267,6 +307,7 @@ def parse_feed(payload: bytes, feed: Feed, now: Optional[datetime] = None) -> Li
             summary=clean_text(summary, MAX_SUMMARY_CHARS),
             published_at=when,
             published_estimated=estimated,
+            image_url=image_url(picture),
             fetched_at=now,
         ))
     return items

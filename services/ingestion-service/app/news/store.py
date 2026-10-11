@@ -111,6 +111,7 @@ class NewsStore:
                 "title": item.title,
                 "url": item.url,
                 "summary": item.summary,
+                "image_url": item.image_url,
                 "fetched_at": item.fetched_at,
             }
             first_seen: Dict[str, Any] = {"first_seen_at": item.fetched_at}
