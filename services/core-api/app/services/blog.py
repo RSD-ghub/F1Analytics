@@ -10,6 +10,7 @@ Entries are therefore useful with no LLM at all. Narration is an enhancement.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.models.blog import BlogEntry, BlogFact, EntryKind, WeekendBlog
@@ -524,12 +525,112 @@ def forecast_entry(
     )
 
 
+# ── Paddock news ─────────────────────────────────────────────────────────────
+
+#: Headlines listed on the weekend page. A race week runs to forty or more
+#: across two outlets; past a dozen the panel is a feed reader, and the news
+#: page is the place for that.
+MAX_HEADLINES = 12
+
+#: Headlines carried as facts, which is what the feed card shows.
+MAX_HEADLINE_FACTS = 4
+
+
+def _day(iso: Any) -> str:
+    try:
+        when = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return "{} {}".format(when.day, when.strftime("%b"))
+
+
+def news_entry(
+    season: int,
+    round_number: int,
+    race_name: str,
+    weekend_news: Optional[Dict[str, Any]],
+) -> Optional[BlogEntry]:
+    """What the outlets were reporting in race week.
+
+    The one entry whose facts are not computed by us, so it is built to say so
+    everywhere a reader could meet it: each headline names its outlet and links
+    to the original, the summary says the reports are unchecked and unused by
+    the forecast, and the sources name the feeds rather than our data.
+
+    Never narrated — see ``narrate``.
+    """
+    items = [
+        item for item in ((weekend_news or {}).get("items") or [])
+        if item.get("title") and item.get("url")
+    ][:MAX_HEADLINES]
+    if not items:
+        return None
+
+    outlets = sorted({item.get("outlet") or "Unknown outlet" for item in items})
+    since = _day((weekend_news or {}).get("since"))
+    until = _day((weekend_news or {}).get("until"))
+    window = " between {} and {}".format(since, until) if since and until else ""
+    newest = max(
+        (str(item.get("published_at") or "") for item in items), default=""
+    )
+
+    occurred_at = None
+    if newest:
+        try:
+            occurred_at = datetime.fromisoformat(newest.replace("Z", "+00:00"))
+        except ValueError:
+            occurred_at = None
+
+    return BlogEntry(
+        entry_id=_entry_id(season, round_number, EntryKind.NEWS),
+        season=season,
+        round=round_number,
+        race_name=race_name,
+        kind=EntryKind.NEWS,
+        occurred_at=occurred_at,
+        headline=(
+            "One story from the paddock in race week" if len(items) == 1
+            else "{} stories from the paddock in race week".format(len(items))
+        ),
+        summary=(
+            "Headlines from {}{}. These are the outlets' own reports, linked to "
+            "the originals. We have not checked them, and the forecast does not "
+            "use them.".format(" and ".join(outlets), window)
+        ),
+        facts=[
+            BlogFact(
+                label=item.get("outlet") or "Unknown outlet",
+                value=item["title"],
+                detail=_day(item.get("published_at")),
+            )
+            for item in items[:MAX_HEADLINE_FACTS]
+        ],
+        table=[
+            {
+                "published_at": item.get("published_at"),
+                "outlet": item.get("outlet") or "Unknown outlet",
+                "title": item["title"],
+                "summary": item.get("summary") or "",
+                "url": item["url"],
+            }
+            for item in items
+        ],
+        sources=["{} RSS feed".format(outlet) for outlet in outlets],
+    )
+
+
 # ── Assembly ─────────────────────────────────────────────────────────────────
 
 
 async def narrate(bernie: Bernie, entry: BlogEntry) -> BlogEntry:
-    """Attach prose over the entry's own facts. Never adds information."""
-    if not bernie.available:
+    """Attach prose over the entry's own facts. Never adds information.
+
+    Paddock news is never narrated. Asking for "two short paragraphs for a
+    race fan" over a list of headlines invites exactly the thing this product
+    may not do: a report retold in our voice, with the outlet's name worn away
+    and the claim left standing as ours.
+    """
+    if not bernie.available or entry.kind == EntryKind.NEWS:
         return entry
     facts = {fact.label: "{} — {}".format(fact.value, fact.detail).strip(" —")
              for fact in entry.facts}
@@ -562,6 +663,9 @@ def assemble(
     """
     ordered = [e for e in entries if e is not None and e.is_sourced]
     kind_order = {
+        # First: race week's reporting is what was known before a car turned
+        # a wheel, which is where the timeline starts.
+        EntryKind.NEWS: -1,
         EntryKind.PRACTICE: 0,
         EntryKind.QUALIFYING: 1,
         EntryKind.FORECAST: 2,
