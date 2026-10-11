@@ -405,6 +405,21 @@ tr.thin td { opacity: 0.55; }
 .sources ul { margin: 6px 0 0; padding-left: 18px; }
 .caveats { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
 
+/* ── Paddock news ─────────────────────────────────────────────────────────── */
+/* The outlet leads each item in small caps: read first, it frames the headline
+   as somebody's report before the words of the report arrive. */
+.news-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+.news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.news-item { padding: 14px 0; border-top: 1px solid var(--line-soft); }
+.news-item:first-child { border-top: 0; padding-top: 0; }
+.news-item:last-child { padding-bottom: 0; }
+.news-meta { margin: 0 0 4px; display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.news-outlet { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-deep); }
+.news-title { font-weight: 600; font-size: 16px; line-height: 1.35; color: var(--ink); text-decoration: none; }
+.news-title:hover { text-decoration: underline; }
+.news-title svg { display: inline; margin-left: 5px; vertical-align: -1px; color: var(--muted); }
+.news-summary { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--prose); max-width: var(--measure); }
+
 /* ── Bernie ───────────────────────────────────────────────────────────────── */
 .bernie { display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: start; }
 .threads { display: flex; flex-direction: column; gap: 6px; }

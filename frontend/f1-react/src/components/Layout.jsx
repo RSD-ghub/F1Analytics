@@ -6,6 +6,7 @@ const LINKS = [
   { to: '/', label: 'Home', end: true },
   { to: '/next-race', label: 'Next race' },
   { to: '/blog', label: 'One Blog' },
+  { to: '/news', label: 'Paddock news' },
   { to: '/track-record', label: 'Track record' },
   { to: '/championship', label: 'Championship' },
   { to: '/bernie', label: 'Bernie' },

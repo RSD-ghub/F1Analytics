@@ -92,6 +92,12 @@ export const getSystemStatus = () => request('/status')
 export const getWeekend = (season, round, { narrate = true } = {}) =>
   request(`/blog/${season}/${round}?narrate=${narrate}`)
 
+// ── Paddock news ─────────────────────────────────────────────────────────────
+// Public. The payload carries its own `attribution` line, and pages render it:
+// these are the outlets' reports, not our claims.
+
+export const getNews = (limit = 30) => request(`/news?limit=${limit}`)
+
 // ── Bernie ───────────────────────────────────────────────────────────────────
 
 // Authenticated since Bernie's costs were bounded — every route that can spend
