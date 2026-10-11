@@ -26,3 +26,7 @@ class ServiceSettings(BaseSettings):
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_database: str = "f1_scratch"
     mongo_timeout_ms: int = 5000
+
+    # Cache. Empty means off: every read goes to Mongo, which is how tests and
+    # the bare-uvicorn dev setup run. See f1_common.cache.
+    redis_url: str = ""

@@ -21,6 +21,7 @@ from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
 from app.services import scheduler
 from app.services.storage import IngestionStore
+from f1_common import cache
 from f1_common.health import build_health_router
 
 settings = get_settings()
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
 
     # Index creation is best-effort: Mongo being briefly unreachable at boot
     # should degrade query speed, not prevent the service from starting and
@@ -53,6 +55,7 @@ async def lifespan(_: FastAPI):
     )
     yield
     scheduler.shutdown()
+    await cache.close()
     db.close()
 
 

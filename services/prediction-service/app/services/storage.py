@@ -14,6 +14,7 @@ features reuses the existing document instead of duplicating it.
 import logging
 from typing import Any, Dict, List, Optional
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError
@@ -67,6 +68,7 @@ class PredictionStore:
 
     # ── Predictions (append-only) ────────────────────────────────────────────
 
+    @invalidates("prediction")
     async def insert_prediction(self, prediction: Prediction) -> Prediction:
         """Write a locked prediction. Never overwrites."""
         try:
@@ -129,6 +131,7 @@ class PredictionStore:
 
     # ── Model versions ───────────────────────────────────────────────────────
 
+    @invalidates("prediction")
     async def record_model_version(self, version: ModelVersion) -> None:
         await self._db[MODEL_VERSIONS].update_one(
             {"version": version.version},

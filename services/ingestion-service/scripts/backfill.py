@@ -32,6 +32,7 @@ from app.models.schemas import IngestDepth  # noqa: E402
 from app.services.fastf1_source import FastF1Source  # noqa: E402
 from app.services.ingest_runner import IngestRunner  # noqa: E402
 from app.services.storage import IngestionStore  # noqa: E402
+from f1_common import cache  # noqa: E402
 from f1_common.mongo import create_client, get_database  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -59,6 +60,10 @@ async def main() -> int:
     # network; set BACKFILL_SESSIONS_PER_HOUR=0 to drop the quota pacing that
     # only exists to protect API calls that are not being made.
     refresh = "--refresh" in sys.argv[4:]
+    # Writes from here retire what core-api has cached, as the service's own
+    # would. Without REDIS_URL they are not announced, and cached answers
+    # catch up when their TTLs run out.
+    cache.configure(os.getenv("REDIS_URL", ""))
     client = create_client(MONGO_URI, 5000)
     store = IngestionStore(get_database(client, DATABASE))
     await store.ensure_indexes()

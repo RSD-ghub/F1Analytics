@@ -20,6 +20,7 @@ from app.dependencies import get_reconciler
 from app.routers import scores
 from app.services import scheduler as reconcile_scheduler
 from app.services.storage import ScoringStore
+from f1_common import cache
 from f1_common.health import build_health_router
 
 settings = get_settings()
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
 
     try:
         await ScoringStore(db.db()).ensure_indexes()
@@ -40,6 +42,7 @@ async def lifespan(_: FastAPI):
 
     yield
     reconcile_scheduler.shutdown()
+    await cache.close()
     db.close()
 
 
