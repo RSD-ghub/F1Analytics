@@ -197,11 +197,19 @@ def knockout_classification(
     no position. The order is recoverable from the laps by the knockout rule
     itself — whoever reached the latest segment ranks ahead, ordered within it
     by their best lap there. Laps deleted for track limits do not count, as
-    they do not count on the timing screen; a driver with no counting lap in
-    their last segment is ordered after those who set one.
+    they do not count on the timing screen.
+
+    A driver with no counting lap in a segment they reached is placed by the
+    sporting regulations' rule for failing to set a time: after everyone who
+    set one, those who started a flying lap ahead of those who only ran an out
+    lap, ahead of those who never left the pits — and within each, by their
+    place in the previous segment. Spa 2023, a wet shootout red-flagged in its
+    second segment, is where this matters: four drivers set no time there, and
+    the official order was not their first-segment pace.
     """
     best: Dict[str, List[float]] = {}
-    reached: Dict[str, int] = {}
+    present: List[set] = [set(), set(), set()]
+    flying: List[set] = [set(), set(), set()]
     for index, laps in enumerate(parts):
         if laps is None or laps.empty:
             continue
@@ -210,7 +218,12 @@ def knockout_classification(
             if not number:
                 continue
             times = best.setdefault(number, [0.0, 0.0, 0.0])
-            reached[number] = max(reached.get(number, -1), index)
+            present[index].add(number)
+            # An out lap carries the time the car left the pits; any other lap
+            # is a flying lap started, whether or not it was completed.
+            pit_out = lap.get("PitOutTime")
+            if pit_out is None or pd.isna(pit_out):
+                flying[index].add(number)
             deleted = lap.get("Deleted")
             if isinstance(deleted, (bool, np.bool_)) and deleted:
                 continue
@@ -218,13 +231,44 @@ def knockout_classification(
             if seconds > 0 and (times[index] == 0.0 or seconds < times[index]):
                 times[index] = seconds
 
-    def sort_key(number: str):
-        last = reached[number]
-        lap = best[number][last]
-        # Latest segment first; within it, a timed lap ahead of none, fastest first.
-        return (-last, lap == 0.0, lap, number)
+    field = len(best)
+    eliminated: List[List[str]] = []
+    group = sorted(best)
+    previous: Dict[str, int] = {}
+    for index in range(3):
+        def rank_key(number: str, index: int = index):
+            lap = best[number][index]
+            if lap > 0:
+                category = 0
+            elif number in flying[index]:
+                category = 1
+            elif number in present[index]:
+                category = 2
+            else:
+                category = 3
+            return (category, lap, previous.get(number, field), number)
 
-    ordered = sorted(best, key=sort_key)
+        ranked = sorted(group, key=rank_key)
+        later = set().union(*present[index + 1:])
+        if not later:
+            eliminated.append(ranked)
+            break
+        advancing = [n for n in ranked if n in later]
+        # A driver who reached the next segment but never left the pits in it
+        # leaves no laps there; the segment's quota is what says they advanced.
+        quota = 10 + (field - 10) // 2 if index == 0 else 10
+        if field > 10:
+            for number in ranked:
+                if len(advancing) >= quota:
+                    break
+                if number not in advancing:
+                    advancing.append(number)
+        advancing_set = set(advancing)
+        eliminated.append([n for n in ranked if n not in advancing_set])
+        previous = {n: place for place, n in enumerate(ranked)}
+        group = advancing
+
+    ordered = [n for segment in reversed(eliminated) for n in segment]
     return {
         number: (position, list(best[number]))
         for position, number in enumerate(ordered, start=1)

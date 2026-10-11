@@ -217,3 +217,54 @@ def test_a_driver_without_a_lap_in_their_last_segment_goes_behind_it():
     assert [n for n, _ in sorted(order.items(), key=lambda kv: kv[1][0])] == [
         "10", "31", "22",
     ]
+
+
+def test_drivers_without_a_time_in_a_segment_follow_the_no_time_rule():
+    """Spa 2023's shootout, red-flagged in SQ2: Albon, Sargeant, Stroll and
+    Alonso reached it but set no time. The regulations place a driver who
+    started a flying lap ahead of one who only ran an out lap, ahead of one who
+    never left the pits, and each group by SQ1 place. Officially that was
+    Albon 12th, Sargeant 13th, Stroll 14th, Alonso 15th, although Alonso had
+    been quickest of the four in SQ1."""
+    from datetime import timedelta as td
+
+    import pandas as pd
+
+    from app.services.transforms import knockout_classification
+
+    out = td(minutes=1)
+
+    def lap(number, seconds=None, pit_out=None):
+        return {
+            "DriverNumber": number,
+            "LapTime": td(seconds=seconds) if seconds else pd.NaT,
+            "PitOutTime": pit_out if pit_out is not None else pd.NaT,
+            "Deleted": False,
+        }
+
+    # A 22-car field, so 16 reach SQ2 and 10 reach SQ3.
+    q1_times = {str(n): 100.0 + n for n in range(1, 23)}
+    q1_times.update({
+        "14": 99.038, "23": 99.198, "2": 100.031, "18": 100.460, "16": 98.0,
+    })
+    sq1 = pd.DataFrame([lap(n, t) for n, t in q1_times.items()])
+    reached_sq3 = [str(n) for n in range(3, 13)]
+    sq2 = pd.DataFrame(
+        [lap(n, 95.0 + int(n) / 10) for n in reached_sq3 + ["13"]]
+        + [
+            lap("23", pit_out=out), lap("23"),  # started a flying lap
+            lap("2", pit_out=out), lap("2"),
+            lap("18", pit_out=out), lap("18"),  # crashed on it: the red flag
+            lap("14", pit_out=out),             # out lap only
+        ]
+    )
+    # Car 16 reached SQ2 by its SQ1 place but never left the pits in it.
+    sq3 = pd.DataFrame([lap(n, 90.0 + int(n) / 10) for n in reached_sq3])
+
+    order = knockout_classification([sq1, sq2, sq3])
+    by_place = {p: n for n, (p, _) in order.items()}
+
+    assert [by_place[p] for p in range(11, 17)] == [
+        "13", "23", "2", "18", "14", "16",
+    ]
+    assert order["14"][1] == [99.038, 0.0, 0.0]
