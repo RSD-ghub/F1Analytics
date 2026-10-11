@@ -413,12 +413,16 @@ class FastF1Source:
     def _classify_from_laps(session: Any, rows, expected: ExpectedSession):
         """Fill positions and segment times on an unclassified knockout session.
 
-        Costs a second, heavier load — laps and session status — paid only on
-        the sessions upstream cannot classify. Any failure leaves the rows as
-        they were, which the caller already treats as "not classified yet".
+        Costs a second, heavier load — laps, session status and race control
+        — paid only on the sessions upstream cannot classify. Race control is
+        not optional: it is where FastF1 learns which laps were deleted for
+        track limits, and without it every deleted lap counts. Measured on the
+        2023-2025 sprint shootouts, that put the wrong driver ahead in 16 of 18
+        rounds. Any failure leaves the rows as they were, which the caller
+        already treats as "not classified yet".
         """
         try:
-            session.load(laps=True, telemetry=False, weather=False, messages=False)
+            session.load(laps=True, telemetry=False, weather=False, messages=True)
             parts = session.laps.split_qualifying_sessions()
         except Exception as exc:
             logger.info(
