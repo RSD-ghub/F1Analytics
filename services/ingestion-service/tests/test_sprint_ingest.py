@@ -217,3 +217,39 @@ def test_a_driver_without_a_lap_in_their_last_segment_goes_behind_it():
     assert [n for n, _ in sorted(order.items(), key=lambda kv: kv[1][0])] == [
         "10", "31", "22",
     ]
+
+
+def test_drivers_without_a_time_in_their_last_segment_keep_the_fia_order():
+    """2023 Belgian sprint shootout, SQ2 abandoned in the wet. The official
+    sheet has Albon, Sargeant and Stroll (out on track, no time: "DNF") 12-14
+    in their SQ1 order, then Alonso ("DNS", only left the pits and came back
+    in) 15th, although he was the fastest of the four in SQ1."""
+    from datetime import timedelta as td
+
+    import pandas as pd
+
+    from app.services.transforms import knockout_classification
+
+    def lap(number, seconds, pit_in=None):
+        return {
+            "DriverNumber": number,
+            "LapTime": td(seconds=seconds) if seconds else pd.NaT,
+            "Deleted": False,
+            "PitInTime": td(minutes=pit_in) if pit_in else pd.NaT,
+        }
+
+    sq1 = pd.DataFrame([
+        lap("3", 120.177), lap("23", 119.198), lap("14", 119.038),
+        lap("2", 120.031), lap("18", 120.460), lap("22", 120.568),
+    ])
+    sq2 = pd.DataFrame([
+        lap("3", 117.687),
+        lap("23", None),
+        lap("14", None, pit_in=81),
+        lap("2", None, pit_in=75), lap("2", None),
+        lap("18", None, pit_in=74), lap("18", None), lap("18", None, pit_in=88),
+    ])
+    order = knockout_classification([sq1, sq2, None])
+    assert [n for n, _ in sorted(order.items(), key=lambda kv: kv[1][0])] == [
+        "3", "23", "2", "18", "14", "22",
+    ]

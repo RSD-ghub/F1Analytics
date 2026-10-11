@@ -183,6 +183,10 @@ def extract_qualifying(
     return rows
 
 
+def _car_number(number: str) -> int:
+    return int(number) if number.isdigit() else 0
+
+
 def knockout_classification(
     parts: Sequence[Optional[pd.DataFrame]],
 ) -> Dict[str, Tuple[int, List[float]]]:
@@ -197,11 +201,20 @@ def knockout_classification(
     no position. The order is recoverable from the laps by the knockout rule
     itself — whoever reached the latest segment ranks ahead, ordered within it
     by their best lap there. Laps deleted for track limits do not count, as
-    they do not count on the timing screen; a driver with no counting lap in
-    their last segment is ordered after those who set one.
+    they do not count on the timing screen.
+
+    A driver with no counting lap in their last segment goes behind everyone
+    who set one, and the FIA splits those drivers further. Whoever crossed the
+    line on track there (a "DNF" on the official sheet) ranks ahead of whoever
+    only left the pits and came back in ("DNS"). Within each group they are
+    ordered by their best lap in the segment before. The 2023 Belgian sprint
+    shootout is the case that shows it: Albon, Sargeant and Stroll (no SQ2 time)
+    were classified 12-14 in their SQ1 order, and Alonso, the fastest of the
+    four in SQ1 but never out of the pit lane in SQ2, was 15th.
     """
     best: Dict[str, List[float]] = {}
     reached: Dict[str, int] = {}
+    on_track: Dict[str, bool] = {}
     for index, laps in enumerate(parts):
         if laps is None or laps.empty:
             continue
@@ -210,7 +223,12 @@ def knockout_classification(
             if not number:
                 continue
             times = best.setdefault(number, [0.0, 0.0, 0.0])
-            reached[number] = max(reached.get(number, -1), index)
+            if index > reached.get(number, -1):
+                reached[number] = index
+                on_track[number] = False
+            # A lap that ended in the pit lane never crossed the timing line.
+            if index == reached[number] and pd.isna(lap.get("PitInTime")):
+                on_track[number] = True
             deleted = lap.get("Deleted")
             if isinstance(deleted, (bool, np.bool_)) and deleted:
                 continue
@@ -221,8 +239,14 @@ def knockout_classification(
     def sort_key(number: str):
         last = reached[number]
         lap = best[number][last]
-        # Latest segment first; within it, a timed lap ahead of none, fastest first.
-        return (-last, lap == 0.0, lap, number)
+        if lap > 0.0:
+            # Latest segment first; within it, fastest first.
+            return (-last, 0, lap, _car_number(number))
+        earlier = next(
+            (best[number][i] for i in range(last - 1, -1, -1) if best[number][i] > 0.0),
+            float("inf"),
+        )
+        return (-last, 1 if on_track[number] else 2, earlier, _car_number(number))
 
     ordered = sorted(best, key=sort_key)
     return {
