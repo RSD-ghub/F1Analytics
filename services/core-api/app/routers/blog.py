@@ -428,7 +428,8 @@ async def _assemble(settings: Settings, season: int, round_number: int):
         ),
         predictions=prediction.get("/predictions/{}/{}".format(season, round_number)),
         news=ingestion.get(
-            "/news/weekend/{}/{}".format(season, round_number), {"limit": 12}
+            "/news/weekend/{}/{}".format(season, round_number),
+            {"limit": builder.NEWS_POOL},
         ),
     )
     if fetched["_unavailable"]:

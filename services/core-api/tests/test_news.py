@@ -355,3 +355,29 @@ def test_moving_the_lead_up_does_not_make_a_run_of_three():
     sources = [item["source"] for item in lead_with_picture(rows)]
 
     assert max(len(list(run)) for _, run in groupby(sources)) == 2
+
+
+async def test_the_weekend_route_mixes_before_it_trims(monkeypatch):
+    # Twelve Formula1.com stories, then four from Autosport. Trimming to four
+    # first would return Formula1.com four times over.
+    rows = ([_story(n, outlet="Formula1.com") for n in range(1, 13)]
+            + [_story(n, outlet="Autosport") for n in range(13, 17)])
+    client = _Client({"/news/weekend/2026/18": {"items": rows}})
+    monkeypatch.setattr(news_router, "ServiceClient", lambda *a, **k: client)
+
+    page = await news_router.weekend(2026, 18, limit=4, settings=Settings())
+
+    [(_, params)] = client.calls
+    assert params["limit"] > 4
+    assert len(page.items) == 4
+    assert {item.source for item in page.items} == {"formula1.com", "autosport"}
+
+
+async def test_the_weekend_route_does_not_ask_for_more_than_ingestion_gives(monkeypatch):
+    client = _Client({"/news/weekend/2026/18": WEEK})
+    monkeypatch.setattr(news_router, "ServiceClient", lambda *a, **k: client)
+
+    await news_router.weekend(2026, 18, limit=50, settings=Settings())
+
+    [(_, params)] = client.calls
+    assert params["limit"] == news_router.MAX_POOL

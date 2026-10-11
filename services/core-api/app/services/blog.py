@@ -533,6 +533,14 @@ def forecast_entry(
 #: page is the place for that.
 MAX_HEADLINES = 12
 
+#: How many to ask for, to pick ``MAX_HEADLINES`` from.
+#:
+#: Trimming before mixing is the same as not mixing: Formula1.com dates
+#: nothing, so its stories are all "just now" and the first twelve of a race
+#: week are all its own. Ask for three times as many and the trim takes an
+#: already mixed list.
+NEWS_POOL = MAX_HEADLINES * 3
+
 #: Headlines carried as facts, which is what the feed card shows.
 MAX_HEADLINE_FACTS = 4
 
@@ -566,7 +574,7 @@ def news_entry(
     items = spread_outlets([
         item for item in ((weekend_news or {}).get("items") or [])
         if item.get("title") and item.get("url")
-    ][:MAX_HEADLINES])
+    ])[:MAX_HEADLINES]
     if not items:
         return None
 

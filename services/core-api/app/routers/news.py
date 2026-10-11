@@ -31,6 +31,15 @@ ATTRIBUTION = (
 )
 
 
+#: Ask the store for this many times the headlines we will show, so that the
+#: trim takes an already mixed list rather than the undated stories that an
+#: outlet which dates nothing puts at the top of every window.
+POOL = 3
+
+#: What the ingestion route will give us at most.
+MAX_POOL = 50
+
+
 class NewsItem(BaseModel):
     id: str
     source: str
@@ -90,12 +99,17 @@ async def weekend(
     limit: int = Query(12, ge=1, le=50),
     settings: Settings = Depends(get_settings),
 ) -> NewsPage:
-    """One race week's headlines, with the window they were taken from."""
+    """One race week's headlines, with the window they were taken from.
+
+    Asks for more than it returns, because trimming before mixing is the same
+    as not mixing — see ``POOL``.
+    """
     payload = await _client(settings).get(
-        "/news/weekend/{}/{}".format(season, round_number), {"limit": limit}
+        "/news/weekend/{}/{}".format(season, round_number),
+        {"limit": min(limit * POOL, MAX_POOL)},
     ) or {}
     return NewsPage(
-        items=_items(spread_outlets(payload.get("items") or [])),
+        items=_items(spread_outlets(payload.get("items") or []))[:limit],
         since=payload.get("since"),
         until=payload.get("until"),
     )
