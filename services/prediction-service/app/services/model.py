@@ -164,6 +164,11 @@ def state_paths(state_dir: str):
 
 WEIGHTS_PATH, ARCHIVE_DIR, HISTORY_PATH = state_paths(MODEL_STATE_DIR)
 
+#: The neural race model's artifact (``services/neural_model.py``). Kept beside
+#: the linear one so a deployment's volume holds both.
+NEURAL_WEIGHTS_FILE = "neural_weights.json"
+NEURAL_WEIGHTS_PATH = os.path.join(MODEL_STATE_DIR, NEURAL_WEIGHTS_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:
@@ -204,6 +209,14 @@ def ensure_state_dir(state_dir: Optional[str] = None,
     if not os.path.exists(history) and os.path.exists(packaged_history):
         shutil.copy2(packaged_history, history)
         seeded.append("promotion_history.json")
+
+    # The neural model's artifact, when one has been trained. Optional: the
+    # service runs without it and says the simulation is not available yet.
+    neural = os.path.join(state_dir, NEURAL_WEIGHTS_FILE)
+    packaged_neural = os.path.join(packaged_dir, NEURAL_WEIGHTS_FILE)
+    if not os.path.exists(neural) and os.path.exists(packaged_neural):
+        shutil.copy2(packaged_neural, neural)
+        seeded.append(NEURAL_WEIGHTS_FILE)
 
     if not os.path.exists(archive) and os.path.isdir(packaged_archive):
         shutil.copytree(packaged_archive, archive)
@@ -437,8 +450,30 @@ class RaceModel:
         Retirements are pushed behind every finisher rather than removed, so each
         row stays a complete ranking.
         """
+        positions, _ = self.sample_outcomes(
+            drivers, seed=seed, runs=runs, distance_fraction=distance_fraction
+        )
+        return positions
+
+    def strengths(self, drivers: Sequence[DriverFeatures]) -> np.ndarray:
+        return np.array([self.strength(d) for d in drivers], dtype=float)
+
+    def sample_outcomes(
+        self,
+        drivers: Sequence[DriverFeatures],
+        seed: int,
+        runs: int,
+        distance_fraction: float = 1.0,
+    ):
+        """``sample_orders`` plus which cars retired in each run.
+
+        The same draws in the same order, so a seed gives the same finishing
+        orders through either method — the race simulation needs to tell a
+        retirement from a last place, and must not change a locked forecast's
+        numbers by asking.
+        """
         rng = np.random.default_rng(seed)
-        strengths = np.array([self.strength(d) for d in drivers], dtype=float)
+        strengths = self.strengths(drivers)
         # Which window this is, inferred from whether a grid was supplied.
         scale = (
             self.noise_scale
@@ -460,7 +495,7 @@ class RaceModel:
         positions = np.empty_like(order)
         rows = np.arange(runs)[:, None]
         positions[rows, order] = np.arange(1, len(drivers) + 1)[None, :]
-        return positions
+        return positions, retired
 
     def _summarise(
         self,

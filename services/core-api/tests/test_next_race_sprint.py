@@ -49,3 +49,17 @@ async def test_a_grand_prix_weekend_does_not_ask_for_one(monkeypatch):
 
     assert view.sprint_predictions == []
     assert all((params or {}).get("event") != "sprint" for _, params in prediction.calls)
+
+
+async def test_it_carries_the_race_simulation_for_the_weekends_circuit(monkeypatch):
+    prediction = _wire(monkeypatch, {
+        "season": 2026, "round": 6, "circuit": "Monza", "race_name": "Italian GP",
+    })
+    prediction._routes["/predictions/2026/6/simulation"] = lambda params: {
+        "status": "awaiting_confirmed_grid", "params": params,
+    }
+
+    view = await dashboard.next_race(Settings())
+
+    assert view.simulation["status"] == "awaiting_confirmed_grid"
+    assert view.simulation["params"] == {"circuit": "Monza", "race_name": "Italian GP"}

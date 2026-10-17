@@ -41,6 +41,9 @@ class Settings(ServiceSettings):
     # slower; 20k puts the Monte Carlo error on a p_win well below a point.
     prediction_runs: int = 20000
 
+    # Races simulated by the neural model on the confirmed grid.
+    race_simulation_runs: int = 5000
+
     # The calibration knob. Raising it flattens probabilities toward uniform.
     # Fitted on the 2024 season — see DEFAULT_NOISE_SCALE in services/model.py
     # for the sweep this came from. Changing it changes published probabilities,
