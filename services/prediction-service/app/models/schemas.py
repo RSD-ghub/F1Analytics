@@ -13,7 +13,7 @@ does. Comparing their accuracy measures exactly how much the grid tells you.
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -322,3 +322,60 @@ class ChampionshipForecast(BaseModel):
     generated_at: Optional[datetime] = None
     drivers: List[ChampionshipOutcome] = Field(default_factory=list)
     constructors: List[ChampionshipOutcome] = Field(default_factory=list)
+
+
+class SimulationStatus(str, Enum):
+    READY = "ready"
+    #: The FIA's final grid is not published yet. Simulating on qualifying
+    #: order would hand any penalised driver the wrong starting slot.
+    AWAITING_CONFIRMED_GRID = "awaiting_confirmed_grid"
+    #: No neural weights have been trained on this deployment.
+    MODEL_NOT_TRAINED = "model_not_trained"
+
+
+class SimulatedDriver(BaseModel):
+    driver: str
+    team: str = "Unknown"
+    grid_position: int = 0
+    p_win: float = 0.0
+    p_podium: float = 0.0
+    p_points: float = 0.0
+    #: Share of simulated races this car did not finish.
+    p_dnf: float = 0.0
+    #: Mean finishing position, a retirement counted behind every finisher —
+    #: the same convention the forecasts use.
+    expected_position: float = 0.0
+    #: ``position_probabilities[k]`` is the chance of finishing P(k+1), over all
+    #: runs. Sums with ``p_dnf`` to 1.
+    position_probabilities: List[float] = Field(default_factory=list)
+    #: The linear model's numbers for the same driver on the same grid, so the
+    #: network's view is always shown next to the one it is measured against.
+    baseline: Optional[DriverProbability] = None
+
+
+class RaceSimulation(BaseModel):
+    """Thousands of simulated races on the confirmed grid, summarised per driver.
+
+    Not a locked forecast: it is recomputed on request and never scored. It is
+    reproducible all the same — the seed is derived from the race, so the same
+    grid and model give the same numbers every time.
+    """
+
+    status: SimulationStatus
+    season: int
+    round: int
+    race_name: str = ""
+    detail: str = ""
+    runs: int = 0
+    seed: int = 0
+    model_version: str = ""
+    baseline_model_version: str = ""
+    #: Whether the network has beaten the linear model on held-out seasons and
+    #: so places the final-grid forecast. False means it is shown alongside,
+    #: not instead.
+    model_promoted: bool = False
+    #: The held-out comparison the promotion was decided on.
+    model_metrics: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[datetime] = None
+    data_quality: Optional[DataQuality] = None
+    drivers: List[SimulatedDriver] = Field(default_factory=list)

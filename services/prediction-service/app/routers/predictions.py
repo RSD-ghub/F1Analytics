@@ -24,6 +24,7 @@ from app.models.schemas import (
     LockWindow,
     ModelVersion,
     Prediction,
+    RaceSimulation,
 )
 from app.services import simulation
 from app.services.features import build_snapshot
@@ -171,6 +172,43 @@ async def for_race(
     return await store.list_predictions(
         season, round_number, event=_event(event)
     )
+
+
+@router.get("/{season}/{round_number}/simulation", response_model=RaceSimulation)
+async def race_simulation(
+    season: int,
+    round_number: int,
+    circuit: str = Query("", description="Circuit name, as the weekend has it"),
+    race_name: str = Query(""),
+    runs: Optional[int] = Query(None, ge=100, le=50000),
+    client: IngestionClient = Depends(get_client),
+    predictor: Predictor = Depends(get_predictor),
+) -> RaceSimulation:
+    """The Grand Prix simulated by the neural model on the confirmed grid.
+
+    Always 200 when the service is up: "the grid is not confirmed yet" and "no
+    network has been trained" are states of the race, reported in ``status``
+    for the page to show, not failures. Recomputed on request and never
+    stored; the seed comes from the race, so it is reproducible all the same.
+    """
+    if not circuit:
+        try:
+            weekend = next(
+                (w for w in await client.weekends(season)
+                 if w.season == season and w.round == round_number),
+                None,
+            )
+        except IngestionUnavailable:
+            weekend = None
+        if weekend is not None:
+            circuit = weekend.circuit
+            race_name = race_name or weekend.race_name
+    try:
+        return await predictor.simulate(
+            season, round_number, circuit=circuit, race_name=race_name, runs=runs,
+        )
+    except Exception as exc:
+        raise _handle(exc)
 
 
 # ── Championship ─────────────────────────────────────────────────────────────

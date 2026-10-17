@@ -53,6 +53,10 @@ class NextRaceView(BaseModel):
     #: Optional on purpose — a circuit whose geometry was never derived still
     #: has a race history worth showing, and a brand-new venue has neither.
     circuit: Optional[Dict[str, Any]] = None
+    #: The neural model's simulated races on the confirmed grid. Carries its
+    #: own ``status``, so "the grid is not confirmed yet" is shown as such
+    #: rather than as a missing panel.
+    simulation: Optional[Dict[str, Any]] = None
     unavailable: Unavailable = Field(default_factory=Unavailable)
 
 
@@ -152,6 +156,10 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         circuit=clients["ingestion"].get(
             "/circuits/{}/{}".format(season, round_number)
         ),
+        simulation=clients["prediction"].get(
+            "/predictions/{}/{}/simulation".format(season, round_number),
+            _simulation_params(weekend),
+        ),
     )
     if weekend.get("is_sprint_weekend"):
         calls["sprint"] = clients["prediction"].get(
@@ -167,7 +175,32 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         sprint_predictions=fetched.get("sprint") or [],
         qualifying_freshness=fetched.get("freshness"),
         circuit=circuit,
+        simulation=fetched.get("simulation"),
         unavailable=Unavailable(panels=fetched["_unavailable"]),
+    )
+
+
+def _simulation_params(weekend: Dict[str, Any]) -> Dict[str, str]:
+    """The weekend's circuit and name, so prediction-service builds the same
+    circuit features the final-grid lock does without looking them up again."""
+    return {
+        key: weekend[key] for key in ("circuit", "race_name") if weekend.get(key)
+    }
+
+
+@router.get("/race-simulation/{season}/{round_number}")
+async def race_simulation(
+    season: int,
+    round_number: int,
+    circuit: str = Query(""),
+    race_name: str = Query(""),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """Any round's simulation. Passes through, like the championship."""
+    clients = _clients(settings)
+    return await clients["prediction"].get(
+        "/predictions/{}/{}/simulation".format(season, round_number),
+        _simulation_params({"circuit": circuit, "race_name": race_name}),
     )
 
 
