@@ -168,6 +168,11 @@ class DriverFeatures(BaseModel):
     # unlike the grid this is legitimately available to *both* windows — it is
     # the only current-weekend pace signal the pre-quali model is allowed.
     practice_long_run_gap_pct: float = 0.0
+    # Fuel- and tyre-corrected race pace from lap times, as a fraction of the
+    # race's typical lap: the driver's recent races, and their car's (the
+    # better of its two drivers each race). Prior races only.
+    race_pace_recent_pct: float = 0.015
+    team_race_pace_pct: float = 0.015
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one

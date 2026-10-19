@@ -113,6 +113,33 @@ class PracticePace(BaseModel):
     long_run_laps: int = 0
 
 
+class RaceLap(BaseModel):
+    """One timed lap of a Grand Prix. Lap timing exists from 2018."""
+
+    season: int
+    round: int
+    driver: str
+    lap: int
+    lap_time_seconds: float = 0.0
+    compound: Optional[str] = ""
+    stint: int = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def _nulls(cls, raw: Any) -> Any:
+        # Ingestion writes a missing lap time or stint as null; read those as
+        # "no time" and "first stint" rather than failing the whole race.
+        if isinstance(raw, dict):
+            raw = dict(raw)
+            if raw.get("lap_time_seconds") is None:
+                raw["lap_time_seconds"] = 0.0
+            if raw.get("stint") is None:
+                raw["stint"] = 1
+            if raw.get("compound") is None:
+                raw["compound"] = ""
+        return raw
+
+
 #: Grid provenances that state where a driver actually starts. Mirrors
 #: ingestion's ``CONFIRMED_GRID_SOURCES``; duplicated rather than imported
 #: because the services share no runtime code, only a wire contract.
@@ -236,6 +263,17 @@ class IngestionClient:
     async def season_practice(self, season: int) -> List["PracticePace"]:
         payload = await self._get("/data/practice", {"season": season, "limit": 20000})
         return [PracticePace(**row) for row in payload]
+
+    async def race_laps(self, season: int, round_number: int) -> List[RaceLap]:
+        """Every timed lap of one Grand Prix.
+
+        Per race rather than per season: a season of laps is ~25,000 rows,
+        over the dataset endpoint's 20,000-row cap.
+        """
+        payload = await self._get(
+            "/data/laps", {"season": season, "round": round_number, "limit": 20000}
+        )
+        return [RaceLap(**row) for row in payload]
 
     async def grid(self, season: int, round_number: int) -> List[GridSlot]:
         payload = await self._get(

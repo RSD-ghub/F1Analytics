@@ -39,6 +39,24 @@ class CorpusIncomplete(RuntimeError):
     """
 
 
+#: Lap timing starts here; earlier races have no laps to fetch.
+FIRST_LAP_SEASON = 2018
+
+
+async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
+    """Corrected race-pace gaps for every race in ``results`` that has laps."""
+    from app.services import race_pace
+
+    races = sorted({(r.season, r.round) for r in results if r.season >= FIRST_LAP_SEASON})
+    laps = []
+    for season, round_number in races:
+        laps.extend(await client.race_laps(season, round_number))
+    gaps = race_pace.gaps_by_race(laps)
+    logger.info("race pace: %s laps, %s of %s races usable",
+                len(laps), len(gaps), len(races))
+    return gaps
+
+
 async def load(
     client: IngestionClient,
     from_season: int,

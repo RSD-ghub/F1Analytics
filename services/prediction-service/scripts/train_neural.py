@@ -67,7 +67,8 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("train_neural")
 
 
-def calibration_races(results, seasons: Sequence[int]) -> List:
+def calibration_races(results, seasons: Sequence[int], quali=None, practice=None,
+                      race_pace_gaps=None) -> List:
     """(drivers, actual positions, seed) for every race in ``seasons``.
 
     Built through ``build_snapshot`` on the race's real grid, as serving is on a
@@ -90,6 +91,10 @@ def calibration_races(results, seasons: Sequence[int]) -> List:
             snapshot = build_snapshot(
                 rows, season, round_number, LockWindow.FINAL_GRID,
                 circuit=circuits.get(round_number, ""), grid=grid,
+                quali_history=[q for q in quali or []
+                               if q.season in (season, season - 1)],
+                practice=[p for p in practice or [] if p.season == season],
+                race_pace_gaps=race_pace_gaps,
             )
             if not snapshot.drivers or snapshot.as_of_round == 0:
                 continue
@@ -145,6 +150,7 @@ def main() -> int:
     validation_seasons = [int(s) for s in args.validation_seasons.split(",") if s.strip()]
 
     practice = []
+    race_pace_gaps = {}
     if args.from_api:
         import asyncio
         from app.services.ingestion_client import IngestionClient
@@ -156,6 +162,7 @@ def main() -> int:
             require_complete=not args.allow_incomplete,
         ))
         practice = asyncio.run(_load_practice(client, args.from_season, max(test_seasons)))
+        race_pace_gaps = asyncio.run(corpus.load_race_pace(client, results))
     elif args.results:
         results = load_results(args.results)
         quali = load_quali(args.quali)
@@ -166,6 +173,7 @@ def main() -> int:
     observations = dataset.build_observations(
         usable, target_season=args.target_season, with_grid=True,
         decay=args.decay, quali=quali, practice=practice,
+        race_pace_gaps=race_pace_gaps,
     )
     names = feature_names(with_grid=True)
 
@@ -207,7 +215,7 @@ def main() -> int:
     # Both sampled at the champion's calibrated temperature, then scored on
     # the published markets of the test seasons.
     network_model = NeuralRaceModel(params=params, means=means, stds=stds)
-    test_races = calibration_races(results, test_seasons)
+    test_races = calibration_races(results, test_seasons, quali, practice, race_pace_gaps)
     linear_brier = calibrate.evaluate_temperature(champion, test_races, temperature)
     network_brier = calibrate.evaluate_temperature(network_model, test_races, temperature)
     linear_temperature = network_temperature = temperature

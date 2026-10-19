@@ -111,10 +111,24 @@ BASE_FEATURES = (
 #: The features are computed, tested and available; only their entry into the
 #: model is withdrawn. Re-add these names when there is a measurement that
 #: justifies them — two have now said otherwise.
+#:
+#: Race pace from lap times (``services/race_pace.py``) was measured the same
+#: way: fuel- and tyre-corrected pace per race from ~210,000 laps (2018 on),
+#: averaged over the last 1, 3, 5 or 8 races, for the driver, the car, or both.
+#: Fitted on 2014-2021, scored on validation 2022-23 and test 2024-25:
+#:
+#:     post_quali test  9.86% -> 9.85% .. 9.93%   (validation 6.65% -> 6.47% .. 6.68%)
+#:
+#: Nothing — the best variant moves the test log-likelihood by 0.03 per race,
+#: inside the noise of 46 races. Finishing form, points and qualifying gaps
+#: already carry what a rolling race pace knows. The pace estimates are kept:
+#: they are what the lap-by-lap simulator is built from.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",
     "team_regulation_mastery",
+    "race_pace_recent_pct",
+    "team_race_pace_pct",
 )
 
 #: Grid position, split by era. Only one is non-zero for any given race — the

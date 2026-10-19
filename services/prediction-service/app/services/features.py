@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence
 from app.services import circuits, team_lineage
 from app.training import eras
 from app.models.schemas import GRID_WINDOWS, DriverFeatures, FeatureSnapshot, LockWindow
-from app.services import practice_signal, quali_pace
+from app.services import practice_signal, quali_pace, race_pace
 from app.services.ingestion_client import (
     GridSlot,
     PracticePace,
@@ -51,6 +51,7 @@ def build_snapshot(
     grid: Optional[Sequence[GridSlot]] = None,
     quali_history: Optional[Sequence[QualiResult]] = None,
     practice: Optional[Sequence[PracticePace]] = None,
+    race_pace_gaps: Optional[Dict] = None,
 ) -> FeatureSnapshot:
     """Build the feature set for one forecast.
 
@@ -58,8 +59,13 @@ def build_snapshot(
     ignored rather than trusted, because a pre-quali forecast that saw the grid
     would be mislabelled in the track record and would flatter the model exactly
     where it claims to be doing something hard.
+
+    ``race_pace_gaps`` is ``race_pace.gaps_by_race`` over any span of races; it
+    is cut here at the target round exactly as results are.
     """
     history = _point_in_time(results, season, target_round)
+    pace_gaps = race_pace.restrict(race_pace_gaps, season, target_round)
+    pace_teams = race_pace.teams_by_race(history)
     use_grid = window in GRID_WINDOWS and grid
 
     # Qualifying pace. The rolling features are cut at the target round exactly
@@ -95,6 +101,12 @@ def build_snapshot(
             use_current_quali=bool(use_grid),
             practice_gap=practice_gaps.get(
                 driver, practice_signal.NEUTRAL_GAP_PCT
+            ),
+            race_pace_recent=race_pace.recent_gap(
+                pace_gaps, driver, season, target_round
+            ),
+            team_race_pace=race_pace.team_recent_gap(
+                pace_gaps, pace_teams, team, season, target_round
             ),
         )
         # Sorted so the snapshot is byte-stable: an unstable order would make
@@ -313,6 +325,8 @@ def _driver_features(
     use_current_quali: bool = False,
     practice_gap: float = practice_signal.NEUTRAL_GAP_PCT,
     archetypes=None,
+    race_pace_recent: float = race_pace.NEUTRAL_GAP_PCT,
+    team_race_pace: float = race_pace.NEUTRAL_GAP_PCT,
 ) -> DriverFeatures:
     quali_gaps = quali_gaps or {}
     quali_rows = quali_rows or []
@@ -343,6 +357,8 @@ def _driver_features(
             quali_teammate_gap_pct=teammate_quali,
             quali_gap_pct=current_quali,
             practice_long_run_gap_pct=practice_gap,
+            race_pace_recent_pct=race_pace_recent,
+            team_race_pace_pct=team_race_pace,
             # A debutant has no record anywhere, but the car they are in does.
             driver_archetype_delta=0.0,
             team_archetype_delta=_team_archetype_delta(
@@ -364,6 +380,8 @@ def _driver_features(
         quali_teammate_gap_pct=teammate_quali,
         quali_gap_pct=current_quali,
         practice_long_run_gap_pct=practice_gap,
+        race_pace_recent_pct=race_pace_recent,
+        team_race_pace_pct=team_race_pace,
         avg_grid_recent=_average_grid(recent),
         teammate_delta=_teammate_delta(history, driver, team, season),
         positions_gained=_positions_gained(recent),
