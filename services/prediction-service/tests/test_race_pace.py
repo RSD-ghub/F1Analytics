@@ -74,3 +74,21 @@ def test_the_car_counts_its_better_driver_and_follows_a_rename():
     ]
     teams = race_pace.teams_by_race(results)
     assert abs(race_pace.team_recent_gap(gaps, teams, "Aston Martin", 2025, 3) - 0.005) < 1e-12
+
+
+def strip(laps, stints=True):
+    """The same race as jolpica serves it: no compound, maybe no stints."""
+    return [lap.model_copy(update={"compound": "Unknown", **({} if stints else {"stint": 0})})
+            for lap in laps]
+
+
+def test_without_compounds_the_pace_gap_is_still_recovered():
+    gaps = race_pace.race_gaps(strip(race(FIELD)))
+    for driver, delta in FIELD.items():
+        assert abs(gaps[driver] * BASE - delta) < 0.1
+
+
+def test_without_stints_they_are_inferred_from_the_pit_laps():
+    gaps = race_pace.race_gaps(strip(race(FIELD), stints=False))
+    for driver, delta in FIELD.items():
+        assert abs(gaps[driver] * BASE - delta) < 0.1

@@ -70,15 +70,67 @@ MIN_DRIVERS = 6
 _UNUSABLE_COMPOUNDS = {"", "nan", "none", "unknown", "test_unknown"}
 
 
+#: A lap this much slower than the race's typical lap, on a lap the field ran
+#: at racing speed, is an in-lap or out-lap — where stints must be inferred.
+PIT_SPIKE_FACTOR = 1.12
+
+
+def _usable_compound(lap: RaceLap) -> bool:
+    return (lap.compound or "").strip().lower() not in _UNUSABLE_COMPOUNDS
+
+
+def _infer_stints(laps: Sequence[RaceLap], neutralised, typical: float) -> List[RaceLap]:
+    """Stints from pit-lap spikes, for races with no stint data (before 2012).
+
+    A run of consecutive laps far off the typical pace, on laps the field ran
+    at racing speed, is one stop: the stint changes on the lap after its first.
+    """
+    out: List[RaceLap] = []
+    by_driver: Dict[str, List[RaceLap]] = {}
+    for lap in laps:
+        by_driver.setdefault(lap.driver, []).append(lap)
+    for rows in by_driver.values():
+        rows.sort(key=lambda lap: lap.lap)
+        stint, previous_spike = 1, False
+        for lap in rows:
+            spike = (lap.lap not in neutralised
+                     and lap.lap_time_seconds > PIT_SPIKE_FACTOR * typical)
+            out.append(lap.model_copy(update={"stint": stint}))
+            if spike and not previous_spike:
+                stint += 1
+            previous_spike = spike
+    return out
+
+
 def _clean_laps(laps: Sequence[RaceLap]) -> List[RaceLap]:
-    """The laps that measure pace, per the rules in the module docstring."""
-    timed = [
-        lap for lap in laps
-        if lap.lap_time_seconds > 0 and lap.lap >= 2
-        and (lap.compound or "").strip().lower() not in _UNUSABLE_COMPOUNDS
-    ]
+    """The laps that measure pace, per the rules in the module docstring.
+
+    Laps from before 2018 (jolpica) carry no compound, and before 2012 no
+    stint either. With no compound anywhere in the race, every lap counts as
+    one unnamed compound — the fit keeps fuel and a wear slope per stint; with
+    no stints, they are inferred from the pit-lap spikes.
+    """
+    timed = [lap for lap in laps if lap.lap_time_seconds > 0 and lap.lap >= 2]
+    if any(_usable_compound(lap) for lap in timed):
+        timed = [lap for lap in timed if _usable_compound(lap)]
+    else:
+        timed = [lap.model_copy(update={"compound": "UNKNOWN"}) for lap in timed]
     if not timed:
         return []
+
+    # Neutralised laps, seen in the field rather than read from messages.
+    by_lap: Dict[int, List[float]] = {}
+    for lap in timed:
+        by_lap.setdefault(lap.lap, []).append(lap.lap_time_seconds)
+    lap_medians = {number: float(np.median(times)) for number, times in by_lap.items()}
+    typical = float(np.median(list(lap_medians.values())))
+    neutralised = {
+        number for number, median in lap_medians.items()
+        if median > NEUTRALISED_FACTOR * typical
+    }
+
+    if all(lap.stint <= 0 for lap in timed):
+        timed = _infer_stints(timed, neutralised, typical)
 
     # In- and out-laps: the first lap of every stint after the first, and the
     # last lap of every stint the driver later left.
@@ -94,17 +146,6 @@ def _clean_laps(laps: Sequence[RaceLap]) -> List[RaceLap]:
             pit_laps.add((driver, min(numbers)))
         if stint < last_stint[driver]:
             pit_laps.add((driver, max(numbers)))
-
-    # Neutralised laps, seen in the field rather than read from messages.
-    by_lap: Dict[int, List[float]] = {}
-    for lap in timed:
-        by_lap.setdefault(lap.lap, []).append(lap.lap_time_seconds)
-    lap_medians = {number: float(np.median(times)) for number, times in by_lap.items()}
-    typical = float(np.median(list(lap_medians.values())))
-    neutralised = {
-        number for number, median in lap_medians.items()
-        if median > NEUTRALISED_FACTOR * typical
-    }
 
     return [
         lap for lap in timed

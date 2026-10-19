@@ -39,8 +39,13 @@ class CorpusIncomplete(RuntimeError):
     """
 
 
-#: Lap timing starts here; earlier races have no laps to fetch.
+#: FastF1 lap timing — with compounds, stints, speeds — starts here. The lap
+#: simulator's circuit profiles are built from these seasons only: lap times
+#: from older cars would skew a circuit's typical lap and fuel effect.
 FIRST_LAP_SEASON = 2018
+#: Lap times alone (jolpica, no compounds) go back to here; the race-pace
+#: estimate, which needs only times, uses them.
+FIRST_HISTORICAL_LAP_SEASON = 2008
 
 
 async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
@@ -51,7 +56,8 @@ async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
     if not {"race_pace_recent_pct", "team_race_pace_pct"} & set(BASE_FEATURES):
         # Withheld from the model (see WITHHELD_FEATURES): nothing to fetch.
         return {}
-    races = sorted({(r.season, r.round) for r in results if r.season >= FIRST_LAP_SEASON})
+    races = sorted({(r.season, r.round) for r in results
+                    if r.season >= FIRST_HISTORICAL_LAP_SEASON})
     laps = []
     for season, round_number in races:
         laps.extend(await client.race_laps(season, round_number))
