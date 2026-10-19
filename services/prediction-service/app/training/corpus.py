@@ -46,7 +46,11 @@ FIRST_LAP_SEASON = 2018
 async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
     """Corrected race-pace gaps for every race in ``results`` that has laps."""
     from app.services import race_pace
+    from app.services.model import BASE_FEATURES
 
+    if not {"race_pace_recent_pct", "team_race_pace_pct"} & set(BASE_FEATURES):
+        # Withheld from the model (see WITHHELD_FEATURES): nothing to fetch.
+        return {}
     races = sorted({(r.season, r.round) for r in results if r.season >= FIRST_LAP_SEASON})
     laps = []
     for season, round_number in races:
