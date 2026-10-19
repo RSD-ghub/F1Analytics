@@ -124,6 +124,17 @@ BASE_FEATURES = (
 #: already carry what a rolling race pace knows. The pace estimates are kept:
 #: they are what the lap-by-lap simulator is built from.
 #:
+#: Re-measured with laps back to 2010 (jolpica, ~180,000 more), so the 2014-17
+#: training races carry real pace instead of the neutral value. The car's race
+#: pace now fits a real, correctly signed weight (about -0.13), and over
+#: averaging windows of 2 to 12 races:
+#:
+#:     team race pace    validation 6.62% -> 6.63% .. 6.79%   test 9.85% -> 9.82% .. 9.85%
+#:     driver race pace  validation 6.62% -> 6.53% .. 6.66%   test 9.85% -> 9.80% .. 9.86%
+#:
+#: A signal now, and a small one; on the test seasons it still does not beat
+#: the model without it. Still withheld.
+#:
 #: Team form tracked race by race (``services/team_form.py``, a Kalman filter
 #: per car on qualifying gap and on mean finish, widened at each new season
 #: and more at a regulation reset), measured the same way over six settings
