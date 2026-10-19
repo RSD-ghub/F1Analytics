@@ -112,6 +112,47 @@ def test_the_network_learns_an_interaction_a_straight_line_cannot():
     assert neural.mean_log_likelihood(params, test) > linear_ll + 1.0
 
 
+def test_a_pinned_linear_term_is_left_exactly_as_fitted():
+    """The network builds on the Plackett-Luce weights; it must not move them."""
+    rng = np.random.default_rng(5)
+    races = [RaceObservation(rng.normal(size=(8, 3)), list(rng.permutation(8)[:5]))
+             for _ in range(30)]
+    pinned = np.array([0.4, -0.2, 0.1])
+    params = neural.fit(races, hidden=3, l2_hidden=1.0, fixed_linear=pinned)
+    assert np.array_equal(params.linear, pinned)
+
+
+def test_with_nothing_to_learn_the_network_is_the_fitted_model():
+    """Orders drawn from the linear model itself leave a hidden layer nothing
+    real to find, so validation should pick the pinned model alone."""
+    rng = np.random.default_rng(8)
+    pinned = np.array([1.0, -0.5])
+
+    def races(count):
+        out = []
+        for _ in range(count):
+            x = rng.normal(size=(10, 2))
+            order = list(np.argsort(-(x @ pinned + rng.gumbel(size=10))))
+            out.append(RaceObservation(x, order))
+        return out
+
+    params, chosen, sweep = neural.select(
+        races(40), races(40), grid=((8, 0.01),), fixed_linear=pinned)
+    assert sweep[0]["hidden"] == 0
+    assert chosen["hidden"] == 0
+    assert np.array_equal(params.linear, pinned)
+    assert not params.output.any()
+
+
+def test_the_fit_cannot_run_away():
+    """Bounded weights: the first real training run overflowed the hidden layer
+    on its lightly penalised candidates."""
+    rng = np.random.default_rng(9)
+    races = [RaceObservation(rng.normal(size=(6, 2)) * 50, [0, 1, 2]) for _ in range(20)]
+    params = neural.fit(races, hidden=4, l2_hidden=0.0)
+    assert np.abs(params.flatten()).max() <= neural.WEIGHT_BOUND
+
+
 def test_parameters_survive_a_round_trip():
     params = neural.NetworkParameters.initial(len(NAMES), 5, seed=2)
     again = neural.NetworkParameters.from_dict(params.to_dict())
@@ -133,9 +174,9 @@ def test_a_driver_missing_from_the_grid_is_not_read_as_pole():
 # ── The simulation ───────────────────────────────────────────────────────────
 
 
-def test_it_runs_five_thousand_races_by_default():
-    assert SIMULATION_RUNS == 5000
-    assert network_model().runs == 5000
+def test_it_runs_ten_thousand_races_by_default():
+    assert SIMULATION_RUNS == 10000
+    assert network_model().runs == 10000
 
 
 def test_every_run_ends_somewhere():
@@ -203,16 +244,21 @@ def confirmed_client():
     return client
 
 
-async def test_without_a_trained_network_it_says_so():
+async def test_without_a_trained_network_it_simulates_on_the_fitted_model():
+    """The simulation must always work: no network means the Plackett-Luce
+    model runs the ten thousand races itself, with nothing to compare against."""
     predictor = Predictor(client=confirmed_client(), store=FakeStore(), model=make_model())
     result = await predictor.simulate(2026, 5)
-    assert result.status is SimulationStatus.MODEL_NOT_TRAINED
-    assert not result.drivers
+    assert result.status is SimulationStatus.READY
+    assert result.runs == 10000
+    assert result.model_version == make_model().version
+    assert result.baseline_model_version == ""
+    assert result.drivers and all(d.baseline is None for d in result.drivers)
 
 
 async def test_it_waits_for_the_confirmed_grid():
     """Qualifying order is not the grid; a penalised driver would start from
-    the wrong slot in every one of the five thousand races."""
+    the wrong slot in every one of the ten thousand races."""
     predictor = Predictor(client=FakeClient(), store=FakeStore(), model=make_model(),
                           final_grid_model=network_model())
     result = await predictor.simulate(2026, 5)
@@ -225,7 +271,7 @@ async def test_on_the_confirmed_grid_it_simulates_with_the_network():
                           final_grid_model=network_model())
     result = await predictor.simulate(2026, 5)
     assert result.status is SimulationStatus.READY
-    assert result.runs == 5000
+    assert result.runs == 10000
     assert result.model_version == "race-neural-v1"
     assert result.baseline_model_version == make_model().version
     assert {d.driver for d in result.drivers} >= {"Max Verstappen", "Lando Norris"}

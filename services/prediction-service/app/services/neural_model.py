@@ -45,8 +45,9 @@ logger = logging.getLogger(__name__)
 #: model: the track record is grouped by version.
 NEURAL_MODEL_VERSION = "race-neural-v1"
 
-#: How many races are simulated per forecast.
-SIMULATION_RUNS = 5000
+#: How many races are simulated on the confirmed grid. Ten thousand puts the
+#: Monte Carlo error on a 30% win chance under half a point.
+SIMULATION_RUNS = 10000
 
 
 class NeuralRaceModel(RaceModel):

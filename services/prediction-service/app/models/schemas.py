@@ -329,8 +329,6 @@ class SimulationStatus(str, Enum):
     #: The FIA's final grid is not published yet. Simulating on qualifying
     #: order would hand any penalised driver the wrong starting slot.
     AWAITING_CONFIRMED_GRID = "awaiting_confirmed_grid"
-    #: No neural weights have been trained on this deployment.
-    MODEL_NOT_TRAINED = "model_not_trained"
 
 
 class SimulatedDriver(BaseModel):
@@ -350,6 +348,7 @@ class SimulatedDriver(BaseModel):
     position_probabilities: List[float] = Field(default_factory=list)
     #: The linear model's numbers for the same driver on the same grid, so the
     #: network's view is always shown next to the one it is measured against.
+    #: None when the simulation ran on the linear model itself.
     baseline: Optional[DriverProbability] = None
 
 

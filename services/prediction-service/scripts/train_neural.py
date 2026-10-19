@@ -7,14 +7,19 @@ Usage:
 
 Same corpus, same features, same splits as ``train_model.py``:
 
-* **train** — every season before the held-out ones; both models are fitted here.
-* **validation** (2022-2023) — picks the network's width and penalty, and each
-  model's sampling temperature. Never used to fit weights.
+* **train** — every season before the held-out ones; the hidden layer is fitted here.
+* **validation** (2022-2023) — picks the network's width and penalty.
 * **test** (2024-2025) — scored once, at the end, for both models.
 
-The linear model is refitted here on the same races rather than read from
-``model_weights.json``, so the head-to-head is like for like: any difference is
-the network, not a different corpus or a different day's data.
+**Built on the Plackett-Luce model.** The network does not start from scratch.
+It takes the fitted model's feature scaling, its weights and its calibrated
+temperature from ``model_weights.json`` unchanged, and fits only a hidden layer
+that corrects its strengths. The first version fitted everything afresh on 152
+races and lost to the linear model on the test seasons by a wide margin (5.2%
+improvement over uniform against 9.9%): the data cannot support re-learning
+what the linear fit already knows. The fitted model alone is also one of the
+candidates, so if no hidden layer helps on validation the network *is* that
+model and the simulation is exactly as good as the published forecast.
 
 **Promotion.** The network places the final-grid forecast only if, on the test
 seasons, it beats the linear model's log-likelihood by ``MIN_RELATIVE_GAIN`` of
@@ -43,6 +48,7 @@ from app.services.features import build_snapshot  # noqa: E402
 from app.services.ingestion_client import GridSlot  # noqa: E402
 from app.services.model import (  # noqa: E402
     NEURAL_WEIGHTS_PATH,
+    WEIGHTS_PATH,
     RaceModel,
     feature_names,
 )
@@ -130,6 +136,8 @@ def main() -> int:
     parser.add_argument("--decay", type=float, default=0.6)
     parser.add_argument("--from-season", type=int, default=TRAINING_FROM_SEASON)
     parser.add_argument("--output", default=NEURAL_WEIGHTS_PATH)
+    parser.add_argument("--champion", default=WEIGHTS_PATH,
+                        help="The Plackett-Luce artifact whose parameters the network builds on.")
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
 
@@ -160,20 +168,32 @@ def main() -> int:
         decay=args.decay, quali=quali, practice=practice,
     )
     names = feature_names(with_grid=True)
-    means, stds = dataset.standardise(observations, names)
+
+    # The Plackett-Luce model's own fitted parameters: its scaling, its
+    # weights and its calibrated temperature. The network keeps all three and
+    # learns only a correction on top, so it starts as the model that is
+    # already measured to work and has to earn any change it makes.
+    champion = RaceModel.load(args.champion)
+    means = {name: champion.means.get(name, 0.0) for name in names}
+    stds = {name: champion.stds.get(name, 1.0) or 1.0 for name in names}
+    mean_vector = np.array([means[name] for name in names])
+    std_vector = np.array([stds[name] for name in names])
+    for observation in observations:
+        observation.features = (observation.features - mean_vector) / std_vector
+    linear_vector = np.array([champion.weights.get(name, 0.0) for name in names])
+    temperature = champion.noise_scale
+
     rest, test = dataset.split_by_season(observations, test_seasons)
     train, validation = dataset.split_by_season(rest, validation_seasons)
     if not train or not validation or not test:
         raise SystemExit("empty train, validation or test split; check the seasons")
     logger.info("races: train %s, validation %s, test %s",
                 len(train), len(validation), len(test))
+    logger.info("linear term and temperature (%.2f) from %s", temperature, champion.version)
 
-    # Linear: the same fit train_model.py makes, on the same races.
-    linear_weights = plackett_luce.fit(train, names)
-    linear_vector = np.array([linear_weights[n] for n in names])
-
-    params, chosen, sweep = neural.select(train, validation)
-    logger.info("\nnetwork search (validation log-likelihood):")
+    params, chosen, sweep = neural.select(train, validation, fixed_linear=linear_vector)
+    logger.info("\nnetwork search (validation log-likelihood; hidden 0 is %s alone):",
+                champion.version)
     for row in sweep:
         marker = "  <- chosen" if (row["hidden"], row["l2_hidden"]) == (
             chosen["hidden"], chosen["l2_hidden"]) else ""
@@ -184,19 +204,13 @@ def main() -> int:
     linear_ll = plackett_luce.mean_log_likelihood(linear_vector, test)
     network_ll = neural.mean_log_likelihood(params, test)
 
-    # Temperatures on validation, then Brier on test, for both.
-    linear_model = RaceModel(weights=linear_weights, means=means, stds=stds)
+    # Both sampled at the champion's calibrated temperature, then scored on
+    # the published markets of the test seasons.
     network_model = NeuralRaceModel(params=params, means=means, stds=stds)
-    validation_races = calibration_races(results, validation_seasons)
     test_races = calibration_races(results, test_seasons)
-    linear_temperature, _ = calibrate.fit_temperature(linear_model, validation_races)
-    network_temperature, network_sweep = calibrate.fit_temperature(
-        network_model, validation_races
-    )
-    linear_brier = calibrate.evaluate_temperature(
-        linear_model, test_races, linear_temperature)
-    network_brier = calibrate.evaluate_temperature(
-        network_model, test_races, network_temperature)
+    linear_brier = calibrate.evaluate_temperature(champion, test_races, temperature)
+    network_brier = calibrate.evaluate_temperature(network_model, test_races, temperature)
+    linear_temperature = network_temperature = temperature
 
     verdict = head_to_head(linear_ll, network_ll, uniform, linear_brier, network_brier)
 
@@ -231,8 +245,8 @@ def main() -> int:
         "feature_names": names,
         "feature_means": means,
         "feature_stds": stds,
-        "noise_scale": network_temperature,
-        "temperature_sweep": {str(k): v for k, v in network_sweep.items()},
+        "noise_scale": temperature,
+        "linear_from": champion.version,
         "promoted": verdict["promoted"],
         "metrics": {
             "test_races": len(test),

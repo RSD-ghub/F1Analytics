@@ -80,7 +80,7 @@ export default function NextRace() {
         <Forecast key={prediction.prediction_id} prediction={prediction} sprint />
       ))}
 
-      {/* The neural model's five thousand races on the confirmed grid. Leads
+      {/* The neural model's ten thousand races on the confirmed grid. Leads
           the Grand Prix once it exists: it is the most informed view of the
           race there is. Before the grid is confirmed it says what it is
           waiting for. */}

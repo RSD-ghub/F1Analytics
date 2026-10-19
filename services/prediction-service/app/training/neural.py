@@ -19,6 +19,13 @@ A network without the skip connection would have to rediscover "a better grid
 slot is better" through tanh units, and with a couple of hundred training races
 it would do that badly.
 
+**And it is pinned to the fitted Plackett-Luce weights.** Fitting the linear
+term afresh alongside the hidden layer was tried first, on 2014-2025: the
+network lost to the linear model on the test seasons by a wide margin. So
+``scripts/train_neural.py`` passes the champion's weights as ``fixed_linear``
+and only the hidden layer is fitted, as a correction to a model already shown
+to work.
+
 **Small, and penalised.** A few hundred races is not much data for a network.
 Hidden width and the penalty on the hidden layer are chosen on the validation
 seasons, never on the test seasons, and the test score is what decides whether
@@ -32,7 +39,7 @@ the serving image stays the size it is.
 """
 
 import logging
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -47,11 +54,21 @@ DEFAULT_L2_LINEAR = 1e-3
 DEFAULT_L2_HIDDEN = 1e-1
 
 #: Candidate (hidden width, hidden penalty) pairs, chosen on validation seasons.
+#:
+#: Penalties start at 1.0. Measured on 2014-2025 with the linear term free, the
+#: 0.1 candidates were the worst of the sweep at every width (hidden 16 scored
+#: -44.6 on validation against -38.3 for the best): a couple of hundred races
+#: cannot support a lightly penalised hidden layer.
 SEARCH_GRID = (
-    (4, 1e-1), (4, 1.0),
-    (8, 1e-1), (8, 1.0),
-    (16, 1e-1), (16, 1.0),
+    (4, 1.0), (4, 10.0),
+    (8, 1.0), (8, 10.0),
+    (16, 10.0),
 )
+
+#: Box on every free weight. A standardised feature times a weight of 10 is
+#: already a decisive strength gap; without the box, L-BFGS line searches on the
+#: lightly penalised candidates stepped far enough to overflow the hidden layer.
+WEIGHT_BOUND = 10.0
 
 
 class NetworkParameters:
@@ -197,27 +214,43 @@ def fit(
     l2_hidden: float = DEFAULT_L2_HIDDEN,
     seed: int = 0,
     max_iterations: int = 1000,
+    fixed_linear: Optional[np.ndarray] = None,
 ) -> NetworkParameters:
     """Fit by L-BFGS-B from a fixed seed, so a refit is reproducible.
 
     Unlike the linear fit this objective is not convex, so the starting point
     matters. The seed is fixed rather than searched over: trying many seeds and
     keeping the best on validation is one more way of fitting the validation set.
+
+    ``fixed_linear`` pins the linear term to given weights — the fitted
+    Plackett-Luce model's — and fits only the hidden layer, as a correction on
+    top of a model already measured to work. Pinned by equal bounds, so its
+    penalty and gradient are simply ignored by the optimiser.
     """
     from scipy.optimize import minimize
 
     if not races:
         raise ValueError("no races to train on")
     inputs = races[0].features.shape[1]
-    start = NetworkParameters.initial(inputs, hidden, seed=seed).flatten()
+    initial = NetworkParameters.initial(inputs, hidden, seed=seed)
+    linear_bounds = [(-WEIGHT_BOUND, WEIGHT_BOUND)] * inputs
+    if fixed_linear is not None:
+        initial.linear = np.asarray(fixed_linear, dtype=float)
+        linear_bounds = [(value, value) for value in initial.linear]
+        # The pinned term carries no penalty: it is not being fitted here.
+        l2_linear = 0.0
+    bounds = linear_bounds + [(-WEIGHT_BOUND, WEIGHT_BOUND)] * (
+        hidden * inputs + 2 * hidden
+    )
 
     result = minimize(
         fun=lambda flat: negative_log_likelihood(
             flat, races, inputs, hidden, l2_linear, l2_hidden
         ),
-        x0=start,
+        x0=initial.flatten(),
         jac=True,
         method="L-BFGS-B",
+        bounds=bounds,
         options={"maxiter": max_iterations},
     )
     if not result.success:
@@ -251,16 +284,31 @@ def select(
     validation: Sequence[RaceObservation],
     grid: Sequence[Tuple[int, float]] = SEARCH_GRID,
     seed: int = 0,
+    fixed_linear: Optional[np.ndarray] = None,
 ) -> Tuple[NetworkParameters, Dict[str, float], List[Dict[str, float]]]:
     """Choose width and penalty on validation, and return that fit.
 
     Returns the chosen network, its settings, and every candidate's validation
     score, so the choice is on record rather than an unexplained constant.
+
+    With ``fixed_linear``, the pinned linear model alone is a candidate too
+    (``hidden`` 0: a network whose hidden layer is silent). If no hidden layer
+    beats it on validation, that is what comes back — the network then is the
+    Plackett-Luce model, exactly, and the simulation is no worse for it.
     """
     sweep: List[Dict[str, float]] = []
     best = None
+    if fixed_linear is not None:
+        inputs = train[0].features.shape[1]
+        silent = NetworkParameters.initial(inputs, 1, seed=seed)
+        silent.linear = np.asarray(fixed_linear, dtype=float)
+        silent.hidden_weights = np.zeros_like(silent.hidden_weights)
+        score = mean_log_likelihood(silent, validation)
+        sweep.append({"hidden": 0, "l2_hidden": 0.0, "validation_ll": score})
+        best = (score, silent, {"hidden": 0, "l2_hidden": 0.0})
     for hidden, l2_hidden in grid:
-        params = fit(train, hidden=hidden, l2_hidden=l2_hidden, seed=seed)
+        params = fit(train, hidden=hidden, l2_hidden=l2_hidden, seed=seed,
+                     fixed_linear=fixed_linear)
         score = mean_log_likelihood(params, validation)
         sweep.append({"hidden": hidden, "l2_hidden": l2_hidden, "validation_ll": score})
         if best is None or score > best[0]:

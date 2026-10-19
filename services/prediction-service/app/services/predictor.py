@@ -37,6 +37,7 @@ from app.models.schemas import (
 )
 from app.services import features as feature_builder
 from app.services import race_simulation
+from app.services.neural_model import SIMULATION_RUNS
 from app.services.ingestion_client import (
     GridSlot,
     IngestionClient,
@@ -174,14 +175,10 @@ class Predictor:
         forecast are always about the same field. Never persisted.
         """
         base = dict(season=season, round=round_number, race_name=race_name)
-        network = self._final_grid_model
-        if network is None:
-            return RaceSimulation(
-                status=SimulationStatus.MODEL_NOT_TRAINED,
-                detail="no neural model has been trained on this deployment; "
-                       "run scripts/train_neural.py",
-                **base,
-            )
+        # Without a trained network the simulation still runs, on the
+        # Plackett-Luce model itself: the same field, the same sampler and the
+        # same 10,000 races, just without a second opinion to compare against.
+        network = self._final_grid_model or self._model
         window = LockWindow.FINAL_GRID
         try:
             snapshot, quality = await self._prepare(
@@ -196,16 +193,17 @@ class Predictor:
 
         seed = derive_seed(season, round_number, window)
         points_positions, _ = _race_terms(season, window)
+        compare = network is not self._model
         baseline = self._model.predict(
             snapshot.drivers, seed=seed, points_positions=points_positions
-        )
-        runs = runs or network.runs
+        ) if compare else None
+        runs = runs or SIMULATION_RUNS
         return RaceSimulation(
             status=SimulationStatus.READY,
             runs=runs,
             seed=seed,
             model_version=network.version,
-            baseline_model_version=self._model.version,
+            baseline_model_version=self._model.version if compare else "",
             model_promoted=bool(getattr(network, "promoted", False)),
             model_metrics=getattr(network, "metrics", {}) or {},
             generated_at=datetime.now(timezone.utc),

@@ -5,7 +5,7 @@ import {
 } from '@/components/ui/table'
 
 /**
- * The race run five thousand times on the confirmed grid.
+ * The race run ten thousand times on the confirmed grid.
  *
  * A locked forecast gives each driver three numbers. Every simulated run is a
  * whole race, so the runs together say much more — how often a car retires,
@@ -26,7 +26,7 @@ export default function RaceSimulation({ simulation }) {
     return (
       <Panel title="Race simulation">
         <p className="muted">
-          The neural network simulates the race five thousand times once the
+          The race is simulated ten thousand times once the
           FIA confirms the starting grid, about an hour before the start.
           Qualifying order is not the grid: a driver with a penalty would start
           from the wrong place in every simulated race.
@@ -34,37 +34,33 @@ export default function RaceSimulation({ simulation }) {
       </Panel>
     )
   }
-  if (status !== 'ready') {
-    return (
-      <Panel title="Race simulation">
-        <p className="muted">
-          The race simulation is not available yet: the neural network has not
-          been trained on this deployment.
-        </p>
-      </Panel>
-    )
-  }
+  if (status !== 'ready') return null
 
   const drivers = simulation.drivers || []
   const leader = drivers[0]
   const runs = simulation.runs.toLocaleString()
   const metrics = simulation.model_metrics || {}
+  // No baseline means the simulation ran on the Plackett-Luce model itself
+  // (no network trained yet): there is no second opinion to show.
+  const compared = Boolean(simulation.baseline_model_version)
 
   return (
     <Panel
       title={`${runs} simulated races on the confirmed grid`}
-      subtitle={`Neural model ${simulation.model_version} · compared with ${simulation.baseline_model_version}`}
+      subtitle={compared
+        ? `Neural model ${simulation.model_version} · compared with ${simulation.baseline_model_version}`
+        : `Model ${simulation.model_version}`}
       footer={<Caveats quality={simulation.data_quality} />}
     >
       <div className="forecast-head">
         <div>
           <InPlainWords leader={leader?.driver} win={leader?.p_win} podium={leader?.p_podium} />
-          <p className="small muted">
+          {compared && <p className="small muted">
             {simulation.model_promoted
               ? 'This network beat the linear model on two held-out seasons, so it also places the locked final-grid forecast.'
               : 'Shown alongside the locked forecast, not instead of it: the network has not yet beaten the linear model on held-out seasons, so the permanent record stays with the linear model.'}
             {metrics.verdict && ` (${metrics.verdict}.)`}
-          </p>
+          </p>}
         </div>
       </div>
 
@@ -78,7 +74,7 @@ export default function RaceSimulation({ simulation }) {
             <TableHead className="num">Podium</TableHead>
             <TableHead className="num">Points</TableHead>
             <TableHead className="num">DNF</TableHead>
-            <TableHead className="num">Linear model win</TableHead>
+            {compared && <TableHead className="num">Linear model win</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -97,9 +93,11 @@ export default function RaceSimulation({ simulation }) {
               <TableCell className="num"><Probability value={row.p_podium} /></TableCell>
               <TableCell className="num"><Probability value={row.p_points} /></TableCell>
               <TableCell className="num"><Probability value={row.p_dnf} /></TableCell>
-              <TableCell className="num muted">
-                <Probability value={row.baseline?.p_win} absentLabel="–" />
-              </TableCell>
+              {compared && (
+                <TableCell className="num muted">
+                  <Probability value={row.baseline?.p_win} absentLabel="–" />
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>

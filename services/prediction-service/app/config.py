@@ -42,7 +42,7 @@ class Settings(ServiceSettings):
     prediction_runs: int = 20000
 
     # Races simulated by the neural model on the confirmed grid.
-    race_simulation_runs: int = 5000
+    race_simulation_runs: int = 10000
 
     # The calibration knob. Raising it flattens probabilities toward uniform.
     # Fitted on the 2024 season — see DEFAULT_NOISE_SCALE in services/model.py
