@@ -277,8 +277,6 @@ body {
 
 .notice { background: var(--panel-soft); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 6px 6px 0; margin: 0 0 14px; font-size: 14px; }
 .notice.warn { border-left-color: var(--warn); }
-.guide-quote { border-left: 3px solid var(--panel-soft); margin: 12px 0 0; padding: 4px 0 4px 12px; font-style: italic; }
-.guide-quote footer { font-style: normal; margin-top: 4px; }
 .unavailable { background: #fdf3f2; border: 1px solid #f2d6d3; border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
 .loading { color: var(--muted); padding: 24px 0; }
 .error { color: var(--bad); font-size: 14px; }
@@ -959,4 +957,204 @@ a { color: var(--accent); }
     transform: translateY(-2px);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.20), 0 16px 44px rgba(0, 0, 0, 0.24);
   }
+}
+
+/* ── Strategy ─────────────────────────────────────────────────────────────── */
+/* A plan is drawn along the race. The tyre colours are Pirelli's own, the one
+   place this page leaves the house palette: a reader who follows the sport
+   knows a red sidewall is the soft before reading a word, and a key on the
+   panel covers the reader who does not. The darker yellow and grey keep the
+   letter on them above 4.5:1. */
+:root {
+  --tyre-soft: #d42a1e;
+  --tyre-medium: #f2c230;
+  --tyre-hard: #e9e7e1;
+  --tyre-inter: #2f9a3e;
+  --tyre-wet: #1f66b3;
+  --tyre-rubber: #1d1e22;
+}
+
+/* The car picker sits on the photograph as a bar, not as a whole panel: it is
+   a control, and a panel would weigh it like a finding. */
+.strat-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px;
+  background: var(--panel); border-radius: var(--radius); padding: 14px 18px; box-shadow: var(--lift);
+}
+.strat-for { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.strat-for strong { font-size: 17px; color: var(--ink); font-variation-settings: var(--display-mid); }
+.strat-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.strat-picker select {
+  font: inherit; font-size: 14px; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-soft); color: var(--text); min-width: 210px;
+}
+.strat-picker select:disabled { opacity: 0.6; }
+
+.strat-tiles .tile { box-shadow: var(--lift); border-top-width: 3px; }
+.strat-tiles .tile-value small { font-size: 18px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+.strat-tile-tyres { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.strat-tile-word {
+  font-size: 24px; font-weight: 700; color: var(--ink); text-transform: capitalize;
+  font-variation-settings: var(--display-mid); letter-spacing: -0.02em;
+}
+
+/* The tyre glyph. */
+.tyre { flex: none; display: inline-block; vertical-align: middle; }
+.tyre-rubber { fill: var(--tyre-rubber); }
+.tyre-band { stroke: var(--line); }
+.tyre-soft .tyre-band { stroke: var(--tyre-soft); }
+.tyre-medium .tyre-band { stroke: var(--tyre-medium); }
+.tyre-hard .tyre-band { stroke: var(--tyre-hard); }
+.tyre-intermediate .tyre-band { stroke: var(--tyre-inter); }
+.tyre-wet .tyre-band { stroke: var(--tyre-wet); }
+.tyre-letter { fill: #fff; font: 700 12px var(--sans); }
+.tyre-run { display: inline-flex; align-items: center; gap: 4px; }
+.tyre-run-step { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Plans A, B and C. Three columns: who, the race, why. */
+.plans { display: flex; flex-direction: column; gap: 6px; }
+.plan-row {
+  display: grid; grid-template-columns: 128px minmax(0, 1fr) minmax(0, 0.8fr);
+  gap: 18px; align-items: center; padding: 14px 12px; border-radius: 8px;
+}
+.plan-row.is-lead { background: linear-gradient(90deg, #fbf1ef, transparent 85%); }
+.plan-row + .plan-row:not(.plan-axis) { border-top: 1px solid var(--line-soft); }
+.plan-label { display: flex; align-items: center; gap: 12px; }
+.plan-letter {
+  width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center;
+  font-weight: 800; font-size: 19px; color: var(--ink); background: var(--panel-soft);
+  border: 1px solid var(--line); font-variation-settings: var(--display-wide);
+}
+.is-lead .plan-letter { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+.plan-name { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--ink); }
+.plan-delta { font-size: 12px; color: var(--muted); }
+.is-lead .plan-delta { color: var(--accent-deep); font-weight: 600; }
+
+.plan-track { position: relative; height: 30px; margin-top: 16px; }
+.stint {
+  position: absolute; top: 0; bottom: 0; border-radius: 5px;
+  display: flex; align-items: center; padding-left: 8px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); border-right: 2px solid var(--panel);
+}
+.stint-text { font: 600 11px var(--mono); white-space: nowrap; letter-spacing: 0.02em; }
+.stint-soft { background: var(--tyre-soft); color: #fff; }
+.stint-medium { background: var(--tyre-medium); color: #3a2c00; }
+.stint-hard { background: var(--tyre-hard); color: #2b2a28; box-shadow: inset 0 0 0 1px #cfccc4; }
+.stint-intermediate { background: var(--tyre-inter); color: #fff; }
+.stint-wet { background: var(--tyre-wet); color: #fff; }
+.pit-window {
+  position: absolute; top: -4px; bottom: -4px; border-radius: 6px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.42) 0 3px, transparent 3px 7px);
+  border: 1.5px dashed rgba(25, 18, 16, 0.6);
+}
+.pit-mark { position: absolute; top: -8px; bottom: -8px; width: 2px; margin-left: -1px; background: var(--ink); }
+.pit-flag {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 2px;
+  font-size: 10px; font-weight: 600; background: var(--ink); color: #fff;
+  padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+}
+
+.plan-meta { display: flex; flex-direction: column; gap: 5px; }
+.plan-why { margin: 0; font-size: 13px; line-height: 1.45; color: var(--prose); }
+.plan-stop { display: inline-flex; align-items: center; gap: 5px; }
+.plan-stop strong { color: var(--ink); }
+.plan-share { display: inline-flex; align-items: center; gap: 8px; }
+.share-track { width: 56px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; flex: none; }
+.share-fill { display: block; height: 100%; background: var(--data); }
+
+.plan-axis { padding-top: 0; padding-bottom: 0; }
+.lap-axis { position: relative; height: 18px; border-top: 1px solid var(--line); }
+.lap-tick { position: absolute; top: 3px; transform: translateX(-50%); font-size: 10px; color: var(--dim); }
+.lap-tick:first-child { transform: none; }
+.lap-tick:last-child { transform: translateX(-100%); }
+
+.tyre-key { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 4px; }
+.tyre-key .is-compound { text-transform: capitalize; }
+.tyre-key > span { display: inline-flex; align-items: center; gap: 6px; }
+.key-window { width: 18px; height: 12px; border-radius: 3px; border: 1.5px dashed rgba(25, 18, 16, 0.6); background: repeating-linear-gradient(135deg, rgba(25, 18, 16, 0.18) 0 3px, transparent 3px 7px); }
+.key-pit { width: 2px; height: 14px; background: var(--ink); }
+
+/* What kind of race. */
+.character { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 24px; align-items: center; }
+.character-summary { margin: 0; font-family: var(--serif); font-size: 17px; line-height: 1.5; color: var(--prose); max-width: var(--measure); }
+.meter { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.meter-steps { display: flex; gap: 3px; }
+.meter-step { width: 18px; height: 6px; border-radius: 3px; background: var(--line); }
+.meter-step.is-on { background: var(--data); }
+.evidence { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.evidence li {
+  font-size: 13px; padding: 5px 11px; border-radius: 20px;
+  background: var(--panel-soft); border: 1px solid var(--line-soft); color: var(--text);
+}
+
+.strat-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.start-tyre { display: flex; gap: 16px; align-items: flex-start; }
+.start-tyre p { margin: 0; color: var(--prose); }
+
+/* The safety-car calls laid on the same lap line as the plans. */
+.sc-strip { margin-bottom: 12px; }
+.sc-track { position: relative; height: 14px; border-radius: 7px; background: var(--panel-soft); border: 1px solid var(--line-soft); overflow: hidden; }
+.sc-window, .sc-extra, .sc-late { position: absolute; top: 0; bottom: 0; }
+.sc-window { background: #f2c230; }
+.sc-extra { background: rgba(29, 122, 77, 0.55); }
+.sc-late { right: 0; background: repeating-linear-gradient(135deg, #8b919c 0 3px, #c4c7cd 3px 6px); }
+.sc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; }
+.sc-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.key { width: 12px; height: 8px; border-radius: 2px; display: inline-block; }
+.sc-k-window { background: #f2c230; }
+.sc-k-extra { background: rgba(29, 122, 77, 0.55); }
+.sc-k-late { background: repeating-linear-gradient(135deg, #8b919c 0 3px, #c4c7cd 3px 6px); }
+
+.calls { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.calls li { position: relative; padding-left: 18px; color: var(--prose); }
+.calls li::before {
+  content: ''; position: absolute; left: 2px; top: 0.62em; width: 7px; height: 7px;
+  border-radius: 2px; background: var(--accent-deep);
+}
+
+/* The stop among the field, and the rivals for the undercut. */
+.positions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 16px; }
+.pos { display: flex; flex-direction: column; }
+.pos-value { font-size: 34px; font-weight: 700; color: var(--ink); line-height: 1.05; letter-spacing: -0.02em; }
+.pos-note { margin: 0; flex-basis: 100%; }
+.rivals { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.rival {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-soft);
+}
+.rival.is-on { border-color: #e7b9b4; background: #fdf3f2; }
+.rival strong { color: var(--ink); }
+.rival-verdict { margin-top: 4px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.rival-verdict.is-on { color: var(--accent-deep); }
+.edges { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.edge { display: flex; gap: 10px; padding: 12px 14px; border-radius: 8px; background: var(--panel-soft); }
+.edge svg { flex: none; margin-top: 3px; color: var(--accent-deep); }
+.edge p { margin: 0; font-size: 14px; color: var(--prose); }
+
+/* The book, quoted. Set in the serif so the strategist's voice reads as a
+   different voice from the engine's. */
+.guide-quote {
+  position: relative; margin: 18px 0 0; padding: 14px 18px 12px 46px;
+  background: #faf8f4; border: 1px solid var(--line-soft); border-left: 3px solid var(--accent-deep);
+  border-radius: 0 8px 8px 0;
+}
+.guide-quote::before {
+  content: '\201C'; position: absolute; left: 12px; top: 2px;
+  font: 700 44px/1 var(--serif); color: var(--accent-deep); opacity: 0.55;
+}
+.guide-quote p { margin: 0; font-family: var(--serif); font-size: 15px; line-height: 1.55; color: var(--prose); max-width: var(--measure); }
+.guide-quote footer {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 8px;
+  font-size: 12px; color: var(--muted);
+}
+.guide-quote cite { font-style: italic; }
+.guide-chapter {
+  font-family: var(--mono); font-size: 11px; padding: 1px 8px; border-radius: 20px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+}
+
+@media (max-width: 860px) {
+  .plan-row { grid-template-columns: 1fr; gap: 10px; }
+  .plan-axis > div:first-child, .plan-axis > div:last-child { display: none; }
+  .strat-pair { grid-template-columns: 1fr; }
+  .character { grid-template-columns: 1fr; }
 }
