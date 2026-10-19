@@ -54,7 +54,7 @@ from app.services.model import (  # noqa: E402
 )
 from app.services.neural_model import NEURAL_MODEL_VERSION, NeuralRaceModel  # noqa: E402
 from app.services.predictor import derive_seed  # noqa: E402
-from app.training import calibrate, dataset, neural, plackett_luce  # noqa: E402
+from app.training import calibrate, dataset, neural, plackett_luce, retirements  # noqa: E402
 from app.training.promotion import MIN_RELATIVE_GAIN  # noqa: E402
 from train_model import (  # noqa: E402
     TRAINING_FROM_SEASON,
@@ -220,6 +220,23 @@ def main() -> int:
     network_brier = calibrate.evaluate_temperature(network_model, test_races, temperature)
     linear_temperature = network_temperature = temperature
 
+    # Retirement clustering, fitted on the training seasons' results and
+    # scored on the test seasons against independent retirements.
+    train_seasons = {o.season for o in train}
+    race_k, team_k, moments = retirements.fit(
+        [r for r in results if r.season in train_seasons])
+    independent_score = calibrate.retirement_count_score(network_model, test_races)
+    network_model.retirement_race_k, network_model.retirement_team_k = race_k, team_k
+    clustered_score = calibrate.retirement_count_score(network_model, test_races)
+    logger.info(
+        "\nretirement clustering (training seasons): x%.2f per-race spread, "
+        "x%.2f team-mates together -> race_k %s, team_k %s",
+        moments.get("dispersion", 1.0), moments.get("teammate_ratio", 1.0),
+        "none" if race_k is None else "%.1f" % race_k,
+        "none" if team_k is None else "%.1f" % team_k)
+    logger.info("retirement-count log score on test: independent %.3f, clustered %.3f",
+                independent_score, clustered_score)
+
     verdict = head_to_head(linear_ll, network_ll, uniform, linear_brier, network_brier)
 
     logger.info("\n=== held-out %s (%s races) ===", test_seasons, len(test))
@@ -255,6 +272,11 @@ def main() -> int:
         "feature_stds": stds,
         "noise_scale": temperature,
         "linear_from": champion.version,
+        "retirement_clustering": {
+            "race_k": race_k, "team_k": team_k, "moments": moments,
+            "test_score_independent": independent_score,
+            "test_score_clustered": clustered_score,
+        },
         "promoted": verdict["promoted"],
         "metrics": {
             "test_races": len(test),

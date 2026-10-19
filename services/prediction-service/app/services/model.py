@@ -302,6 +302,11 @@ def race_distance_dnf(full_race_rate: float, distance_fraction: float) -> float:
     return 1.0 - (1.0 - full_race_rate) ** max(distance_fraction, 0.0)
 
 
+#: Ceiling on a clustered retirement probability. A large race and team draw
+#: together can exceed one; the cap binds on a tiny fraction of draws.
+MAX_CLUSTERED_RETIREMENT = 0.95
+
+
 class ModelWeightsMissing(RuntimeError):
     """No fitted weights artifact. The service must not serve guesses."""
 
@@ -343,6 +348,12 @@ class RaceModel:
         )
         self.runs = runs
         self._version = version
+        # Retirement clustering (``app/training/retirements.py``): gamma shapes
+        # for a per-race and a per-team multiplier on each car's retirement
+        # hazard. None draws no multiplier at all, so a model without them
+        # consumes exactly the random draws it always did.
+        self.retirement_race_k: Optional[float] = None
+        self.retirement_team_k: Optional[float] = None
 
     # ── Loading ──────────────────────────────────────────────────────────────
 
@@ -502,7 +513,13 @@ class RaceModel:
         gumbel = rng.gumbel(loc=0.0, scale=scale, size=(runs, len(drivers)))
         perturbed = strengths[None, :] + gumbel
 
-        retired = rng.random((runs, len(drivers))) < dnf_rates[None, :]
+        rates = dnf_rates[None, :]
+        if self.retirement_race_k or self.retirement_team_k:
+            rates = np.minimum(
+                rates * self._retirement_multipliers(rng, drivers, runs),
+                MAX_CLUSTERED_RETIREMENT,
+            )
+        retired = rng.random((runs, len(drivers))) < rates
         perturbed = np.where(retired, -np.inf, perturbed)
 
         order = np.argsort(-perturbed, axis=1)
@@ -510,6 +527,27 @@ class RaceModel:
         rows = np.arange(runs)[:, None]
         positions[rows, order] = np.arange(1, len(drivers) + 1)[None, :]
         return positions, retired
+
+    def _retirement_multipliers(
+        self, rng: np.random.Generator, drivers: Sequence[DriverFeatures], runs: int
+    ) -> np.ndarray:
+        """Hazard multipliers, mean 1: one per race, one per team per race.
+
+        Applied as ``p · m``, capped, which is what the shapes were fitted
+        against: it keeps the mean retirement rate exactly and reproduces the
+        record's clustering. ``1 - (1 - p) ** m`` flattens large draws and,
+        at a 16% rate, recovered under two-thirds of it.
+        """
+        multipliers = np.ones((runs, len(drivers)))
+        if self.retirement_race_k:
+            k = self.retirement_race_k
+            multipliers *= rng.gamma(k, 1.0 / k, size=runs)[:, None]
+        if self.retirement_team_k:
+            teams = sorted({d.team for d in drivers})
+            team_of = np.array([teams.index(d.team) for d in drivers])
+            k = self.retirement_team_k
+            multipliers *= rng.gamma(k, 1.0 / k, size=(runs, len(teams)))[:, team_of]
+        return multipliers
 
     def _summarise(
         self,
