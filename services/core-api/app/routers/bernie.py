@@ -33,6 +33,7 @@ from app.services.bernie import (
     Bernie,
     BernieUnavailable,
     grid_penalty_facts,
+    guide_facts,
     news_facts,
     regulation_facts,
     why_this_prediction_facts,
@@ -44,7 +45,14 @@ from app.services.conversation import (
     history_for_prompt,
 )
 from app.services.downstream import ServiceClient, gather_optional
+from app.routers.strategy import as_mapping, as_rows, load_race
 from app.services.strategy import build_inputs, simulate, strategy_facts
+from app.services.strategy_engine import (
+    build_field,
+    engine_facts,
+    mentioned_driver,
+    plan_race,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,9 +299,9 @@ async def _weekend_facts(
 
 
 async def _strategy_facts(
-    settings: Settings, season: int, round_number: int
+    settings: Settings, season: int, round_number: int, question: str = ""
 ) -> Dict[str, Any]:
-    """Simulate the race's strategy options, on every turn.
+    """Simulate the race's strategy options and plan it, on every turn.
 
     Always included, never gated on the question: "what should Norris do from
     P8?" names no tyre, and a gate guessing which questions are about strategy
@@ -305,30 +313,32 @@ async def _strategy_facts(
     reader there is no strategy because a measurement is missing is the
     dismissal this exists to replace; a strategist at a new circuit still has
     a plan.
+
+    The engine plans for the car the question names, when the grid holds one,
+    so "what should Norris do from P8?" gets Norris's rejoin and undercut, not
+    the leader's. It is the plan the Strategy page shows for the same car.
     """
-    ingestion_client = ServiceClient(
-        "ingestion", settings.ingestion_service_url,
-        settings.downstream_timeout_seconds,
-    )
-    fetched = await gather_optional(
-        profile=ingestion_client.get(
-            "/circuits/{}/{}/strategy".format(season, round_number)
-        ),
-        circuit=ingestion_client.get("/circuits/{}/{}".format(season, round_number)),
-    )
-    circuit = fetched.get("circuit") or {}
+    fetched = await load_race(settings, season, round_number)
+    circuit = as_mapping(fetched.get("circuit"))
     official = circuit.get("official") or {}
+    profile = fetched.get("profile") if isinstance(fetched.get("profile"), dict) else None
+    field = build_field(as_rows(fetched.get("qualifying")), as_rows(fetched.get("practice")))
+    car = mentioned_driver(field, clamp_question(question))
+    stats = circuit.get("stats") or {}
+
+    def run():
+        sim = simulate(build_inputs(profile, official.get("scheduled_laps")))
+        return sim, plan_race(sim, stats, field, car)
+
     # Pure arithmetic, but a few hundred thousand steps of it: off the event
     # loop so one Bernie turn does not stall every other request.
-    sim = await asyncio.to_thread(
-        lambda: simulate(build_inputs(fetched.get("profile"), official.get("scheduled_laps")))
-    )
+    sim, plan = await asyncio.to_thread(run)
     facts = strategy_facts(sim)
+    facts.update(engine_facts(plan))
 
     # How much track position is worth here, which the simulation leaves out:
     # an extra stop that is quicker on paper is no use at a circuit where the
     # order does not change.
-    stats = circuit.get("stats") or {}
     position: List[str] = []
     if stats.get("mean_places_changed") is not None:
         position.append(
@@ -345,12 +355,40 @@ async def _strategy_facts(
     if position:
         facts["track position at this circuit"] = position
 
-    if fetched["_unavailable"]:
+    if {"profile", "circuit"} & set(fetched["_unavailable"]):
         facts["note on the strategy simulation"] = (
             "This circuit's history could not be loaded, so the simulation used "
             "generic figures wherever its inputs say GENERIC."
         )
     return facts
+
+
+async def _guide_facts(settings: Settings, question: str) -> Dict[str, Any]:
+    """Passages from the strategy guide for **this** question, on every turn.
+
+    Ungated, like the regulations, for the same reason: "should they gamble on
+    a safety car from the back?" is a strategy-philosophy question that names
+    nothing a keyword list would catch. Bernie is told to pass over passages
+    that do not bear on the question.
+    """
+    question = clamp_question(question)
+    if len(question) < 2:
+        return {}
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    try:
+        hits = await ingestion_client.get("/guide/search", {"q": question, "limit": 5})
+    except Exception as exc:
+        logger.warning("strategy guide unavailable: %s", exc)
+        return {
+            "note on the strategy guide": (
+                "The strategy guide could not be searched for this question. Plan "
+                "from the strategy engine and say so if asked what the guide says."
+            )
+        }
+    return guide_facts(hits if isinstance(hits, list) else [])
 
 
 async def _regulation_facts(
@@ -487,7 +525,10 @@ async def start_thread(
     facts.update(await _news_facts(
         settings, request.question, request.season, request.round
     ))
-    facts.update(await _strategy_facts(settings, request.season, request.round))
+    facts.update(await _guide_facts(settings, request.question))
+    facts.update(await _strategy_facts(
+        settings, request.season, request.round, request.question
+    ))
     thread = await store.create(user["_id"], request.season, request.round)
     return await _turn(bernie, store, thread, request.question, facts)
 
@@ -520,7 +561,10 @@ async def continue_thread(
     facts.update(await _news_facts(
         settings, request.question, thread.season, thread.round
     ))
-    facts.update(await _strategy_facts(settings, thread.season, thread.round))
+    facts.update(await _guide_facts(settings, request.question))
+    facts.update(await _strategy_facts(
+        settings, thread.season, thread.round, request.question
+    ))
     return await _turn(bernie, store, thread, request.question, facts)
 
 

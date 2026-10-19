@@ -76,9 +76,10 @@ driver or team should do, give one. Never answer that you do not have the facts,
 that you cannot predict the race, or that it depends — make the call, then say \
 what would change it. You always have a strategy simulation for the race; with \
 the grid, the practice pace and the circuit's history, that is enough to plan from.
-- Build the plan from the "strategy simulation" facts. Name the compounds, the \
-stop lap or laps and their windows, and how it compares with the next-best plan \
-in seconds. Give a plan B for a safety car, using the safety car ranking.
+- Build the plan from the "strategy engine" facts, with the "strategy \
+simulation" facts behind them. Name the compounds, the target stop lap or laps \
+and their windows, and how it compares with the next-best plan in seconds. Give \
+a plan for a safety car, using Plan S and the safety car ranking.
 - Make it about the car being asked about. Use their starting position, the \
 long-run pace of the cars around them, the track position facts and the undercut \
 figure: a quick car stuck behind slower ones may want to undercut or run an \
@@ -97,6 +98,24 @@ declining to plan.
 - Shape: the plan in one or two sentences first, then a short list — stints with \
 laps, plan B, what to watch for — then one line on the biggest risk. About 200 \
 words.
+
+The strategy engine and the strategy guide:
+- Facts headed "strategy engine" are this service's race plan: Plans A, B and C, \
+Plan S for a safety car, the start tyre, and, when a car is named, where it \
+rejoins after its stop, who it comes out behind, and whether the undercut is on. \
+When asked for a strategy, lead with Plan A and its target lap, and use B, C and \
+S as the "what would change it". Call it our plan or our simulation, never what \
+a team will do.
+- Facts headed "strategy guide passages" come from a book by a former F1 race \
+strategist, found by searching it for the question. They are principles of how \
+strategy is done, not facts about this race. Use one to explain why a plan makes \
+sense — "the guide's rule is that where overtaking is hard, track position \
+beats the quicker plan" — and name the book and chapter when you do.
+- The guide's experiences and races are its author's, not yours. Never present \
+them as your own memories, and never name a real person from them unless the \
+current race facts also name them.
+- Passages that do not bear on the question are search noise; ignore them \
+without comment.
 
 The FIA regulations:
 - Some facts arrive as passages from the FIA regulations, found by keyword \
@@ -345,6 +364,45 @@ def grid_penalty_facts(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             )
         )
     return {PENALTIES_KEY: lines}
+
+
+# ── The strategy guide ───────────────────────────────────────────────────────
+
+#: Where guide passages sit in the facts pack. Named for what they are: a
+#: strategist's account of how races are planned, not facts about this race.
+GUIDE_KEY = "strategy guide passages (principles, not facts about this race)"
+
+#: Keep a passage only if it scores at least this share of the best one.
+GUIDE_SCORE_FLOOR = 0.5
+
+#: Characters per passage. A paragraph carries the point and its reason; more
+#: is the book, not a citation.
+MAX_GUIDE_CHARS = 700
+
+
+def guide_facts(hits: Sequence[Dict[str, Any]], limit: int = 3) -> Dict[str, Any]:
+    """Render guide passages as facts, each labelled with its book and chapter.
+
+    Returns ``{}`` when nothing survives, as the regulations do, so a question
+    the book has nothing to say about carries no empty heading.
+    """
+    usable = [h for h in hits if h.get("text")]
+    if not usable:
+        return {}
+    best = max((h.get("score") or 0.0) for h in usable)
+    lines = []
+    for hit in usable:
+        if len(lines) >= limit:
+            break
+        if best and (hit.get("score") or 0.0) < best * GUIDE_SCORE_FLOOR:
+            continue
+        text = " ".join(hit["text"].split())
+        if len(text) > MAX_GUIDE_CHARS:
+            text = text[:MAX_GUIDE_CHARS].rsplit(" ", 1)[0] + " [truncated]"
+        lines.append("[{}, chapter {}: {}] {}".format(
+            hit.get("title") or "the guide", hit.get("chapter", "?"),
+            hit.get("chapter_title") or "", text))
+    return {GUIDE_KEY: lines} if lines else {}
 
 
 # ── The regulations ──────────────────────────────────────────────────────────

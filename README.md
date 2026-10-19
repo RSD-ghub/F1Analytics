@@ -111,6 +111,11 @@ BACKFILL_SESSIONS_PER_HOUR=0 \
 
 # The FIA regulations, chunked by article. Re-run when a section is reissued.
 .venv/bin/python services/ingestion-service/scripts/ingest_regulations.py 2026
+
+# The strategy guide behind the Strategy page and Bernie's plans: a strategist's
+# book as plain text, chunked by chapter. The book is copyrighted, so keep the
+# file outside the repository; add --dry-run to check the parse first.
+.venv/bin/python services/ingestion-service/scripts/ingest_strategy_guide.py ~/books/how-to-win-a-grand-prix.txt
 ```
 
 Two things come in over the running service rather than from a script — the
