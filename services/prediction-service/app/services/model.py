@@ -123,12 +123,26 @@ BASE_FEATURES = (
 #: inside the noise of 46 races. Finishing form, points and qualifying gaps
 #: already carry what a rolling race pace knows. The pace estimates are kept:
 #: they are what the lap-by-lap simulator is built from.
+#:
+#: Team form tracked race by race (``services/team_form.py``, a Kalman filter
+#: per car on qualifying gap and on mean finish, widened at each new season
+#: and more at a regulation reset), measured the same way over six settings
+#: of how fast it adapts:
+#:
+#:     finishing form   validation 6.65% -> 6.91% .. 7.10%   test 9.86% -> 9.51% .. 9.71%
+#:     qualifying form  validation 6.65% -> 6.68%            test 9.86% -> 9.84%
+#:
+#: Every setting helps 2022-23 and hurts 2024-25, by about as much — a stable
+#: team order in the first pair, one reshuffled mid-season in the second. Over
+#: both, nothing. The test seasons decide; withheld.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",
     "team_regulation_mastery",
     "race_pace_recent_pct",
     "team_race_pace_pct",
+    "team_form_quali_pct",
+    "team_form_finish",
 )
 
 #: Grid position, split by era. Only one is non-zero for any given race — the

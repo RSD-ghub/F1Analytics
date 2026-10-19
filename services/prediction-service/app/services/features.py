@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence
 from app.services import circuits, team_lineage
 from app.training import eras
 from app.models.schemas import GRID_WINDOWS, DriverFeatures, FeatureSnapshot, LockWindow
-from app.services import practice_signal, quali_pace, race_pace
+from app.services import practice_signal, quali_pace, race_pace, team_form
 from app.services.ingestion_client import (
     GridSlot,
     PracticePace,
@@ -79,6 +79,9 @@ def build_snapshot(
         practice or [], season, target_round
     )
 
+    form_quali, form_finish = team_form.form_before(
+        history, quali_gaps, season, target_round)
+
     field = _entry_list(history, season, grid if use_grid else None)
     # `effective` prefers the confirmed grid and falls back to qualifying
     # classification; `build_snapshot` does not decide whether that fallback is
@@ -108,6 +111,8 @@ def build_snapshot(
             team_race_pace=race_pace.team_recent_gap(
                 pace_gaps, pace_teams, team, season, target_round
             ),
+            team_form_quali=team_form.for_team(form_quali, team, team_form.QUALI),
+            team_form_finish=team_form.for_team(form_finish, team, team_form.FINISH),
         )
         # Sorted so the snapshot is byte-stable: an unstable order would make
         # the snapshot hash change without the data changing.
@@ -327,6 +332,8 @@ def _driver_features(
     archetypes=None,
     race_pace_recent: float = race_pace.NEUTRAL_GAP_PCT,
     team_race_pace: float = race_pace.NEUTRAL_GAP_PCT,
+    team_form_quali: float = team_form.QUALI["neutral"],
+    team_form_finish: float = team_form.FINISH["neutral"],
 ) -> DriverFeatures:
     quali_gaps = quali_gaps or {}
     quali_rows = quali_rows or []
@@ -359,6 +366,8 @@ def _driver_features(
             practice_long_run_gap_pct=practice_gap,
             race_pace_recent_pct=race_pace_recent,
             team_race_pace_pct=team_race_pace,
+            team_form_quali_pct=team_form_quali,
+            team_form_finish=team_form_finish,
             # A debutant has no record anywhere, but the car they are in does.
             driver_archetype_delta=0.0,
             team_archetype_delta=_team_archetype_delta(
@@ -382,6 +391,8 @@ def _driver_features(
         practice_long_run_gap_pct=practice_gap,
         race_pace_recent_pct=race_pace_recent,
         team_race_pace_pct=team_race_pace,
+        team_form_quali_pct=team_form_quali,
+        team_form_finish=team_form_finish,
         avg_grid_recent=_average_grid(recent),
         teammate_delta=_teammate_delta(history, driver, team, season),
         positions_gained=_positions_gained(recent),

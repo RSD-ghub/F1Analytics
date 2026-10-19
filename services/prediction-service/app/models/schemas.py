@@ -173,6 +173,10 @@ class DriverFeatures(BaseModel):
     # better of its two drivers each race). Prior races only.
     race_pace_recent_pct: float = 0.015
     team_race_pace_pct: float = 0.015
+    # The car's form, Kalman-filtered race by race (``services/team_form.py``):
+    # qualifying gap to pole, and mean classified finish. Prior races only.
+    team_form_quali_pct: float = 0.015
+    team_form_finish: float = 10.5
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one
