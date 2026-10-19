@@ -380,6 +380,11 @@ class RaceSimulation(BaseModel):
     model_promoted: bool = False
     #: The held-out comparison the promotion was decided on.
     model_metrics: Dict[str, Any] = Field(default_factory=dict)
+    #: How the races were run: ``lap-sim-…`` when each is simulated lap by
+    #: lap (strategy, safety cars, passing), ``plackett-luce`` when finishing
+    #: orders are sampled directly from the strengths.
+    engine: str = "plackett-luce"
+    engine_metrics: Dict[str, Any] = Field(default_factory=dict)
     generated_at: Optional[datetime] = None
     data_quality: Optional[DataQuality] = None
     drivers: List[SimulatedDriver] = Field(default_factory=list)

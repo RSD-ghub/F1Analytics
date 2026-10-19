@@ -68,7 +68,7 @@ logger = logging.getLogger("train_neural")
 
 
 def calibration_races(results, seasons: Sequence[int], quali=None, practice=None,
-                      race_pace_gaps=None) -> List:
+                      race_pace_gaps=None, with_keys: bool = False) -> List:
     """(drivers, actual positions, seed) for every race in ``seasons``.
 
     Built through ``build_snapshot`` on the race's real grid, as serving is on a
@@ -105,8 +105,9 @@ def calibration_races(results, seasons: Sequence[int], quali=None, practice=None
                 else 999
                 for d in snapshot.drivers
             ]
-            races.append((snapshot.drivers, positions,
-                          derive_seed(season, round_number, LockWindow.FINAL_GRID)))
+            seed = derive_seed(season, round_number, LockWindow.FINAL_GRID)
+            races.append(((season, round_number), snapshot.drivers, positions, seed)
+                         if with_keys else (snapshot.drivers, positions, seed))
     return races
 
 

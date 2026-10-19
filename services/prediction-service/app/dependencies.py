@@ -54,6 +54,18 @@ def get_neural_model() -> Optional[NeuralRaceModel]:
         return None
 
 
+@lru_cache
+def get_lap_engine():
+    """The lap-by-lap simulator, or None when it has not been fitted."""
+    from app.services.lap_simulation import LapRaceEngine
+
+    try:
+        return LapRaceEngine.load()
+    except ModelWeightsMissing as exc:
+        logging.getLogger(__name__).info("lap simulator unavailable: %s", exc)
+        return None
+
+
 def get_store() -> PredictionStore:
     return PredictionStore(db.db())
 
@@ -62,4 +74,5 @@ def get_predictor() -> Predictor:
     return Predictor(
         client=get_client(), store=get_store(), model=get_model(),
         final_grid_model=get_neural_model(),
+        lap_engine=get_lap_engine(),
     )

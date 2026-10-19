@@ -43,6 +43,9 @@ export default function RaceSimulation({ simulation }) {
   // No baseline means the simulation ran on the Plackett-Luce model itself
   // (no network trained yet): there is no second opinion to show.
   const compared = Boolean(simulation.baseline_model_version)
+  // Lap by lap (strategy, safety cars, passing) or sampled straight from the
+  // strengths — the second when the lap simulator has not earned its place.
+  const lapByLap = (simulation.engine || '').startsWith('lap-sim')
 
   return (
     <Panel
@@ -61,6 +64,11 @@ export default function RaceSimulation({ simulation }) {
               : 'Shown alongside the locked forecast, not instead of it: the network has not yet beaten the linear model on held-out seasons, so the permanent record stays with the linear model.'}
             {metrics.verdict && ` (${metrics.verdict}.)`}
           </p>}
+          <p className="small muted">
+            {lapByLap
+              ? 'Each race is run lap by lap: pit strategies used at this circuit, its safety-car and VSC rates, tyre wear, and passing that takes a real pace advantage.'
+              : 'Each race is a finishing order sampled from the model’s strengths, with retirements.'}
+          </p>
         </div>
       </div>
 

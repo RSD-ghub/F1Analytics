@@ -183,6 +183,11 @@ WEIGHTS_PATH, ARCHIVE_DIR, HISTORY_PATH = state_paths(MODEL_STATE_DIR)
 NEURAL_WEIGHTS_FILE = "neural_weights.json"
 NEURAL_WEIGHTS_PATH = os.path.join(MODEL_STATE_DIR, NEURAL_WEIGHTS_FILE)
 
+#: The lap-by-lap simulator's circuit profiles and fitted constants
+#: (``services/lap_simulation.py``).
+LAP_SIMULATION_FILE = "lap_simulation.json"
+LAP_SIMULATION_PATH = os.path.join(MODEL_STATE_DIR, LAP_SIMULATION_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:
@@ -231,6 +236,12 @@ def ensure_state_dir(state_dir: Optional[str] = None,
     if not os.path.exists(neural) and os.path.exists(packaged_neural):
         shutil.copy2(packaged_neural, neural)
         seeded.append(NEURAL_WEIGHTS_FILE)
+
+    laps = os.path.join(state_dir, LAP_SIMULATION_FILE)
+    packaged_laps = os.path.join(packaged_dir, LAP_SIMULATION_FILE)
+    if not os.path.exists(laps) and os.path.exists(packaged_laps):
+        shutil.copy2(packaged_laps, laps)
+        seeded.append(LAP_SIMULATION_FILE)
 
     if not os.path.exists(archive) and os.path.isdir(packaged_archive):
         shutil.copytree(packaged_archive, archive)

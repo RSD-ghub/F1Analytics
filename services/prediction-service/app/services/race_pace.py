@@ -129,6 +129,34 @@ def _tyre_age(laps: Sequence[RaceLap]) -> Dict[Tuple[str, int], int]:
     }
 
 
+class RaceFit:
+    """One race's fitted lap-time model: pace per driver, fuel, tyres, noise."""
+
+    __slots__ = ("pace", "fuel_per_lap", "compound_offset", "wear_per_lap",
+                 "lap_noise", "typical_lap")
+
+    def __init__(self, pace, fuel_per_lap, compound_offset, wear_per_lap,
+                 lap_noise, typical_lap) -> None:
+        #: Driver → fitted pace term, seconds (absolute, includes the intercept).
+        self.pace: Dict[str, float] = pace
+        self.fuel_per_lap: float = fuel_per_lap
+        #: Compound → offset in seconds, relative to the race's first compound
+        #: alphabetically (whichever it is, it reads 0.0).
+        self.compound_offset: Dict[str, float] = compound_offset
+        #: Compound → seconds lost per lap of tyre age.
+        self.wear_per_lap: Dict[str, float] = wear_per_lap
+        #: Robust spread of a clean lap around the model, seconds.
+        self.lap_noise: float = lap_noise
+        self.typical_lap: float = typical_lap
+
+    def gaps(self) -> Dict[str, float]:
+        best = min(self.pace.values())
+        return {
+            driver: min(max((value - best) / self.typical_lap, 0.0), MAX_PLAUSIBLE_GAP_PCT)
+            for driver, value in self.pace.items()
+        }
+
+
 def _fit(laps: Sequence[RaceLap], ages: Dict[Tuple[str, int], int]):
     drivers = sorted({lap.driver for lap in laps})
     compounds = sorted({lap.compound.upper() for lap in laps})
@@ -149,39 +177,51 @@ def _fit(laps: Sequence[RaceLap], ages: Dict[Tuple[str, int], int]):
         target[row] = lap.lap_time_seconds
     coefficients, *_ = np.linalg.lstsq(design, target, rcond=None)
     residuals = target - design @ coefficients
-    return drivers, coefficients[:n_d], residuals
+    return drivers, compounds, coefficients, residuals
 
 
-def race_gaps(laps: Sequence[RaceLap]) -> Dict[str, float]:
-    """Each driver's corrected pace deficit to the fastest, for one race.
+def _robust_spread(residuals: np.ndarray) -> float:
+    return 1.4826 * float(np.median(np.abs(residuals - np.median(residuals))))
 
-    Empty when the race does not have enough clean running to say anything —
-    a wet race behind the safety car, or a data gap.
-    """
+
+def fit_race(laps: Sequence[RaceLap]) -> Optional[RaceFit]:
+    """The race's lap-time model, or None without enough clean running to
+    say anything — a wet race behind the safety car, or a data gap."""
     clean = _clean_laps(laps)
     counts: Dict[str, int] = {}
     for lap in clean:
         counts[lap.driver] = counts.get(lap.driver, 0) + 1
     clean = [lap for lap in clean if counts[lap.driver] >= MIN_CLEAN_LAPS_PER_DRIVER]
     if len({lap.driver for lap in clean}) < MIN_DRIVERS:
-        return {}
+        return None
 
-    ages = _tyre_age(clean)
-    drivers, pace, residuals = _fit(clean, ages)
-    # Robust spread of the residuals; refit without the laps the model cannot
-    # explain — traffic, a lock-up, a flag the field median did not catch.
-    spread = 1.4826 * float(np.median(np.abs(residuals - np.median(residuals))))
+    drivers, compounds, coefficients, residuals = _fit(clean, _tyre_age(clean))
+    # Refit without the laps the model cannot explain — traffic, a lock-up, a
+    # flag the field median did not catch.
+    spread = _robust_spread(residuals)
     if spread > 0:
         kept = [lap for lap, r in zip(clean, residuals) if abs(r) <= RESIDUAL_CUTOFF * spread]
         if len({lap.driver for lap in kept}) == len(drivers):
-            drivers, pace, _ = _fit(kept, _tyre_age(kept))
+            drivers, compounds, coefficients, residuals = _fit(kept, _tyre_age(kept))
 
-    typical = float(np.median([lap.lap_time_seconds for lap in clean]))
-    best = float(pace.min())
-    return {
-        driver: min(max((value - best) / typical, 0.0), MAX_PLAUSIBLE_GAP_PCT)
-        for driver, value in zip(drivers, pace)
-    }
+    n_d, n_c = len(drivers), len(compounds)
+    return RaceFit(
+        pace=dict(zip(drivers, coefficients[:n_d].tolist())),
+        fuel_per_lap=float(coefficients[n_d]),
+        compound_offset=dict(zip(compounds, [0.0] + coefficients[n_d + 1:n_d + n_c].tolist())),
+        wear_per_lap=dict(zip(compounds, coefficients[n_d + n_c:].tolist())),
+        lap_noise=_robust_spread(residuals),
+        typical_lap=float(np.median([lap.lap_time_seconds for lap in clean])),
+    )
+
+
+def race_gaps(laps: Sequence[RaceLap]) -> Dict[str, float]:
+    """Each driver's corrected pace deficit to the fastest, for one race.
+
+    Empty when the race does not have enough clean running to say anything.
+    """
+    fit = fit_race(laps)
+    return fit.gaps() if fit is not None else {}
 
 
 def gaps_by_race(

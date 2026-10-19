@@ -93,10 +93,14 @@ class Predictor:
         store: PredictionStore,
         model: RaceModel,
         final_grid_model: Optional[RaceModel] = None,
+        lap_engine=None,
     ) -> None:
         self._client = client
         self._store = store
         self._model = model
+        # The lap-by-lap simulator, when fitted. It runs the race simulation
+        # only if its artifact says it scored no worse than sampling.
+        self._lap_engine = lap_engine
         # The neural model, when one is trained. It places the final-grid
         # forecast only once promoted; until then it is simulated alongside.
         self._final_grid_model = final_grid_model
@@ -198,7 +202,14 @@ class Predictor:
             snapshot.drivers, seed=seed, points_positions=points_positions
         ) if compare else None
         runs = runs or SIMULATION_RUNS
+        engine = self._lap_engine
+        outcomes = None
+        if engine is not None and engine.enabled:
+            outcomes = engine.sample_outcomes(
+                network, snapshot.drivers, seed=seed, runs=runs, circuit=circuit)
         return RaceSimulation(
+            engine=engine.version if outcomes is not None else "plackett-luce",
+            engine_metrics=engine.metrics if outcomes is not None else {},
             status=SimulationStatus.READY,
             runs=runs,
             seed=seed,
@@ -211,6 +222,7 @@ class Predictor:
             drivers=race_simulation.simulate(
                 network, snapshot.drivers, seed=seed, runs=runs,
                 points_positions=points_positions, baseline=baseline,
+                outcomes=outcomes,
             ),
             **base,
         )

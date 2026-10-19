@@ -140,6 +140,33 @@ class RaceLap(BaseModel):
         return raw
 
 
+class Stint(BaseModel):
+    season: int
+    round: int
+    driver: str
+    stint: int = 1
+    compound: Optional[str] = ""
+    laps: int = 0
+
+
+class PitStop(BaseModel):
+    season: int
+    round: int
+    driver: str
+    stop: int = 1
+    lap: int = 0
+    #: Pit-lane time, entry to exit, seconds.
+    duration_seconds: Optional[float] = None
+
+
+class RaceControlMessage(BaseModel):
+    season: int
+    round: int
+    category: str = ""
+    message: str = ""
+    lap: Optional[int] = None
+
+
 #: Grid provenances that state where a driver actually starts. Mirrors
 #: ingestion's ``CONFIRMED_GRID_SOURCES``; duplicated rather than imported
 #: because the services share no runtime code, only a wire contract.
@@ -274,6 +301,18 @@ class IngestionClient:
             "/data/laps", {"season": season, "round": round_number, "limit": 20000}
         )
         return [RaceLap(**row) for row in payload]
+
+    async def season_stints(self, season: int) -> List[Stint]:
+        payload = await self._get("/data/stints", {"season": season, "limit": 20000})
+        return [Stint(**row) for row in payload]
+
+    async def season_pit_stops(self, season: int) -> List[PitStop]:
+        payload = await self._get("/data/pit_stops", {"season": season, "limit": 20000})
+        return [PitStop(**row) for row in payload]
+
+    async def season_race_control(self, season: int) -> List[RaceControlMessage]:
+        payload = await self._get("/data/race_control", {"season": season, "limit": 20000})
+        return [RaceControlMessage(**row) for row in payload]
 
     async def grid(self, season: int, round_number: int) -> List[GridSlot]:
         payload = await self._get(

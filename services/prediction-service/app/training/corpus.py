@@ -61,6 +61,37 @@ async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
     return gaps
 
 
+async def load_race_contexts(client: IngestionClient, results: List[RaceResult]):
+    """Every race since lap timing began, summarised for the lap simulator."""
+    from collections import defaultdict
+
+    from app.training import lap_profiles
+
+    by_race = defaultdict(list)
+    for row in results:
+        if row.season >= FIRST_LAP_SEASON:
+            by_race[(row.season, row.round)].append(row)
+    contexts = []
+    for season in sorted({season for season, _ in by_race}):
+        stints, stops, messages = defaultdict(list), defaultdict(list), defaultdict(list)
+        for row in await client.season_stints(season):
+            stints[row.round].append(row)
+        for row in await client.season_pit_stops(season):
+            stops[row.round].append(row)
+        for row in await client.season_race_control(season):
+            messages[row.round].append(row)
+        for round_number in sorted(r for s, r in by_race if s == season):
+            laps = await client.race_laps(season, round_number)
+            if not laps:
+                continue
+            contexts.append(lap_profiles.summarise_race(
+                season, round_number, laps, stints[round_number],
+                stops[round_number], messages[round_number],
+                by_race[(season, round_number)]))
+    logger.info("race context: %s races with laps", len(contexts))
+    return contexts
+
+
 async def load(
     client: IngestionClient,
     from_season: int,
