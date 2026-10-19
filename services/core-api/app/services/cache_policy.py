@@ -45,6 +45,8 @@ _POLICIES = {
         # A race week's bounds come from the weekend record, so both domains.
         (r"/news/(weekend/\d+/\d+|search)", Policy(5 * MINUTE, ("news", "ingestion"))),
         (r"/regulations/search", Policy(HOUR, ("regulations",))),
+        # One book, re-ingested by hand; the ingest bumps "guide".
+        (r"/guide/search", Policy(HOUR, ("guide",))),
     ],
     "prediction": [
         (r"/predictions/\d+/\d+", Policy(5 * MINUTE, ("prediction",))),

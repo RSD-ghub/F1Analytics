@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import Layout from './components/Layout'
 import Bernie from './pages/Bernie'
+import Strategy from './pages/Strategy'
 import Championship from './pages/Championship'
 import Login from './pages/Login'
 import News from './pages/News'
@@ -32,6 +33,7 @@ export default function App() {
             Old links stay working. */}
         <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
         <Route path="/news" element={<News />} />
+        <Route path="/strategy" element={<Strategy />} />
         <Route path="/bernie" element={<Bernie />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login mode="register" />} />

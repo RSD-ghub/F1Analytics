@@ -117,6 +117,13 @@ export const listThreads = () => request('/bernie/threads', { auth: true })
 export const readThread = (threadId) =>
   request(`/bernie/threads/${threadId}`, { auth: true })
 
+// ── Strategy engine ──────────────────────────────────────────────────────────
+// Public: the plan is arithmetic and the guide quotes are a search, so nothing
+// here spends a model call.
+
+export const getStrategy = (season, round, driver) =>
+  request(`/strategy/${season}/${round}${driver ? `?driver=${encodeURIComponent(driver)}` : ''}`)
+
 export const getCircuit = (season, round) =>
   request(`/circuit/${season}/${round}`)
 

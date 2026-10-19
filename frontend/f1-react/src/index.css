@@ -277,6 +277,8 @@ body {
 
 .notice { background: var(--panel-soft); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 6px 6px 0; margin: 0 0 14px; font-size: 14px; }
 .notice.warn { border-left-color: var(--warn); }
+.guide-quote { border-left: 3px solid var(--panel-soft); margin: 12px 0 0; padding: 4px 0 4px 12px; font-style: italic; }
+.guide-quote footer { font-style: normal; margin-top: 4px; }
 .unavailable { background: #fdf3f2; border: 1px solid #f2d6d3; border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
 .loading { color: var(--muted); padding: 24px 0; }
 .error { color: var(--bad); font-size: 14px; }
