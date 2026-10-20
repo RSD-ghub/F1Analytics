@@ -54,7 +54,7 @@ from app.services.model import (  # noqa: E402
 )
 from app.services.neural_model import NEURAL_MODEL_VERSION, NeuralRaceModel  # noqa: E402
 from app.services.predictor import derive_seed  # noqa: E402
-from app.training import calibrate, dataset, neural, plackett_luce  # noqa: E402
+from app.training import calibrate, dataset, neural, plackett_luce, retirements  # noqa: E402
 from app.training.promotion import MIN_RELATIVE_GAIN  # noqa: E402
 from train_model import (  # noqa: E402
     TRAINING_FROM_SEASON,
@@ -67,7 +67,8 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("train_neural")
 
 
-def calibration_races(results, seasons: Sequence[int]) -> List:
+def calibration_races(results, seasons: Sequence[int], quali=None, practice=None,
+                      race_pace_gaps=None, with_keys: bool = False) -> List:
     """(drivers, actual positions, seed) for every race in ``seasons``.
 
     Built through ``build_snapshot`` on the race's real grid, as serving is on a
@@ -90,6 +91,10 @@ def calibration_races(results, seasons: Sequence[int]) -> List:
             snapshot = build_snapshot(
                 rows, season, round_number, LockWindow.FINAL_GRID,
                 circuit=circuits.get(round_number, ""), grid=grid,
+                quali_history=[q for q in quali or []
+                               if q.season in (season, season - 1)],
+                practice=[p for p in practice or [] if p.season == season],
+                race_pace_gaps=race_pace_gaps,
             )
             if not snapshot.drivers or snapshot.as_of_round == 0:
                 continue
@@ -100,8 +105,9 @@ def calibration_races(results, seasons: Sequence[int]) -> List:
                 else 999
                 for d in snapshot.drivers
             ]
-            races.append((snapshot.drivers, positions,
-                          derive_seed(season, round_number, LockWindow.FINAL_GRID)))
+            seed = derive_seed(season, round_number, LockWindow.FINAL_GRID)
+            races.append(((season, round_number), snapshot.drivers, positions, seed)
+                         if with_keys else (snapshot.drivers, positions, seed))
     return races
 
 
@@ -145,6 +151,7 @@ def main() -> int:
     validation_seasons = [int(s) for s in args.validation_seasons.split(",") if s.strip()]
 
     practice = []
+    race_pace_gaps = {}
     if args.from_api:
         import asyncio
         from app.services.ingestion_client import IngestionClient
@@ -156,6 +163,7 @@ def main() -> int:
             require_complete=not args.allow_incomplete,
         ))
         practice = asyncio.run(_load_practice(client, args.from_season, max(test_seasons)))
+        race_pace_gaps = asyncio.run(corpus.load_race_pace(client, results))
     elif args.results:
         results = load_results(args.results)
         quali = load_quali(args.quali)
@@ -166,6 +174,7 @@ def main() -> int:
     observations = dataset.build_observations(
         usable, target_season=args.target_season, with_grid=True,
         decay=args.decay, quali=quali, practice=practice,
+        race_pace_gaps=race_pace_gaps,
     )
     names = feature_names(with_grid=True)
 
@@ -207,10 +216,27 @@ def main() -> int:
     # Both sampled at the champion's calibrated temperature, then scored on
     # the published markets of the test seasons.
     network_model = NeuralRaceModel(params=params, means=means, stds=stds)
-    test_races = calibration_races(results, test_seasons)
+    test_races = calibration_races(results, test_seasons, quali, practice, race_pace_gaps)
     linear_brier = calibrate.evaluate_temperature(champion, test_races, temperature)
     network_brier = calibrate.evaluate_temperature(network_model, test_races, temperature)
     linear_temperature = network_temperature = temperature
+
+    # Retirement clustering, fitted on the training seasons' results and
+    # scored on the test seasons against independent retirements.
+    train_seasons = {o.season for o in train}
+    race_k, team_k, moments = retirements.fit(
+        [r for r in results if r.season in train_seasons])
+    independent_score = calibrate.retirement_count_score(network_model, test_races)
+    network_model.retirement_race_k, network_model.retirement_team_k = race_k, team_k
+    clustered_score = calibrate.retirement_count_score(network_model, test_races)
+    logger.info(
+        "\nretirement clustering (training seasons): x%.2f per-race spread, "
+        "x%.2f team-mates together -> race_k %s, team_k %s",
+        moments.get("dispersion", 1.0), moments.get("teammate_ratio", 1.0),
+        "none" if race_k is None else "%.1f" % race_k,
+        "none" if team_k is None else "%.1f" % team_k)
+    logger.info("retirement-count log score on test: independent %.3f, clustered %.3f",
+                independent_score, clustered_score)
 
     verdict = head_to_head(linear_ll, network_ll, uniform, linear_brier, network_brier)
 
@@ -247,6 +273,11 @@ def main() -> int:
         "feature_stds": stds,
         "noise_scale": temperature,
         "linear_from": champion.version,
+        "retirement_clustering": {
+            "race_k": race_k, "team_k": team_k, "moments": moments,
+            "test_score_independent": independent_score,
+            "test_score_clustered": clustered_score,
+        },
         "promoted": verdict["promoted"],
         "metrics": {
             "test_races": len(test),

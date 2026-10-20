@@ -46,6 +46,24 @@ def get_neural_model() -> Optional[NeuralRaceModel]:
     except ModelWeightsMissing as exc:
         logging.getLogger(__name__).info("race simulation unavailable: %s", exc)
         return None
+    except ValueError as exc:
+        # Fitted on a different feature set — an artifact from before a feature
+        # was added. Survivable for the same reason a missing one is.
+        logging.getLogger(__name__).warning(
+            "race simulation unavailable: neural artifact is stale: %s", exc)
+        return None
+
+
+@lru_cache
+def get_lap_engine():
+    """The lap-by-lap simulator, or None when it has not been fitted."""
+    from app.services.lap_simulation import LapRaceEngine
+
+    try:
+        return LapRaceEngine.load()
+    except ModelWeightsMissing as exc:
+        logging.getLogger(__name__).info("lap simulator unavailable: %s", exc)
+        return None
 
 
 def get_store() -> PredictionStore:
@@ -56,4 +74,5 @@ def get_predictor() -> Predictor:
     return Predictor(
         client=get_client(), store=get_store(), model=get_model(),
         final_grid_model=get_neural_model(),
+        lap_engine=get_lap_engine(),
     )

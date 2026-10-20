@@ -168,6 +168,20 @@ class DriverFeatures(BaseModel):
     # unlike the grid this is legitimately available to *both* windows — it is
     # the only current-weekend pace signal the pre-quali model is allowed.
     practice_long_run_gap_pct: float = 0.0
+    # Fuel- and tyre-corrected race pace from lap times, as a fraction of the
+    # race's typical lap: the driver's recent races, and their car's (the
+    # better of its two drivers each race). Prior races only.
+    race_pace_recent_pct: float = 0.015
+    team_race_pace_pct: float = 0.015
+    # The car's form, Kalman-filtered race by race (``services/team_form.py``):
+    # qualifying gap to pole, and mean classified finish. Prior races only.
+    team_form_quali_pct: float = 0.015
+    team_form_finish: float = 10.5
+    # Learned ratings going into the race (``services/ratings.py``): the
+    # driver's, following them between teams, and the car's, following the
+    # organisation between drivers. 0.0 is average.
+    driver_rating: float = 0.0
+    car_rating: float = 0.0
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one
@@ -375,6 +389,11 @@ class RaceSimulation(BaseModel):
     model_promoted: bool = False
     #: The held-out comparison the promotion was decided on.
     model_metrics: Dict[str, Any] = Field(default_factory=dict)
+    #: How the races were run: ``lap-sim-…`` when each is simulated lap by
+    #: lap (strategy, safety cars, passing), ``plackett-luce`` when finishing
+    #: orders are sampled directly from the strengths.
+    engine: str = "plackett-luce"
+    engine_metrics: Dict[str, Any] = Field(default_factory=dict)
     generated_at: Optional[datetime] = None
     data_quality: Optional[DataQuality] = None
     drivers: List[SimulatedDriver] = Field(default_factory=list)

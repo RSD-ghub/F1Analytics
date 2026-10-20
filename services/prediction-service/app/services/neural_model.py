@@ -43,7 +43,11 @@ logger = logging.getLogger(__name__)
 
 #: Bump on any change that alters output for the same input, as for the linear
 #: model: the track record is grouped by version.
-NEURAL_MODEL_VERSION = "race-neural-v1"
+#:
+#: v2 — retirements cluster by race and by team (gamma hazard multipliers
+#:      fitted to the record's moments); was independent per car.
+#: v1 — hidden layer on the frozen Plackett-Luce weights, 10,000 runs.
+NEURAL_MODEL_VERSION = "race-neural-v2"
 
 #: How many races are simulated on the confirmed grid. Ten thousand puts the
 #: Monte Carlo error on a 30% win chance under half a point.
@@ -95,7 +99,7 @@ class NeuralRaceModel(RaceModel):
             artifact.get("version"), artifact.get("fitted_at"),
             artifact.get("promoted"),
         )
-        return cls(
+        model = cls(
             params=NetworkParameters.from_dict(artifact["network"]),
             means=artifact["feature_means"],
             stds=artifact["feature_stds"],
@@ -105,6 +109,10 @@ class NeuralRaceModel(RaceModel):
             promoted=bool(artifact.get("promoted", False)),
             metrics=artifact.get("metrics", {}),
         )
+        clustering = artifact.get("retirement_clustering") or {}
+        model.retirement_race_k = clustering.get("race_k")
+        model.retirement_team_k = clustering.get("team_k")
+        return model
 
     @property
     def uses_grid(self) -> bool:

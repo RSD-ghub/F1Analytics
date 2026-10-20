@@ -20,12 +20,12 @@ the target round.
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.services import circuits, team_lineage
 from app.training import eras
 from app.models.schemas import GRID_WINDOWS, DriverFeatures, FeatureSnapshot, LockWindow
-from app.services import practice_signal, quali_pace
+from app.services import practice_signal, quali_pace, race_pace, ratings as rating_system, team_form
 from app.services.ingestion_client import (
     GridSlot,
     PracticePace,
@@ -51,6 +51,8 @@ def build_snapshot(
     grid: Optional[Sequence[GridSlot]] = None,
     quali_history: Optional[Sequence[QualiResult]] = None,
     practice: Optional[Sequence[PracticePace]] = None,
+    race_pace_gaps: Optional[Dict] = None,
+    ratings: Optional[Dict] = None,
 ) -> FeatureSnapshot:
     """Build the feature set for one forecast.
 
@@ -58,8 +60,15 @@ def build_snapshot(
     ignored rather than trusted, because a pre-quali forecast that saw the grid
     would be mislabelled in the track record and would flatter the model exactly
     where it claims to be doing something hard.
+
+    ``race_pace_gaps`` is ``race_pace.gaps_by_race`` over any span of races; it
+    is cut here at the target round exactly as results are. ``ratings`` is
+    ``ratings.ratings_by_race``; only the entry going into the target race is
+    read, which holds nothing from it or after.
     """
     history = _point_in_time(results, season, target_round)
+    pace_gaps = race_pace.restrict(race_pace_gaps, season, target_round)
+    pace_teams = race_pace.teams_by_race(history)
     use_grid = window in GRID_WINDOWS and grid
 
     # Qualifying pace. The rolling features are cut at the target round exactly
@@ -72,6 +81,9 @@ def build_snapshot(
     practice_gaps = practice_signal.gaps_for_round(
         practice or [], season, target_round
     )
+
+    form_quali, form_finish = team_form.form_before(
+        history, quali_gaps, season, target_round)
 
     field = _entry_list(history, season, grid if use_grid else None)
     # `effective` prefers the confirmed grid and falls back to qualifying
@@ -96,6 +108,16 @@ def build_snapshot(
             practice_gap=practice_gaps.get(
                 driver, practice_signal.NEUTRAL_GAP_PCT
             ),
+            race_pace_recent=race_pace.recent_gap(
+                pace_gaps, driver, season, target_round
+            ),
+            team_race_pace=race_pace.team_recent_gap(
+                pace_gaps, pace_teams, team, season, target_round
+            ),
+            team_form_quali=team_form.for_team(form_quali, team, team_form.QUALI),
+            team_form_finish=team_form.for_team(form_finish, team, team_form.FINISH),
+            ratings=rating_system.for_driver(
+                (ratings or {}).get((season, target_round)), driver, team),
         )
         # Sorted so the snapshot is byte-stable: an unstable order would make
         # the snapshot hash change without the data changing.
@@ -313,6 +335,11 @@ def _driver_features(
     use_current_quali: bool = False,
     practice_gap: float = practice_signal.NEUTRAL_GAP_PCT,
     archetypes=None,
+    race_pace_recent: float = race_pace.NEUTRAL_GAP_PCT,
+    team_race_pace: float = race_pace.NEUTRAL_GAP_PCT,
+    team_form_quali: float = team_form.QUALI["neutral"],
+    team_form_finish: float = team_form.FINISH["neutral"],
+    ratings: Tuple[float, float] = (0.0, 0.0),
 ) -> DriverFeatures:
     quali_gaps = quali_gaps or {}
     quali_rows = quali_rows or []
@@ -343,6 +370,12 @@ def _driver_features(
             quali_teammate_gap_pct=teammate_quali,
             quali_gap_pct=current_quali,
             practice_long_run_gap_pct=practice_gap,
+            race_pace_recent_pct=race_pace_recent,
+            team_race_pace_pct=team_race_pace,
+            team_form_quali_pct=team_form_quali,
+            team_form_finish=team_form_finish,
+            driver_rating=ratings[0],
+            car_rating=ratings[1],
             # A debutant has no record anywhere, but the car they are in does.
             driver_archetype_delta=0.0,
             team_archetype_delta=_team_archetype_delta(
@@ -364,6 +397,12 @@ def _driver_features(
         quali_teammate_gap_pct=teammate_quali,
         quali_gap_pct=current_quali,
         practice_long_run_gap_pct=practice_gap,
+        race_pace_recent_pct=race_pace_recent,
+        team_race_pace_pct=team_race_pace,
+        team_form_quali_pct=team_form_quali,
+        team_form_finish=team_form_finish,
+        driver_rating=ratings[0],
+        car_rating=ratings[1],
         avg_grid_recent=_average_grid(recent),
         teammate_delta=_teammate_delta(history, driver, team, season),
         positions_gained=_positions_gained(recent),

@@ -272,7 +272,7 @@ async def test_on_the_confirmed_grid_it_simulates_with_the_network():
     result = await predictor.simulate(2026, 5)
     assert result.status is SimulationStatus.READY
     assert result.runs == 10000
-    assert result.model_version == "race-neural-v1"
+    assert result.model_version == "race-neural-v2"
     assert result.baseline_model_version == make_model().version
     assert {d.driver for d in result.drivers} >= {"Max Verstappen", "Lando Norris"}
 
@@ -289,7 +289,7 @@ async def test_a_promoted_network_places_only_the_final_grid_forecast():
                           final_grid_model=network_model(promoted=True))
     final, _ = await predictor.build(2026, 5, LockWindow.FINAL_GRID)
     post, _ = await predictor.build(2026, 5, LockWindow.POST_QUALI)
-    assert final.model_version == "race-neural-v1"
+    assert final.model_version == "race-neural-v2"
     assert post.model_version == make_model().version
 
 

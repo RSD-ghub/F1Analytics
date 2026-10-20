@@ -25,14 +25,18 @@ def simulate(
     runs: int,
     points_positions: int = POINTS_POSITIONS,
     baseline: Optional[Sequence[DriverProbability]] = None,
+    outcomes=None,
 ) -> List[SimulatedDriver]:
     """Simulate ``runs`` races and summarise each driver's outcomes.
 
+    ``outcomes`` is ``(positions, retired)`` already run by another engine —
+    the lap-by-lap simulator; without it they are sampled from ``model``.
     Ordered by win chance, then expected position, like the forecasts.
     """
     if not drivers:
         return []
-    positions, retired = model.sample_outcomes(drivers, seed=seed, runs=runs)
+    positions, retired = outcomes or model.sample_outcomes(drivers, seed=seed, runs=runs)
+    runs = positions.shape[0]
     field = len(drivers)
     by_driver: Dict[str, DriverProbability] = {
         row.driver: row for row in baseline or []
