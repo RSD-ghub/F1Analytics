@@ -45,6 +45,7 @@ def build_observations(
     quali: Optional[Sequence[QualiResult]] = None,
     practice: Optional[Sequence[PracticePace]] = None,
     race_pace_gaps: Optional[Dict] = None,
+    ratings: Optional[Dict] = None,
 ) -> List[RaceObservation]:
     """Build one observation per race.
 
@@ -90,6 +91,7 @@ def build_observations(
                 quali_history=quali_history,
                 practice=practice_by_season.get(season, []),
                 race_pace_gaps=race_pace_gaps,
+                ratings=ratings,
             )
             if observation is not None:
                 observations.append(observation)
@@ -112,6 +114,7 @@ def _observation_for(
     quali_history: Optional[Sequence[QualiResult]] = None,
     practice: Optional[Sequence[PracticePace]] = None,
     race_pace_gaps: Optional[Dict] = None,
+    ratings: Optional[Dict] = None,
 ) -> Optional[RaceObservation]:
     actual = [row for row in season_rows if row.round == round_number]
     if len(actual) < MIN_FIELD:
@@ -152,6 +155,7 @@ def _observation_for(
         quali_history=quali_history,
         practice=practice,
         race_pace_gaps=race_pace_gaps,
+        ratings=ratings,
     )
     if not snapshot.drivers or snapshot.as_of_round == 0:
         return None

@@ -177,6 +177,11 @@ class DriverFeatures(BaseModel):
     # qualifying gap to pole, and mean classified finish. Prior races only.
     team_form_quali_pct: float = 0.015
     team_form_finish: float = 10.5
+    # Learned ratings going into the race (``services/ratings.py``): the
+    # driver's, following them between teams, and the car's, following the
+    # organisation between drivers. 0.0 is average.
+    driver_rating: float = 0.0
+    car_rating: float = 0.0
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one

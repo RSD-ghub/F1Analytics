@@ -152,6 +152,18 @@ BASE_FEATURES = (
 #: Every setting helps 2022-23 and hurts 2024-25, by about as much — a stable
 #: team order in the first pair, one reshuffled mid-season in the second. Over
 #: both, nothing. The test seasons decide; withheld.
+#:
+#: Learned driver and car ratings (``services/ratings.py``: a Plackett-Luce
+#: Elo over 2008 on, car ratings shrunk at each season and more at a reset)
+#: split the same way on the fixed test — the driver rating helped 2024-25
+#: (9.85% -> up to 10.01%) and not 2022-23; the car rating the reverse. So
+#: they were scored season by season instead (``training/backtest.py``: each
+#: of 2017-2025 fitted only on the seasons before it, 184 races):
+#:
+#:     driver rating   +0.019 log-likelihood per race, 95% CI -0.035 .. +0.069
+#:     car rating      +0.003 points mean, better in 4 of 9 seasons
+#:
+#: Better in 57% of races at best; the interval does not clear zero. Withheld.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",
@@ -160,6 +172,8 @@ WITHHELD_FEATURES = (
     "team_race_pace_pct",
     "team_form_quali_pct",
     "team_form_finish",
+    "driver_rating",
+    "car_rating",
 )
 
 #: Grid position, split by era. Only one is non-zero for any given race — the
