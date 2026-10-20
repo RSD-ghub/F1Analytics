@@ -128,11 +128,12 @@ def train_once(
     from_season: int,
     quali: Optional[Sequence[QualiResult]] = None,
     practice: Optional[Sequence] = None,
+    race_pace_gaps: Optional[Dict] = None,
 ) -> Dict:
     usable = [row for row in results if row.season >= from_season]
     observations = dataset.build_observations(
         usable, target_season=target_season, with_grid=with_grid, decay=decay,
-        quali=quali, practice=practice,
+        quali=quali, practice=practice, race_pace_gaps=race_pace_gaps,
     )
     names = feature_names(with_grid)
     means, stds = dataset.standardise(observations, names)
@@ -181,6 +182,7 @@ def main() -> int:
         int(s) for s in args.validation_seasons.split(",") if s.strip()
     ]
     practice = []
+    race_pace_gaps = {}
     if args.from_api:
         import asyncio
         from app.services.ingestion_client import IngestionClient
@@ -192,6 +194,7 @@ def main() -> int:
                         require_complete=not args.allow_incomplete)
         )
         practice = asyncio.run(_load_practice(client, args.from_season, 2025))
+        race_pace_gaps = asyncio.run(corpus.load_race_pace(client, results))
     else:
         results = load_results(args.results)
         quali = load_quali(args.quali)
@@ -212,12 +215,14 @@ def main() -> int:
         outcome = train_once(
             results, with_grid, list(test_seasons) + list(validation_seasons),
             args.target_season, args.decay, args.from_season, quali=quali,
-            practice=practice,
+            practice=practice, race_pace_gaps=race_pace_gaps,
         )
         report[label] = outcome
         _print_model(label, outcome)
 
-    temperatures = _fit_temperature(results, report, validation_seasons, args)
+    temperatures = _fit_temperature(results, report, validation_seasons, args,
+                                    quali=quali, practice=practice,
+                                    race_pace_gaps=race_pace_gaps)
 
     if args.write:
         _write_artifact(report, args, test_seasons, temperatures,
@@ -227,8 +232,14 @@ def main() -> int:
     return 0
 
 
-def _fit_temperature(results, report, validation_seasons, args):
-    """Calibrate on seasons excluded from both weight fitting and the test set."""
+def _fit_temperature(results, report, validation_seasons, args, quali=None,
+                     practice=None, race_pace_gaps=None):
+    """Calibrate on seasons excluded from both weight fitting and the test set.
+
+    Snapshots are built with the same qualifying, practice and race-pace inputs
+    the weights were fitted on. Without them every pace feature sits at its
+    neutral value, and the temperature is tuned for a model serving never runs.
+    """
     from app.models.schemas import LockWindow
     from app.services.features import build_snapshot
     from app.services.model import RaceModel
@@ -266,6 +277,10 @@ def _fit_temperature(results, report, validation_seasons, args):
                 snapshot = build_snapshot(
                     rows, season, round_number, window,
                     circuit=circuits.get(round_number, ""), grid=grid,
+                    quali_history=[q for q in quali or []
+                                   if q.season in (season, season - 1)],
+                    practice=[p for p in practice or [] if p.season == season],
+                    race_pace_gaps=race_pace_gaps,
                 )
                 if not snapshot.drivers or snapshot.as_of_round == 0:
                     continue

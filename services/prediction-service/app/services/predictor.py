@@ -30,10 +30,14 @@ from app.models.schemas import (
     Market,
     ModelVersion,
     Prediction,
+    RaceSimulation,
+    SimulationStatus,
     published_markets,
     sprint_points_positions,
 )
 from app.services import features as feature_builder
+from app.services import race_simulation
+from app.services.neural_model import SIMULATION_RUNS
 from app.services.ingestion_client import (
     GridSlot,
     IngestionClient,
@@ -88,10 +92,29 @@ class Predictor:
         client: IngestionClient,
         store: PredictionStore,
         model: RaceModel,
+        final_grid_model: Optional[RaceModel] = None,
+        lap_engine=None,
     ) -> None:
         self._client = client
         self._store = store
         self._model = model
+        # The lap-by-lap simulator, when fitted. It runs the race simulation
+        # only if its artifact says it scored no worse than sampling.
+        self._lap_engine = lap_engine
+        # The neural model, when one is trained. It places the final-grid
+        # forecast only once promoted; until then it is simulated alongside.
+        self._final_grid_model = final_grid_model
+
+    def model_for(self, window: LockWindow) -> RaceModel:
+        """The model that places this window's forecast."""
+        candidate = self._final_grid_model
+        if (
+            window is LockWindow.FINAL_GRID
+            and candidate is not None
+            and getattr(candidate, "promoted", False)
+        ):
+            return candidate
+        return self._model
 
     async def build(
         self,
@@ -109,6 +132,109 @@ class Predictor:
         rebuilding — and so a caller previewing a forecast can inspect exactly
         what fed it.
         """
+        snapshot, quality = await self._prepare(
+            season, round_number, window, circuit
+        )
+        seed = derive_seed(season, round_number, window)
+        points_positions, distance = _race_terms(season, window)
+        model = self.model_for(window)
+
+        return Prediction(
+            prediction_id=str(uuid.uuid4()),
+            season=season,
+            round=round_number,
+            race_name=race_name,
+            window=window,
+            locked_at=datetime.now(timezone.utc),
+            race_start_utc=race_start_utc,
+            window_opened_at=window_opened_at,
+            model_version=model.version,
+            seed=seed,
+            driver_probabilities=_restrict_to_published(
+                model.predict(
+                    snapshot.drivers, seed=seed,
+                    points_positions=points_positions,
+                    distance_fraction=distance,
+                ),
+                window,
+            ),
+            published_markets=published_markets(window),
+            feature_snapshot_ref=snapshot.snapshot_id,
+            data_quality=quality,
+            points_positions=points_positions,
+        ), snapshot
+
+    async def simulate(
+        self,
+        season: int,
+        round_number: int,
+        circuit: str = "",
+        race_name: str = "",
+        runs: Optional[int] = None,
+    ) -> RaceSimulation:
+        """Simulate the Grand Prix on the confirmed grid with the neural model.
+
+        The same preparation as the final-grid lock — the same features, the
+        same refusal of an unconfirmed grid — so the simulation and the locked
+        forecast are always about the same field. Never persisted.
+        """
+        base = dict(season=season, round=round_number, race_name=race_name)
+        # Without a trained network the simulation still runs, on the
+        # Plackett-Luce model itself: the same field, the same sampler and the
+        # same 10,000 races, just without a second opinion to compare against.
+        network = self._final_grid_model or self._model
+        window = LockWindow.FINAL_GRID
+        try:
+            snapshot, quality = await self._prepare(
+                season, round_number, window, circuit
+            )
+        except (ConfirmedGridRequired, GridRequired) as exc:
+            # No grid to run on yet: a state to show, not an error to raise.
+            return RaceSimulation(
+                status=SimulationStatus.AWAITING_CONFIRMED_GRID,
+                detail=str(exc), **base,
+            )
+
+        seed = derive_seed(season, round_number, window)
+        points_positions, _ = _race_terms(season, window)
+        compare = network is not self._model
+        baseline = self._model.predict(
+            snapshot.drivers, seed=seed, points_positions=points_positions
+        ) if compare else None
+        runs = runs or SIMULATION_RUNS
+        engine = self._lap_engine
+        outcomes = None
+        if engine is not None and engine.enabled:
+            outcomes = engine.sample_outcomes(
+                network, snapshot.drivers, seed=seed, runs=runs, circuit=circuit)
+        return RaceSimulation(
+            engine=engine.version if outcomes is not None else "plackett-luce",
+            engine_metrics=engine.metrics if outcomes is not None else {},
+            status=SimulationStatus.READY,
+            runs=runs,
+            seed=seed,
+            model_version=network.version,
+            baseline_model_version=self._model.version if compare else "",
+            model_promoted=bool(getattr(network, "promoted", False)),
+            model_metrics=getattr(network, "metrics", {}) or {},
+            generated_at=datetime.now(timezone.utc),
+            data_quality=quality,
+            drivers=race_simulation.simulate(
+                network, snapshot.drivers, seed=seed, runs=runs,
+                points_positions=points_positions, baseline=baseline,
+                outcomes=outcomes,
+            ),
+            **base,
+        )
+
+    async def _prepare(
+        self,
+        season: int,
+        round_number: int,
+        window: LockWindow,
+        circuit: str = "",
+    ) -> Tuple[FeatureSnapshot, DataQuality]:
+        """Fetch, refuse an unusable grid, and build the features."""
         results = await self._client.season_results(season)
         # Prior seasons carry career form and circuit history, both legitimately
         # known before the race.
@@ -188,37 +314,7 @@ class Predictor:
                 "grid for %s-%s is provisional (qualifying classification, "
                 "penalties not applied)", season, round_number,
             )
-        seed = derive_seed(season, round_number, window)
-        if window in SPRINT_WINDOWS:
-            points_positions = sprint_points_positions(season)
-            distance = SPRINT_DISTANCE_FRACTION
-        else:
-            points_positions, distance = POINTS_POSITIONS, 1.0
-
-        return Prediction(
-            prediction_id=str(uuid.uuid4()),
-            season=season,
-            round=round_number,
-            race_name=race_name,
-            window=window,
-            locked_at=datetime.now(timezone.utc),
-            race_start_utc=race_start_utc,
-            window_opened_at=window_opened_at,
-            model_version=self._model.version,
-            seed=seed,
-            driver_probabilities=_restrict_to_published(
-                self._model.predict(
-                    snapshot.drivers, seed=seed,
-                    points_positions=points_positions,
-                    distance_fraction=distance,
-                ),
-                window,
-            ),
-            published_markets=published_markets(window),
-            feature_snapshot_ref=snapshot.snapshot_id,
-            data_quality=quality,
-            points_positions=points_positions,
-        ), snapshot
+        return snapshot, quality
 
     async def lock(
         self,
@@ -240,13 +336,18 @@ class Predictor:
             window_opened_at,
         )
 
+        model = self.model_for(window)
         await self._store.save_snapshot(snapshot)
         await self._store.record_model_version(
             ModelVersion(
-                version=self._model.version,
+                version=model.version,
                 created_at=datetime.now(timezone.utc),
-                description="Plackett-Luce sampling over linear strength scores",
-                parameters=self._model.parameters(),
+                description=(
+                    "Plackett-Luce sampling over linear strength scores"
+                    if model is self._model else
+                    "Plackett-Luce sampling over neural-network strength scores"
+                ),
+                parameters=model.parameters(),
             )
         )
         stored = await self._store.insert_prediction(prediction)
@@ -336,6 +437,13 @@ class Predictor:
             grid_source=grid_source,
             notes="; ".join(notes),
         )
+
+
+def _race_terms(season: int, window: LockWindow) -> Tuple[int, float]:
+    """Places that score, and the race's length as a fraction of a Grand Prix."""
+    if window in SPRINT_WINDOWS:
+        return sprint_points_positions(season), SPRINT_DISTANCE_FRACTION
+    return POINTS_POSITIONS, 1.0
 
 
 def _restrict_to_published(

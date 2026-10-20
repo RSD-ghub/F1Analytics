@@ -111,10 +111,69 @@ BASE_FEATURES = (
 #: The features are computed, tested and available; only their entry into the
 #: model is withdrawn. Re-add these names when there is a measurement that
 #: justifies them — two have now said otherwise.
+#:
+#: Race pace from lap times (``services/race_pace.py``) was measured the same
+#: way: fuel- and tyre-corrected pace per race from ~210,000 laps (2018 on),
+#: averaged over the last 1, 3, 5 or 8 races, for the driver, the car, or both.
+#: Fitted on 2014-2021, scored on validation 2022-23 and test 2024-25:
+#:
+#:     post_quali test  9.86% -> 9.85% .. 9.93%   (validation 6.65% -> 6.47% .. 6.68%)
+#:
+#: Nothing — the best variant moves the test log-likelihood by 0.03 per race,
+#: inside the noise of 46 races. Finishing form, points and qualifying gaps
+#: already carry what a rolling race pace knows. The pace estimates are kept:
+#: they are what the lap-by-lap simulator is built from.
+#:
+#: Re-measured with laps back to 2008 (jolpica, ~200,000 more), so the 2014-17
+#: training races carry real pace instead of the neutral value. The car's race
+#: pace now fits a real, correctly signed weight (about -0.13), and over
+#: averaging windows of 2 to 12 races:
+#:
+#:     team race pace    validation 6.62% -> 6.63% .. 6.79%   test 9.85% -> 9.82% .. 9.85%
+#:     driver race pace  validation 6.62% -> 6.53% .. 6.66%   test 9.85% -> 9.80% .. 9.86%
+#:
+#: Training from 2011 or 2009 instead, team race pace over 12 races:
+#:
+#:     from 2011  validation 6.72% -> 6.90%   test 9.70% -> 9.68%
+#:     from 2009  validation 6.70% -> 6.86%   test 9.76% -> 9.76%
+#:
+#: (and both spans test lower than training from 2014 at all). A signal now,
+#: and a small one; on the test seasons it still does not beat the model
+#: without it, on any span. Still withheld.
+#:
+#: Team form tracked race by race (``services/team_form.py``, a Kalman filter
+#: per car on qualifying gap and on mean finish, widened at each new season
+#: and more at a regulation reset), measured the same way over six settings
+#: of how fast it adapts:
+#:
+#:     finishing form   validation 6.65% -> 6.91% .. 7.10%   test 9.86% -> 9.51% .. 9.71%
+#:     qualifying form  validation 6.65% -> 6.68%            test 9.86% -> 9.84%
+#:
+#: Every setting helps 2022-23 and hurts 2024-25, by about as much — a stable
+#: team order in the first pair, one reshuffled mid-season in the second. Over
+#: both, nothing. The test seasons decide; withheld.
+#:
+#: Learned driver and car ratings (``services/ratings.py``: a Plackett-Luce
+#: Elo over 2008 on, car ratings shrunk at each season and more at a reset)
+#: split the same way on the fixed test — the driver rating helped 2024-25
+#: (9.85% -> up to 10.01%) and not 2022-23; the car rating the reverse. So
+#: they were scored season by season instead (``training/backtest.py``: each
+#: of 2017-2025 fitted only on the seasons before it, 184 races):
+#:
+#:     driver rating   +0.019 log-likelihood per race, 95% CI -0.035 .. +0.069
+#:     car rating      +0.003 points mean, better in 4 of 9 seasons
+#:
+#: Better in 57% of races at best; the interval does not clear zero. Withheld.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",
     "team_regulation_mastery",
+    "race_pace_recent_pct",
+    "team_race_pace_pct",
+    "team_form_quali_pct",
+    "team_form_finish",
+    "driver_rating",
+    "car_rating",
 )
 
 #: Grid position, split by era. Only one is non-zero for any given race — the
@@ -164,6 +223,21 @@ def state_paths(state_dir: str):
 
 WEIGHTS_PATH, ARCHIVE_DIR, HISTORY_PATH = state_paths(MODEL_STATE_DIR)
 
+#: The neural race model's artifact (``services/neural_model.py``). Kept beside
+#: the linear one so a deployment's volume holds both.
+NEURAL_WEIGHTS_FILE = "neural_weights.json"
+NEURAL_WEIGHTS_PATH = os.path.join(MODEL_STATE_DIR, NEURAL_WEIGHTS_FILE)
+
+#: The lap-by-lap simulator's circuit profiles and fitted constants
+#: (``services/lap_simulation.py``).
+LAP_SIMULATION_FILE = "lap_simulation.json"
+LAP_SIMULATION_PATH = os.path.join(MODEL_STATE_DIR, LAP_SIMULATION_FILE)
+
+#: The lap-trained pace network the lap simulator can run on
+#: (``training/pace_network.py``, ``scripts/evaluate_pace_network.py``).
+PACE_NETWORK_FILE = "pace_network.json"
+PACE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, PACE_NETWORK_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:
@@ -204,6 +278,21 @@ def ensure_state_dir(state_dir: Optional[str] = None,
     if not os.path.exists(history) and os.path.exists(packaged_history):
         shutil.copy2(packaged_history, history)
         seeded.append("promotion_history.json")
+
+    # The neural model's artifact, when one has been trained. Optional: the
+    # service runs without it and says the simulation is not available yet.
+    neural = os.path.join(state_dir, NEURAL_WEIGHTS_FILE)
+    packaged_neural = os.path.join(packaged_dir, NEURAL_WEIGHTS_FILE)
+    if not os.path.exists(neural) and os.path.exists(packaged_neural):
+        shutil.copy2(packaged_neural, neural)
+        seeded.append(NEURAL_WEIGHTS_FILE)
+
+    for name in (LAP_SIMULATION_FILE, PACE_NETWORK_FILE):
+        kept = os.path.join(state_dir, name)
+        packaged = os.path.join(packaged_dir, name)
+        if not os.path.exists(kept) and os.path.exists(packaged):
+            shutil.copy2(packaged, kept)
+            seeded.append(name)
 
     if not os.path.exists(archive) and os.path.isdir(packaged_archive):
         shutil.copytree(packaged_archive, archive)
@@ -275,6 +364,11 @@ def race_distance_dnf(full_race_rate: float, distance_fraction: float) -> float:
     return 1.0 - (1.0 - full_race_rate) ** max(distance_fraction, 0.0)
 
 
+#: Ceiling on a clustered retirement probability. A large race and team draw
+#: together can exceed one; the cap binds on a tiny fraction of draws.
+MAX_CLUSTERED_RETIREMENT = 0.95
+
+
 class ModelWeightsMissing(RuntimeError):
     """No fitted weights artifact. The service must not serve guesses."""
 
@@ -316,6 +410,12 @@ class RaceModel:
         )
         self.runs = runs
         self._version = version
+        # Retirement clustering (``app/training/retirements.py``): gamma shapes
+        # for a per-race and a per-team multiplier on each car's retirement
+        # hazard. None draws no multiplier at all, so a model without them
+        # consumes exactly the random draws it always did.
+        self.retirement_race_k: Optional[float] = None
+        self.retirement_team_k: Optional[float] = None
 
     # ── Loading ──────────────────────────────────────────────────────────────
 
@@ -437,8 +537,30 @@ class RaceModel:
         Retirements are pushed behind every finisher rather than removed, so each
         row stays a complete ranking.
         """
+        positions, _ = self.sample_outcomes(
+            drivers, seed=seed, runs=runs, distance_fraction=distance_fraction
+        )
+        return positions
+
+    def strengths(self, drivers: Sequence[DriverFeatures]) -> np.ndarray:
+        return np.array([self.strength(d) for d in drivers], dtype=float)
+
+    def sample_outcomes(
+        self,
+        drivers: Sequence[DriverFeatures],
+        seed: int,
+        runs: int,
+        distance_fraction: float = 1.0,
+    ):
+        """``sample_orders`` plus which cars retired in each run.
+
+        The same draws in the same order, so a seed gives the same finishing
+        orders through either method — the race simulation needs to tell a
+        retirement from a last place, and must not change a locked forecast's
+        numbers by asking.
+        """
         rng = np.random.default_rng(seed)
-        strengths = np.array([self.strength(d) for d in drivers], dtype=float)
+        strengths = self.strengths(drivers)
         # Which window this is, inferred from whether a grid was supplied.
         scale = (
             self.noise_scale
@@ -453,14 +575,41 @@ class RaceModel:
         gumbel = rng.gumbel(loc=0.0, scale=scale, size=(runs, len(drivers)))
         perturbed = strengths[None, :] + gumbel
 
-        retired = rng.random((runs, len(drivers))) < dnf_rates[None, :]
+        rates = dnf_rates[None, :]
+        if self.retirement_race_k or self.retirement_team_k:
+            rates = np.minimum(
+                rates * self._retirement_multipliers(rng, drivers, runs),
+                MAX_CLUSTERED_RETIREMENT,
+            )
+        retired = rng.random((runs, len(drivers))) < rates
         perturbed = np.where(retired, -np.inf, perturbed)
 
         order = np.argsort(-perturbed, axis=1)
         positions = np.empty_like(order)
         rows = np.arange(runs)[:, None]
         positions[rows, order] = np.arange(1, len(drivers) + 1)[None, :]
-        return positions
+        return positions, retired
+
+    def _retirement_multipliers(
+        self, rng: np.random.Generator, drivers: Sequence[DriverFeatures], runs: int
+    ) -> np.ndarray:
+        """Hazard multipliers, mean 1: one per race, one per team per race.
+
+        Applied as ``p · m``, capped, which is what the shapes were fitted
+        against: it keeps the mean retirement rate exactly and reproduces the
+        record's clustering. ``1 - (1 - p) ** m`` flattens large draws and,
+        at a 16% rate, recovered under two-thirds of it.
+        """
+        multipliers = np.ones((runs, len(drivers)))
+        if self.retirement_race_k:
+            k = self.retirement_race_k
+            multipliers *= rng.gamma(k, 1.0 / k, size=runs)[:, None]
+        if self.retirement_team_k:
+            teams = sorted({d.team for d in drivers})
+            team_of = np.array([teams.index(d.team) for d in drivers])
+            k = self.retirement_team_k
+            multipliers *= rng.gamma(k, 1.0 / k, size=(runs, len(teams)))[:, team_of]
+        return multipliers
 
     def _summarise(
         self,

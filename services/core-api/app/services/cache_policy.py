@@ -50,6 +50,10 @@ _POLICIES = {
     ],
     "prediction": [
         (r"/predictions/\d+/\d+", Policy(5 * MINUTE, ("prediction",))),
+        # Five thousand simulated races per request otherwise. Rebuilt from
+        # the grid and results, so an ingestion write retires it as well —
+        # that is how "awaiting the confirmed grid" turns into the simulation.
+        (r"/predictions/\d+/\d+/simulation", Policy(5 * MINUTE, ("prediction", "ingestion"))),
         # Snapshots are immutable once written; the archetype artifact only
         # changes with a deploy, and prediction-service bumps on startup.
         (r"/predictions/snapshot/[^/]+", Policy(24 * HOUR, ("prediction",))),

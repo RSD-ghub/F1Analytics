@@ -13,7 +13,7 @@ does. Comparing their accuracy measures exactly how much the grid tells you.
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -168,6 +168,20 @@ class DriverFeatures(BaseModel):
     # unlike the grid this is legitimately available to *both* windows — it is
     # the only current-weekend pace signal the pre-quali model is allowed.
     practice_long_run_gap_pct: float = 0.0
+    # Fuel- and tyre-corrected race pace from lap times, as a fraction of the
+    # race's typical lap: the driver's recent races, and their car's (the
+    # better of its two drivers each race). Prior races only.
+    race_pace_recent_pct: float = 0.015
+    team_race_pace_pct: float = 0.015
+    # The car's form, Kalman-filtered race by race (``services/team_form.py``):
+    # qualifying gap to pole, and mean classified finish. Prior races only.
+    team_form_quali_pct: float = 0.015
+    team_form_finish: float = 10.5
+    # Learned ratings going into the race (``services/ratings.py``): the
+    # driver's, following them between teams, and the car's, following the
+    # organisation between drivers. 0.0 is average.
+    driver_rating: float = 0.0
+    car_rating: float = 0.0
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one
@@ -322,3 +336,64 @@ class ChampionshipForecast(BaseModel):
     generated_at: Optional[datetime] = None
     drivers: List[ChampionshipOutcome] = Field(default_factory=list)
     constructors: List[ChampionshipOutcome] = Field(default_factory=list)
+
+
+class SimulationStatus(str, Enum):
+    READY = "ready"
+    #: The FIA's final grid is not published yet. Simulating on qualifying
+    #: order would hand any penalised driver the wrong starting slot.
+    AWAITING_CONFIRMED_GRID = "awaiting_confirmed_grid"
+
+
+class SimulatedDriver(BaseModel):
+    driver: str
+    team: str = "Unknown"
+    grid_position: int = 0
+    p_win: float = 0.0
+    p_podium: float = 0.0
+    p_points: float = 0.0
+    #: Share of simulated races this car did not finish.
+    p_dnf: float = 0.0
+    #: Mean finishing position, a retirement counted behind every finisher —
+    #: the same convention the forecasts use.
+    expected_position: float = 0.0
+    #: ``position_probabilities[k]`` is the chance of finishing P(k+1), over all
+    #: runs. Sums with ``p_dnf`` to 1.
+    position_probabilities: List[float] = Field(default_factory=list)
+    #: The linear model's numbers for the same driver on the same grid, so the
+    #: network's view is always shown next to the one it is measured against.
+    #: None when the simulation ran on the linear model itself.
+    baseline: Optional[DriverProbability] = None
+
+
+class RaceSimulation(BaseModel):
+    """Thousands of simulated races on the confirmed grid, summarised per driver.
+
+    Not a locked forecast: it is recomputed on request and never scored. It is
+    reproducible all the same — the seed is derived from the race, so the same
+    grid and model give the same numbers every time.
+    """
+
+    status: SimulationStatus
+    season: int
+    round: int
+    race_name: str = ""
+    detail: str = ""
+    runs: int = 0
+    seed: int = 0
+    model_version: str = ""
+    baseline_model_version: str = ""
+    #: Whether the network has beaten the linear model on held-out seasons and
+    #: so places the final-grid forecast. False means it is shown alongside,
+    #: not instead.
+    model_promoted: bool = False
+    #: The held-out comparison the promotion was decided on.
+    model_metrics: Dict[str, Any] = Field(default_factory=dict)
+    #: How the races were run: ``lap-sim-…`` when each is simulated lap by
+    #: lap (strategy, safety cars, passing), ``plackett-luce`` when finishing
+    #: orders are sampled directly from the strengths.
+    engine: str = "plackett-luce"
+    engine_metrics: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[datetime] = None
+    data_quality: Optional[DataQuality] = None
+    drivers: List[SimulatedDriver] = Field(default_factory=list)

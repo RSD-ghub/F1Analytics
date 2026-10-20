@@ -10,6 +10,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import LastRace from '../components/LastRace'
+import RaceSimulation from '../components/RaceSimulation'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -32,7 +33,7 @@ export default function NextRace() {
 
   const {
     weekend, predictions = [], sprint_predictions: sprintPredictions = [],
-    qualifying_freshness: freshness, circuit, unavailable,
+    qualifying_freshness: freshness, circuit, simulation, unavailable,
   } = state.data
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
@@ -78,6 +79,12 @@ export default function NextRace() {
       {sprintPredictions.map((prediction) => (
         <Forecast key={prediction.prediction_id} prediction={prediction} sprint />
       ))}
+
+      {/* The neural model's ten thousand races on the confirmed grid. Leads
+          the Grand Prix once it exists: it is the most informed view of the
+          race there is. Before the grid is confirmed it says what it is
+          waiting for. */}
+      <RaceSimulation simulation={simulation} />
 
       {predictions.length === 0 && (
         <Panel title="No forecast locked yet">
