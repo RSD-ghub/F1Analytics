@@ -115,3 +115,28 @@ async def test_a_disabled_lap_engine_leaves_the_sampler_in_charge():
     result = await predictor.simulate(2026, 5, runs=500)
     assert result.engine == "plackett-luce"
     assert result.engine_metrics == {}
+
+
+def test_a_profile_with_no_measured_strategies_falls_back_to_a_one_stop():
+    positions, _ = run(np.linspace(1, 0, 6), profile=dict(PROFILE, strategies=[]))
+    assert (np.sort(positions, axis=1) == np.arange(1, 7)).all()
+
+
+def test_an_enabled_pace_network_sets_the_pace():
+    """A network that reads the slowest car's features as the fastest pace
+    must put that car at the front, whatever the race model thinks."""
+
+    class Backwards:
+        def predict(self, x, groups):
+            grid = x[:, -2]  # grid_modern: slot number
+            return -(grid - grid.mean()) * 2.0  # back of the grid: two percent quicker per slot
+
+    pace = {"network": Backwards(), "scale": 1.0, "race_day_sd": 0.1, "version": "pace-test"}
+    engine = LapRaceEngine(profiles={"overall": PROFILE, "circuits": {}}, params=params(),
+                           enabled=True, pace=pace)
+    drivers = [DriverFeatures(driver="D{}".format(i), team="T{}".format(i // 2),
+                              grid_position=i + 1) for i in range(6)]
+    model = make_model()
+    positions, _ = engine.sample_outcomes(model, drivers, seed=1, runs=500)
+    assert (positions[:, -1] == 1).mean() > 0.8
+    assert engine.version.endswith("+pace-test")

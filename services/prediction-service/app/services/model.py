@@ -233,6 +233,11 @@ NEURAL_WEIGHTS_PATH = os.path.join(MODEL_STATE_DIR, NEURAL_WEIGHTS_FILE)
 LAP_SIMULATION_FILE = "lap_simulation.json"
 LAP_SIMULATION_PATH = os.path.join(MODEL_STATE_DIR, LAP_SIMULATION_FILE)
 
+#: The lap-trained pace network the lap simulator can run on
+#: (``training/pace_network.py``, ``scripts/evaluate_pace_network.py``).
+PACE_NETWORK_FILE = "pace_network.json"
+PACE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, PACE_NETWORK_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:
@@ -282,11 +287,12 @@ def ensure_state_dir(state_dir: Optional[str] = None,
         shutil.copy2(packaged_neural, neural)
         seeded.append(NEURAL_WEIGHTS_FILE)
 
-    laps = os.path.join(state_dir, LAP_SIMULATION_FILE)
-    packaged_laps = os.path.join(packaged_dir, LAP_SIMULATION_FILE)
-    if not os.path.exists(laps) and os.path.exists(packaged_laps):
-        shutil.copy2(packaged_laps, laps)
-        seeded.append(LAP_SIMULATION_FILE)
+    for name in (LAP_SIMULATION_FILE, PACE_NETWORK_FILE):
+        kept = os.path.join(state_dir, name)
+        packaged = os.path.join(packaged_dir, name)
+        if not os.path.exists(kept) and os.path.exists(packaged):
+            shutil.copy2(packaged, kept)
+            seeded.append(name)
 
     if not os.path.exists(archive) and os.path.isdir(packaged_archive):
         shutil.copytree(packaged_archive, archive)

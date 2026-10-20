@@ -47,6 +47,8 @@ from app.models.schemas import DriverFeatures
 from app.services import circuits
 from app.services.model import (
     LAP_SIMULATION_PATH,
+    PACE_NETWORK_PATH,
+    feature_vector,
     MAX_CLUSTERED_RETIREMENT,
     ModelWeightsMissing,
     race_distance_dnf,
@@ -115,9 +117,14 @@ class LapSimulationParameters:
         return cls(**raw)
 
 
+#: Used when a profile has no measured strategies (built only from seasons
+#: before the compounds took their names): a one-stop, medium to hard.
+FALLBACK_STRATEGIES = [{"compounds": ["MEDIUM", "HARD"], "fractions": [0.45, 0.55]}]
+
+
 def _strategies(profile: Dict, rng: np.random.Generator, runs: int, n: int, laps: int):
     """Per run and car: compound per stint, and the lap each stint ends on."""
-    pool = profile["strategies"]
+    pool = profile.get("strategies") or FALLBACK_STRATEGIES
     picks = rng.integers(0, len(pool), size=(runs, n))
     max_stints = max(len(s["compounds"]) for s in pool)
     compounds = np.full((runs, n, max_stints), -1, dtype=int)
@@ -300,12 +307,22 @@ class LapRaceEngine:
 
     def __init__(self, profiles: Dict, params: LapSimulationParameters,
                  enabled: bool = False, metrics: Optional[Dict[str, Any]] = None,
-                 version: str = LAP_ENGINE_VERSION) -> None:
+                 version: str = LAP_ENGINE_VERSION, pace=None) -> None:
         self.profiles = profiles
         self.params = params
         self.enabled = enabled
         self.metrics = metrics or {}
-        self.version = version
+        self._version = version
+        # The lap-trained pace network, when its artifact says it beat the
+        # model's strengths season by season. Each car's pace then comes from
+        # it, in seconds, instead of from the race model's strength.
+        self.pace = pace
+
+    @property
+    def version(self) -> str:
+        if self.pace is not None:
+            return "{}+{}".format(self._version, self.pace["version"])
+        return self._version
 
     @classmethod
     def load(cls, path: str = LAP_SIMULATION_PATH) -> "LapRaceEngine":
@@ -319,12 +336,17 @@ class LapRaceEngine:
         logger.info("loaded lap simulator %s fitted %s (enabled=%s)",
                     artifact.get("version"), artifact.get("fitted_at"),
                     artifact.get("enabled"))
+        pace = load_pace_network()
+        metrics = dict(artifact.get("metrics", {}))
+        if pace is not None:
+            metrics["pace_network"] = pace["metrics"]
         return cls(
             profiles=artifact["profiles"],
             params=LapSimulationParameters.from_dict(artifact["parameters"]),
             enabled=bool(artifact.get("enabled", False)),
-            metrics=artifact.get("metrics", {}),
+            metrics=metrics,
             version=artifact.get("version", LAP_ENGINE_VERSION),
+            pace=pace,
         )
 
     def profile(self, circuit: str) -> Dict:
@@ -334,11 +356,48 @@ class LapRaceEngine:
     def sample_outcomes(self, model, drivers: Sequence[DriverFeatures], seed: int,
                         runs: int, circuit: str = "",
                         distance_fraction: float = 1.0):
-        """``model``'s strengths and retirement clustering, raced lap by lap."""
+        """``model``'s strengths and retirement clustering, raced lap by lap.
+
+        With an enabled pace network, the strengths come from its predicted
+        pace instead, converted to the same scale.
+        """
+        profile = self.profile(circuit)
+        params = self.params
+        strengths = model.strengths(drivers)
+        if self.pace is not None and drivers:
+            network = self.pace["network"]
+            x = np.vstack([feature_vector(d, with_grid=True) for d in drivers])
+            predicted = network.predict(x, np.zeros(len(drivers)))
+            seconds = predicted / 100.0 * profile["typical_lap"]
+            strengths = -self.pace["scale"] * seconds / params.seconds_per_strength
+            params = LapSimulationParameters.from_dict(
+                dict(params.to_dict(), race_day_sd=self.pace["race_day_sd"]))
         return simulate(
-            drivers, model.strengths(drivers), self.profile(circuit), self.params,
+            drivers, strengths, profile, params,
             seed=seed, runs=runs,
             retirement_race_k=getattr(model, "retirement_race_k", None),
             retirement_team_k=getattr(model, "retirement_team_k", None),
             distance_fraction=distance_fraction,
         )
+
+
+def load_pace_network(path: str = PACE_NETWORK_PATH) -> Optional[Dict[str, Any]]:
+    """The pace network and its settings, only if its artifact is enabled."""
+    from app.training.pace_network import PaceNetwork
+
+    resolved = os.path.abspath(path)
+    if not os.path.exists(resolved):
+        return None
+    with open(resolved) as handle:
+        artifact = json.load(handle)
+    if not artifact.get("enabled"):
+        logger.info("pace network present but not enabled: %s",
+                    artifact.get("metrics", {}).get("verdict"))
+        return None
+    return {
+        "network": PaceNetwork.from_dict(artifact["network"]),
+        "scale": float(artifact["pace_scale"]),
+        "race_day_sd": float(artifact["race_day_sd"]),
+        "version": artifact.get("version", "pace-v1"),
+        "metrics": artifact.get("metrics", {}),
+    }
