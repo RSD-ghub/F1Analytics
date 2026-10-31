@@ -377,8 +377,8 @@ body {
    set four points apart, which made them look like the same kind of thing. */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
 .tile {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 16px 16px 15px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 18px 18px 16px;
   display: flex; flex-direction: column; gap: 4px;
   border-top: 3px solid var(--rule);
 }
@@ -386,12 +386,16 @@ body {
    others qualify it. A rule on every tile said they were equals; a rule on the
    first says which one the page is actually about, which is what the accent is
    reserved for. */
-.tiles .tile:first-child { border-top-color: var(--accent-deep); }
+.tiles .tile:first-child {
+  border-top-color: var(--accent);
+  background: linear-gradient(160deg, rgba(255, 213, 79, 0.12), var(--panel) 55%);
+}
 .tile-value {
   font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums;
   font-variation-settings: var(--display-mid);
   letter-spacing: -0.03em; line-height: 1; color: var(--ink);
 }
+.tiles .tile:first-child .tile-value { color: var(--accent); }
 .tile-label {
   font-size: 11px; font-family: var(--mono); text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--dim); margin-top: 3px;
@@ -1433,3 +1437,33 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
   .forecast-list .rank-right { grid-template-columns: 52px; }
   .forecast-list .rank-right .viz, .forecast-list .rank-right .num:nth-child(2), .forecast-list .rank-right .num:nth-child(4) { display: none; }
 }
+
+/* ── Championship ─────────────────────────────────────────────────────────── */
+.standings-switch { display: flex; justify-content: center; }
+.standings-head, .panel .rank-list .rank-right:has(.standings-points) {
+  display: grid; grid-template-columns: 56px 92px 110px 72px; gap: 14px; align-items: center;
+}
+.standings-head {
+  grid-template-columns: minmax(0, 1fr) 56px 92px 110px 72px;
+  padding: 0 6px 8px 92px; font: 500 11px/1 var(--mono);
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--dim);
+}
+.standings-head .num, .rank-right .num { text-align: right; }
+.standings-points { font-size: 16px; font-weight: 600; color: var(--ink); }
+.rank-right .viz { width: auto; }
+@media (max-width: 719px) {
+  .standings-head { grid-template-columns: minmax(0, 1fr) 48px 64px; padding-left: 92px; }
+  .standings-head span:nth-child(4), .standings-head span:nth-child(5) { display: none; }
+  .panel .rank-list .rank-right:has(.standings-points) { grid-template-columns: 48px 64px; }
+  .rank-right:has(.standings-points) .viz, .rank-right:has(.standings-points) .num:last-child { display: none; }
+}
+
+/* ── Track record ─────────────────────────────────────────────────────────── */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cal-bars { display: flex; flex-direction: column; gap: 3px; width: 120px; }
+.cal-bars > span { display: block; height: 5px; border-radius: 3px; min-width: 2px; }
+.cal-said { background: var(--accent); }
+.cal-happened { background: var(--data); }
+.market { border-left-color: var(--line); }
+.podium-stage figcaption { text-align: center; margin-top: 10px; }
+.markets + p, .markets ~ p { margin-top: 18px; }

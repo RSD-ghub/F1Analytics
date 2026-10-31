@@ -2,9 +2,8 @@ import { getChampionship } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Bar } from '../components/Panel'
 import { HundredRaces } from '../components/Odds'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
+import { useState } from 'react'
+import { Podium, RankList, RankRow, Segmented } from '../components/Pit'
 
 /**
  * Title probabilities from simulating every remaining race.
@@ -23,11 +22,20 @@ export default function Championship() {
   if (state.status === 'error')
     return <Unavailable what="The championship forecast" reason={state.error.message} />
 
-  const forecast = state.data
+  return <Season forecast={state.data} />
+}
+
+function Season({ forecast }) {
+  const [view, setView] = useState('drivers')
+  const drivers = view === 'drivers'
+  const rows = (drivers ? forecast.drivers : forecast.constructors) || []
+  const nameKey = drivers ? 'driver' : 'team'
+  const top = [...rows].sort((a, b) => b.current_points - a.current_points).slice(0, 3)
 
   return (
     <div className="stack">
       <header className="page-head">
+        <p className="eyebrow">After round {forecast.as_of_round}</p>
         <h1>Championship</h1>
         <p className="muted">
           {forecast.runs.toLocaleString()} simulations of the{' '}
@@ -45,8 +53,27 @@ export default function Championship() {
         a run of reliability failures is not anticipated.
       </p>
 
-      <Standings title="Drivers" rows={forecast.drivers} />
-      <Standings title="Constructors" rows={forecast.constructors} nameKey="team" />
+      <div className="standings-switch">
+        <Segmented
+          label="Standings"
+          value={view}
+          onChange={setView}
+          options={[{ value: 'drivers', label: 'Drivers' }, { value: 'teams', label: 'Teams' }]}
+        />
+      </div>
+
+      {top.length === 3 && (
+        <Podium
+          caption="Standing today, by points."
+          entries={top.map((r) => ({
+            name: r[nameKey] ?? r.driver,
+            team: r.team ?? r[nameKey],
+            value: `${r.current_points.toFixed(0)} pts`,
+          }))}
+        />
+      )}
+
+      <Standings title={drivers ? 'Drivers' : 'Constructors'} rows={rows} nameKey={nameKey} />
     </div>
   )
 }
@@ -128,39 +155,33 @@ function Standings({ title, rows, nameKey = 'driver' }) {
         )
       }
     >
-      <Table className="datatable">
-        <TableHeader>
-          <TableRow>
-            <TableHead>{nameKey === 'team' ? 'Team' : 'Driver'}</TableHead>
-            <TableHead className="num">Points</TableHead>
-            <TableHead className="num">Title chance</TableHead>
-            {/* The bar shows the title chance, so it sits beside it. It used
-                to be the last column, two places away from the number it
-                draws and flush against projected points, which is what a
-                reader took it to mean. */}
-            <TableHead className="viz" />
-            <TableHead className="num">Projected</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={row[nameKey] ?? row.driver}
-              className={row.p_champion <= LONG_SHOT ? 'is-long-shot' : ''}
-            >
-              <TableCell>{row[nameKey] ?? row.driver}</TableCell>
-              <TableCell className="num">{row.current_points.toFixed(0)}</TableCell>
-              <TableCell className="num strong">
-                {row.p_champion <= LONG_SHOT
+      <div className="standings-head" aria-hidden="true">
+        <span>{nameKey === 'team' ? 'Team' : 'Driver'}</span>
+        <span className="num">Points</span>
+        {/* The bar draws the title chance, so it sits beside it rather than
+            flush against projected points, which a reader took it to mean. */}
+        <span className="num">Title chance</span>
+        <span />
+        <span className="num">Projected</span>
+      </div>
+      <RankList label={`${title} standings`}>
+        {rows.map((row, i) => {
+          const name = row[nameKey] ?? row.driver
+          const longShot = row.p_champion <= LONG_SHOT
+          return (
+            <RankRow key={name} pos={i + 1} name={name} team={row.team ?? name} dim={longShot}>
+              <span className="num standings-points">{row.current_points.toFixed(0)}</span>
+              <span className="num strong">
+                {longShot
                   ? <span className="muted">&lt;0.1%</span>
                   : `${(row.p_champion * 100).toFixed(1)}%`}
-              </TableCell>
-              <TableCell className="viz"><Bar value={row.p_champion} /></TableCell>
-              <TableCell className="num muted">{row.expected_final_points.toFixed(0)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </span>
+              <span className="viz"><Bar value={row.p_champion} /></span>
+              <span className="num muted">{row.expected_final_points.toFixed(0)}</span>
+            </RankRow>
+          )
+        })}
+      </RankList>
     </Panel>
   )
 }
