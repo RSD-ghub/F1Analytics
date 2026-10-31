@@ -63,6 +63,13 @@ export default function TrackRecord() {
             note="Locked at or after the race started, so not scored. A call made after the race is not a forecast."
           />
         )}
+        {record.predictions_held_name_mismatch > 0 && (
+          <Tile
+            label="Held — driver names disagree"
+            value={record.predictions_held_name_mismatch}
+            note="The forecast and the results spell a driver differently. Held rather than scored as a miss until the names are fixed."
+          />
+        )}
         <Tile
           label="Made on incomplete data"
           value={record.predictions_incomplete_data}
