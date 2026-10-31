@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app import db
 from app.config import get_settings
-from app.routers import auth, bernie, blog, dashboard, news, strategy
+from app.routers import auth, bernie, blog, dashboard, drivers, news, strategy
 from app.services.downstream import DownstreamUnavailable
 from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
@@ -90,5 +90,6 @@ app.include_router(auth.router)
 app.include_router(blog.router)
 app.include_router(bernie.router)
 app.include_router(dashboard.router)
+app.include_router(drivers.router)
 app.include_router(news.router)
 app.include_router(strategy.router)

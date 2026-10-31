@@ -12,6 +12,7 @@ const LINKS = [
   { to: '/news', label: 'Paddock news' },
   { to: '/track-record', label: 'Track record' },
   { to: '/championship', label: 'Championship' },
+  { to: '/drivers', label: 'Drivers' },
   { to: '/strategy', label: 'Strategy' },
   { to: '/bernie', label: 'Bernie' },
 ]
