@@ -1526,3 +1526,23 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 .weekend-story:not(:has(.weekend-photo)) { padding-top: 24px; }
 .news-row-art .news-card-fallback { padding: 10px; }
 .news-row-art .news-card-fallback span { font-size: 11px; overflow-wrap: anywhere; }
+
+/* ── Bernie ───────────────────────────────────────────────────────────────── */
+/* Her replies on raised violet cards; yours in gold, so the two voices are
+   told apart by colour as well as by shape. */
+.turn.assistant { background: var(--panel-high); border-color: transparent; color: var(--text); }
+.turn.user { background: rgba(255, 213, 79, 0.12); border: 1px solid rgba(255, 213, 79, 0.28); color: var(--ink); }
+.thread { border-color: var(--line-soft); border-radius: 14px; }
+.thread.active { border-color: var(--accent); background: var(--panel-high); box-shadow: inset 3px 0 0 var(--accent); }
+.composer input { border-radius: 999px; padding: 11px 18px; background: var(--panel-soft); border-color: var(--line); }
+.examples { list-style: none; padding: 0; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.examples li {
+  padding: 8px 14px; border-radius: 999px; background: var(--panel-high);
+  border: 1px solid var(--line); font-size: 13.5px;
+}
+
+/* ── Sign in ──────────────────────────────────────────────────────────────── */
+.narrow .panel { box-shadow: 0 18px 60px -20px rgba(108, 63, 232, 0.7); border-color: var(--line); }
+.auth-head h1 { font-weight: 900; font-style: italic; text-transform: uppercase; font-variation-settings: var(--display-wide); }
+.auth-head .lede { color: var(--muted); }
+input { background: var(--panel-soft); }
