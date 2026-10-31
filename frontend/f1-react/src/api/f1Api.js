@@ -14,7 +14,7 @@
  *    say so rather than render a silently emptier page.
  */
 
-import { getStoredToken, writeStoredAuth } from '../context/token'
+import { expireStoredAuth, getStoredToken } from '../context/token'
 
 const BASE = '/api'
 
@@ -61,7 +61,7 @@ async function request(path, { auth = false, ...options } = {}) {
     // so drop it here rather than letting every subsequent page report its own
     // confusing failure. Without this a stale token surfaced as "Bernie is
     // unavailable", sending the reader to look at the wrong thing entirely.
-    writeStoredAuth(null)
+    expireStoredAuth()
   }
   if (!res.ok) throw await parseError(res)
   return res.status === 204 ? null : res.json()
