@@ -1,5 +1,6 @@
 import { getDataHealth } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Panel, Loading, Unavailable } from '../components/Panel'
 
 /**
@@ -8,6 +9,7 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * as one.
  */
 export default function DataHealth() {
+  usePageTitle('Data health')
   const state = useAsync(() => getDataHealth(), [])
   if (state.status === 'loading') return <Loading what="Checking the data" />
   if (state.status === 'error') return <Unavailable what="Data health" reason={state.error.message} />
