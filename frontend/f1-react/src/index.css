@@ -1226,3 +1226,36 @@ a { color: var(--accent); }
   .race-call .tyre { width: 42px; height: 42px; border-width: 6px; font-size: 16px; }
   .rejoin-value { font-size: 26px; }
 }
+
+/* ── Race-day weather ─────────────────────────────────────────────────────── */
+
+.weather-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+.weather-summary svg { width: 1.25rem; height: 1.25rem; color: var(--data); flex: none; }
+
+.weather-hours {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.weather-hours li {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr 3rem 3.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.weather-bar {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--data) var(--chance), var(--line-soft) var(--chance));
+}
+.weather-num { text-align: right; }

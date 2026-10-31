@@ -1,4 +1,5 @@
 import { getTrackRecord } from '../api/f1Api'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable } from '../components/Panel'
 
@@ -20,6 +21,7 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * embarrassing races.
  */
 export default function TrackRecord() {
+  usePageTitle('Track record')
   const state = useAsync(() => getTrackRecord(), [])
 
   if (state.status === 'loading') return <Loading what="Loading the track record" />

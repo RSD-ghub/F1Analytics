@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { getNextRace, getLastRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Panel, Loading, Unavailable, Probability, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
@@ -11,6 +12,8 @@ import {
 } from '@/components/ui/table'
 import LastRace from '../components/LastRace'
 import RaceSimulation from '../components/RaceSimulation'
+import RaceWeather from '../components/RaceWeather'
+import { refreshInterval } from '../lib/raceWeekend'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -22,7 +25,8 @@ import RaceSimulation from '../components/RaceSimulation'
  * reader is entitled to it.
  */
 export default function NextRace() {
-  const state = useAsync(() => getNextRace(), [])
+  const state = useAsync(() => getNextRace(), [], { refreshMs: refreshInterval })
+  usePageTitle(state.data?.weekend?.race_name || 'Next race')
   // Fetched separately so a scoring outage costs this panel and not the
   // forecast the page exists for.
   const last = useAsync(() => getLastRace(), [])
@@ -33,8 +37,9 @@ export default function NextRace() {
 
   const {
     weekend, predictions = [], sprint_predictions: sprintPredictions = [],
-    qualifying_freshness: freshness, circuit, simulation, unavailable,
+    qualifying_freshness: freshness, circuit, simulation, weather, unavailable,
   } = state.data
+  const live = refreshInterval(state.data) > 0
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
 
@@ -51,7 +56,15 @@ export default function NextRace() {
             {weekend.is_sprint_weekend && ' · sprint weekend'}
           </p>
         )}
+        {live && state.updatedAt && (
+          <p className="muted small" aria-live="polite">
+            Race weekend: this page updates itself every minute. Last checked{' '}
+            {state.updatedAt.toLocaleTimeString(undefined, { timeStyle: 'short' })}.
+          </p>
+        )}
       </header>
+
+      <RaceWeather weather={weather} />
 
       {circuit && (
         <Panel

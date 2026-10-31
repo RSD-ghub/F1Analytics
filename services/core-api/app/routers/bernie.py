@@ -44,6 +44,7 @@ from app.services.conversation import (
     clamp_question,
     history_for_prompt,
 )
+from app.services import weather
 from app.services.downstream import ServiceClient, gather_optional
 from app.routers.strategy import as_mapping, as_rows, load_race
 from app.services.strategy import build_inputs, simulate, strategy_facts
@@ -194,6 +195,10 @@ async def _weekend_facts(
             "/data/qualifying",
             {"season": season, "round": round_number, "limit": 40},
         ),
+        # For the race-day weather. Only the next weekend can be inside the
+        # forecast horizon, so that is the only one asked about.
+        next_weekend=ingestion_client.get("/forward/next"),
+        circuit=ingestion_client.get("/circuits/{}/{}".format(season, round_number)),
     )
 
     facts: Dict[str, Any] = {"race": "{} round {}".format(season, round_number)}
@@ -287,6 +292,14 @@ async def _weekend_facts(
             )
             for row in ranked
         ]
+
+    upcoming = fetched.get("next_weekend") or {}
+    if (upcoming.get("season"), upcoming.get("round")) == (season, round_number):
+        facts.update(weather.weather_facts(await weather.race_forecast(
+            fetched.get("circuit"), upcoming.get("race_start_utc"),
+            url=settings.weather_forecast_url,
+            timeout=settings.weather_timeout_seconds,
+        )))
 
     if fetched["_unavailable"]:
         facts["unavailable"] = (

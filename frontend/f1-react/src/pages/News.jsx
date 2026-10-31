@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 import { getNews } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button'
  * the network feels broken.
  */
 export default function News() {
+  usePageTitle('Paddock news')
   const [params, setParams] = useSearchParams()
   const outlet = params.get('outlet')
   const state = useAsync(() => getNews(50), [])
