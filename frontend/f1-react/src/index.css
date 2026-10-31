@@ -1467,3 +1467,62 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 .market { border-left-color: var(--line); }
 .podium-stage figcaption { text-align: center; margin-top: 10px; }
 .markets + p, .markets ~ p { margin-top: 18px; }
+
+/* ── Paddock news ─────────────────────────────────────────────────────────── */
+.news-card { background: var(--panel); border-color: var(--line-soft); border-radius: var(--radius); color: var(--ink); }
+.news-outlet { color: var(--accent); }
+.news-title { color: var(--ink); }
+
+.outlet-chips { display: flex; gap: 18px; overflow-x: auto; padding: 4px 2px 6px; }
+.outlet-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 76px;
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: inherit;
+}
+.outlet-chip-mark {
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--panel-high); color: var(--ink);
+  font: italic 900 20px/1 var(--sans); font-variation-settings: var(--display-wide);
+  box-shadow: 0 0 0 2px var(--line); transition: box-shadow 120ms ease, background 120ms ease;
+}
+.outlet-chip:first-child .outlet-chip-mark { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.outlet-chip-name { font-size: 11px; line-height: 1.25; text-align: center; }
+.outlet-chip:hover .outlet-chip-mark { box-shadow: 0 0 0 2px var(--dim); }
+.outlet-chip.is-on { color: var(--accent); }
+.outlet-chip.is-on .outlet-chip-mark { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 2px var(--accent), 0 6px 20px rgba(255, 213, 79, 0.3); }
+
+.news-carousel { list-style: none; margin: 0; padding-left: 0; grid-auto-columns: minmax(280px, 38%); }
+.news-carousel-item { position: relative; display: flex; }
+.news-carousel-item .news-card { height: 100%; }
+.news-carousel-item .news-title { font-size: 18px; }
+.news-rank { position: absolute; top: 12px; left: 12px; z-index: 1; }
+
+.news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.news-list li + li { border-top: 1px solid var(--line-soft); }
+.news-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 16px; align-items: center; padding: 14px 16px; text-decoration: none; }
+.news-row .news-title { font-size: 15.5px; margin-bottom: 6px; }
+.news-row-art .news-card-art { border-radius: 12px; }
+.news-row-art .news-card-fallback span { font-size: 13px; }
+@media (hover: hover) { .news-row:hover .news-title { text-decoration: underline; text-underline-offset: 3px; } }
+@media (max-width: 719px) {
+  .news-carousel { grid-auto-columns: 84%; }
+  .news-row { grid-template-columns: minmax(0, 1fr) 96px; }
+}
+
+/* ── One Blog ─────────────────────────────────────────────────────────────── */
+.weekend-story { border-color: var(--line-soft); border-radius: var(--radius); }
+.weekend-photo::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(18, 10, 26, 0) 40%, rgba(18, 10, 26, 0.75));
+}
+.weekend-photo-label { z-index: 1; font-weight: 600; }
+.weekend-date::before { background: var(--accent); }
+.weekend-headline { font-weight: 850; font-style: italic; color: var(--ink); }
+.weekend-story.is-lead .weekend-headline { text-transform: uppercase; letter-spacing: 0; }
+.verdict { gap: 10px; border-top: 0; padding: 4px 0 12px; }
+.verdict-cell { background: var(--panel-soft); border-radius: 14px; padding: 10px 14px; min-width: 150px; }
+.verdict-value.is-right { color: var(--good); }
+.round-card.is-soon { cursor: default; }
+.weekend-more { color: var(--accent); font-weight: 600; }
+.weekend-story:not(:has(.weekend-photo)) { padding-top: 24px; }
+.news-row-art .news-card-fallback { padding: 10px; }
+.news-row-art .news-card-fallback span { font-size: 11px; overflow-wrap: anywhere; }
