@@ -93,6 +93,10 @@ class _Ingestion:
     async def race_results(self, season, round_number):
         return self._r
 
+    async def season_results(self, season):
+        # No history, so these races are scored without a grid baseline.
+        return []
+
 
 def _results():
     from app.services.clients import RaceResultRow

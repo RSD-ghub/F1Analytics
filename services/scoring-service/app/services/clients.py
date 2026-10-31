@@ -31,6 +31,8 @@ class RaceResultRow(BaseModel):
     position: int = 999
     classified_position: str = ""
     status: str = ""
+    #: 0 means a pit-lane start or no slot recorded.
+    grid_position: int = 0
 
     @property
     def classified(self) -> bool:

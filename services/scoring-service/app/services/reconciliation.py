@@ -16,7 +16,7 @@ count is what makes that visible.
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from app.models.schemas import (
     RACE,
@@ -26,6 +26,7 @@ from app.models.schemas import (
     RaceOutcome,
 )
 from app.services.clients import LockedPrediction, RaceResultRow
+from app.services.grid_baseline import GridRates
 from app.services.scoring import outcome_for, score_market
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ def build_outcome(
             won=row.classified and row.position == 1,
             podium=row.classified and 1 <= row.position <= PODIUM_POSITIONS,
             points=row.classified and 1 <= row.position <= points_positions,
+            grid=row.grid_position,
         )
         for row in results
     ]
@@ -74,10 +76,20 @@ def sprint_points_positions(season: int) -> int:
     return 3 if season <= 2021 else 8
 
 
+#: Windows placed before the grid was known. Scoring them against a forecast
+#: that saw the grid would compare unlike things, so they get no grid baseline.
+WINDOWS_WITHOUT_GRID = ("pre_quali",)
+
+
 def score_prediction(
-    prediction: LockedPrediction, outcome: RaceOutcome
+    prediction: LockedPrediction,
+    outcome: RaceOutcome,
+    grid_rates: Optional[GridRates] = None,
 ) -> PredictionScore:
-    """Score one locked forecast against what happened."""
+    """Score one locked forecast against what happened.
+
+    ``grid_rates`` adds the grid-order baseline for windows that knew the grid.
+    """
     by_driver: Dict[str, DriverOutcome] = {d.driver: d for d in outcome.drivers}
 
     predicted_names = [p.driver for p in prediction.driver_probabilities]
@@ -100,6 +112,7 @@ def score_prediction(
 
         probabilities: List[float] = []
         outcomes: List[bool] = []
+        grids: List[int] = []
         for row in prediction.driver_probabilities:
             probability = _probability_for(market, row)
             if probability is None:
@@ -109,11 +122,14 @@ def score_prediction(
             # Scoring them as a miss is what stops a bad call from vanishing.
             found = by_driver.get(row.driver)
             outcomes.append(outcome_for(market, found) if found else False)
+            grids.append(found.grid if found else 0)
+        winners = outcome.points_positions if market is Market.POINTS else None
         markets.append(
             score_market(
                 market, probabilities, outcomes,
-                winners=(
-                    outcome.points_positions if market is Market.POINTS else None
+                winners=winners,
+                grid_probabilities=_grid_probabilities(
+                    prediction, grid_rates, market, grids, winners
                 ),
             )
         )
@@ -138,6 +154,22 @@ def score_prediction(
             else None
         ),
     )
+
+
+def _grid_probabilities(
+    prediction: LockedPrediction,
+    grid_rates: Optional[GridRates],
+    market: Market,
+    grids: Sequence[int],
+    winners: Optional[int],
+) -> Optional[List[float]]:
+    if grid_rates is None or prediction.window in WINDOWS_WITHOUT_GRID:
+        return None
+    # No recorded grid at all means the results predate the field, not that
+    # everyone started from the pit lane.
+    if not any(g > 0 for g in grids):
+        return None
+    return grid_rates.probabilities(market, grids, winners)
 
 
 def _probability_for(market: Market, row):

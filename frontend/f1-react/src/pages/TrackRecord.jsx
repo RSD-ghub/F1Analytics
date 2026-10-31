@@ -108,6 +108,24 @@ const CURVE_WINDOW = { pre_quali: 'before qualifying', sprint: 'sprint' }
 
 const MARKET_LABEL = { win: 'Winner', podium: 'Podium', points: 'Points finish' }
 
+/**
+ * Skill against a forecast that knew only the starting grid. Beating a random
+ * pick is easy once the grid is set, since pole wins far more often than one
+ * race in twenty, so this is the number that says whether the model added
+ * anything beyond the grid. Absent for windows placed before qualifying.
+ */
+function GridSkill({ skill }) {
+  if (skill === null || skill === undefined) return null
+  return (
+    <span className="market-note">
+      <span className={`skill ${skill >= 0 ? 'good' : 'bad'}`}>
+        {skill >= 0 ? '+' : ''}{(skill * 100).toFixed(1)}%
+      </span>{' '}
+      {skill >= 0 ? 'better than the grid order' : 'worse than the grid order'}
+    </span>
+  )
+}
+
 function WindowRecord({ window }) {
   // Three windows now, and two of them know a grid. Collapsing both into
   // "With the grid set" made the confirmed-grid forecast indistinguishable from
@@ -132,6 +150,7 @@ function WindowRecord({ window }) {
             <span className="market-note">
               {skill >= 0 ? 'better than guessing' : 'worse than guessing'}
             </span>
+            <GridSkill skill={window.skill_vs_grid_by_market?.[market]} />
           </div>
         ))}
       </div>

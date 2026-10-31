@@ -39,6 +39,9 @@ class DriverOutcome(BaseModel):
     won: bool = False
     podium: bool = False
     points: bool = False
+    #: Starting slot, 0 for a pit-lane start or when it was not recorded. Feeds
+    #: the grid-order baseline, never the forecast's own score.
+    grid: int = 0
 
 
 #: Windows that forecast the sprint rather than the Grand Prix. Mirrors
@@ -94,6 +97,11 @@ class MarketScore(BaseModel):
     skill_vs_baseline: float = 0.0
     log_score: Optional[float] = None
     drivers_scored: int = 0
+    #: Brier of a forecast that knew only the starting grid (see
+    #: ``grid_baseline.py``), and the model's skill against it. ``None`` for a
+    #: window that did not know the grid, or with too little history.
+    grid_baseline_brier: Optional[float] = None
+    skill_vs_grid: Optional[float] = None
 
 
 class PredictionScore(BaseModel):
@@ -163,6 +171,9 @@ class WindowRecord(BaseModel):
     predictions_scored: int = 0
     brier_by_market: Dict[str, float] = Field(default_factory=dict)
     skill_by_market: Dict[str, float] = Field(default_factory=dict)
+    #: Skill against the grid-order baseline, averaged over the scores that
+    #: have one. Absent for windows that do not know the grid.
+    skill_vs_grid_by_market: Dict[str, float] = Field(default_factory=dict)
     mean_log_score: Optional[float] = None
     #: How often the most likely driver actually won. Intuitive, but a weak
     #: measure — it ignores everything the probabilities said about everyone

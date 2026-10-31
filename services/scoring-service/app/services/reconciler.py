@@ -7,7 +7,7 @@ score is much harder to explain away later than a delayed one.
 """
 
 import logging
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.models.schemas import (
     RACE,
@@ -25,6 +25,7 @@ from app.services.clients import (
     PredictionClient,
     UpstreamUnavailable,
 )
+from app.services.grid_baseline import GridRates, HistoricalStart
 from app.services.reconciliation import (
     POINTS_POSITIONS,
     build_outcome,
@@ -34,6 +35,10 @@ from app.services.reconciliation import (
 from app.services.storage import ScoringStore
 
 logger = logging.getLogger(__name__)
+
+#: Seasons of Grand Prix history behind the grid-order baseline. Ten is a few
+#: thousand starts: plenty per slot, recent enough to reflect modern racing.
+GRID_HISTORY_SEASONS = 10
 
 
 class Reconciler:
@@ -46,6 +51,8 @@ class Reconciler:
         self._ingestion = ingestion
         self._predictions = predictions
         self._store = store
+        #: Finished seasons never change, so their starts are fetched once.
+        self._season_starts: Dict[int, List[HistoricalStart]] = {}
 
     async def reconcile_race(
         self, season: int, round_number: int, event: str = RACE
@@ -85,6 +92,7 @@ class Reconciler:
         predictions = await self._predictions.predictions_for(
             season, round_number, event=event
         )
+        grid_rates = await self._grid_rates(season, round_number, points_positions)
         scores: List[PredictionScore] = []
         for prediction in predictions:
             if prediction.is_late_lock:
@@ -111,7 +119,7 @@ class Reconciler:
                     prediction.prediction_id, prediction.locked_at,
                     prediction.race_start_utc,
                 )
-            score = score_prediction(prediction, outcome)
+            score = score_prediction(prediction, outcome, grid_rates)
             await self._store.save_score(score)
             scores.append(score)
 
@@ -120,6 +128,55 @@ class Reconciler:
             season, round_number, event, len(scores),
         )
         return outcome, scores
+
+    async def _grid_rates(
+        self, season: int, round_number: int, points_positions: int
+    ) -> Optional[GridRates]:
+        """Grid-slot rates from Grand Prix results before this round.
+
+        Sprints use Grand Prix history too: there are too few sprints to give
+        every slot a rate, and the points market is counted to the sprint's own
+        number of scoring places. A failure here costs only the extra baseline,
+        so it is logged and the race is still scored.
+        """
+        starts: List[HistoricalStart] = []
+        try:
+            for year in range(season - GRID_HISTORY_SEASONS, season + 1):
+                starts.extend(await self._starts_for(year, finished=year < season))
+        except UpstreamUnavailable as exc:
+            logger.warning(
+                "no grid baseline for %s-%s: history unavailable (%s)",
+                season, round_number, exc,
+            )
+            return None
+        rates = GridRates.from_history(
+            starts, before=(season, round_number), points_positions=points_positions
+        )
+        if not rates.usable:
+            logger.info(
+                "no grid baseline for %s-%s: only %s past races",
+                season, round_number, rates.races,
+            )
+            return None
+        return rates
+
+    async def _starts_for(self, season: int, finished: bool) -> List[HistoricalStart]:
+        if finished and season in self._season_starts:
+            return self._season_starts[season]
+        rows = await self._ingestion.season_results(season)
+        starts = [
+            HistoricalStart(
+                season=row.season,
+                round=row.round,
+                grid_position=row.grid_position,
+                position=row.position,
+                classified=row.classified,
+            )
+            for row in rows
+        ]
+        if finished:
+            self._season_starts[season] = starts
+        return starts
 
     async def reconcile_season(self, season: int) -> List[PredictionScore]:
         """Sweep every race and sprint that has a locked prediction and a result."""

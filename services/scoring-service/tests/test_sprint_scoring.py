@@ -50,6 +50,10 @@ class _Ingestion:
     async def sprint_results(self, season, round_number):
         return _results(DRIVERS) if self.sprint_run else []
 
+    async def season_results(self, season):
+        # No history, so these races are scored without a grid baseline.
+        return []
+
 
 class _Predictions:
     def __init__(self, predictions):
