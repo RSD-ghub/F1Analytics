@@ -124,17 +124,35 @@
 
 body {
   margin: 0;
-  /* A crimson haze behind the top of the page, the way a pit wall's screens
-     glow at night. Fixed so it stays put while the content scrolls. */
+  /* The red car down the main straight, fixed behind the page, under a
+     crimson haze and a near-black scrim.
+     The scrim is measured, not eyeballed: the photo's sky is about #b9bec6,
+     and through 70% near-black it lands near #3b3c3e, where the lede tone
+     (--muted) still reads at 5.6:1. The scrim deepens towards the bottom so
+     long pages settle into the plain ground. */
   background:
-    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(179, 18, 31, 0.42), rgba(179, 18, 31, 0) 70%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(120, 10, 30, 0.18), rgba(120, 10, 30, 0) 70%),
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(179, 18, 31, 0.38), rgba(179, 18, 31, 0) 70%),
+    linear-gradient(180deg, rgba(11, 9, 11, 0.70) 0%, rgba(11, 9, 11, 0.74) 45%, rgba(11, 9, 11, 0.90) 100%),
+    url('/backgrounds/race.jpg') center 40% / cover no-repeat,
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
   font: 400 15px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* On a phone the cover crop is mostly sky, the brightest part of the frame:
+   darken the scrim a step at the top, where the sky is. */
+@media (max-width: 719px) {
+  body {
+    background:
+      radial-gradient(ellipse 90% 45% at 50% -10%, rgba(179, 18, 31, 0.38), rgba(179, 18, 31, 0) 70%),
+      linear-gradient(180deg, rgba(11, 9, 11, 0.85) 0%, rgba(11, 9, 11, 0.78) 55%, rgba(11, 9, 11, 0.92) 100%),
+      url('/backgrounds/race.jpg') 50% 50% / cover no-repeat,
+      var(--bg);
+    background-attachment: fixed;
+  }
 }
 
 /* Every figure in the product, in one declaration. Lap times, probabilities,
@@ -321,7 +339,13 @@ body {
    What is left here is the type — the heading was rendering at Card's default
    weight and size, which is louder than this product wants when a page is a
    stack of six of them. */
-.panel { border-color: var(--line-soft); border-radius: var(--radius); box-shadow: none; }
+/* Frosted rather than solid, so the photograph behind the page shows through
+   faintly; the tint is 88% card colour, so every contrast figure measured on
+   the card surface still holds. */
+.panel {
+  border-color: rgba(255, 255, 255, 0.07); border-radius: var(--radius); box-shadow: none;
+  background: rgba(26, 22, 24, 0.88); backdrop-filter: blur(16px) saturate(1.1);
+}
 .panel [data-slot="card-title"] {
   font-size: 17px; font-weight: 800; letter-spacing: 0.005em;
   font-variation-settings: var(--display-mid); color: var(--ink);
