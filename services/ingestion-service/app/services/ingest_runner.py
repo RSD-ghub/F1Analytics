@@ -208,6 +208,7 @@ class IngestRunner:
         case, not a hole in the historical record. The caller decides whether a
         missing grid matters — which, for a post-quali forecast, it does.
         """
+        await self._prime_driver_names(expected.season)
         try:
             rows = await asyncio.to_thread(self._source.load_qualifying, expected)
         except SessionFetchError as exc:
@@ -230,6 +231,24 @@ class IngestRunner:
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
 
+    async def _prime_driver_names(self, season: int) -> None:
+        """Have the source spell drivers the way our stored data already does.
+
+        Upstream backends disagree on names ("Kimi Antonelli" against "Andrea
+        Kimi Antonelli") and every join downstream is on the name. The registry
+        is keyed on car number, which they agree on. Best effort: without it
+        the source keeps whatever name upstream sent, as before.
+        """
+        prime = getattr(self._source, "use_driver_names", None)
+        if prime is None:
+            return
+        try:
+            remembered = await self._store.recall_drivers(season)
+        except Exception:
+            logger.warning("driver registry unavailable for %s", season, exc_info=True)
+            return
+        prime(season, {number: entry[0] for number, entry in remembered.items()})
+
     async def _identities_for(self, expected: ExpectedSession):
         """Car number -> (driver, team), live if possible, remembered if not.
 
@@ -244,6 +263,7 @@ class IngestRunner:
         with FastF1 unreachable the other two were unusable, and a weekend could
         be lost to an outage at one provider despite two others having the data.
         """
+        await self._prime_driver_names(expected.season)
         try:
             identities = await asyncio.to_thread(
                 self._source.load_qualifying_entry_list, expected
@@ -546,6 +566,7 @@ class IngestRunner:
                 and not await self._has_usable_rows(SPRINT_QUALIFYING, where)
             ):
                 label = "{} {}".format(key, quali_name)
+                await self._prime_driver_names(season)
                 try:
                     rows = await asyncio.to_thread(
                         self._source.load_qualifying,
@@ -565,6 +586,7 @@ class IngestRunner:
 
             if not sprint_stored and _has_run(sessions.get(sprint_name)):
                 label = "{} {}".format(key, sprint_name)
+                await self._prime_driver_names(season)
                 try:
                     rows = await asyncio.to_thread(
                         self._source.load_sprint_results,
@@ -726,6 +748,7 @@ class IngestRunner:
         than recorded as a failure.
         """
         total = 0
+        await self._prime_driver_names(expected.season)
         for code in session_codes:
             rows = None
             for attempt in range(1, self._max_attempts + 1):
@@ -857,6 +880,7 @@ class IngestRunner:
         happened yet will not start existing because we asked three times.
         """
         last_error: Optional[Exception] = None
+        await self._prime_driver_names(expected.season)
 
         for attempt in range(1, self._max_attempts + 1):
             state.attempts += 1

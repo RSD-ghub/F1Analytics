@@ -728,19 +728,27 @@ class IngestionStore:
         without a separate job. Upserts rather than replaces the season: a
         mid-season driver change should add an entry, not erase the drivers who
         have not changed.
+
+        The name is written once and then kept. It is the spelling the rest of
+        the season's data is filed under, and an entry list read through a
+        different backend ("Andrea Kimi Antonelli" for "Kimi Antonelli") must
+        not rename a driver part way through. Car numbers belong to one driver,
+        so a genuine change of driver arrives as a new number, not a new name.
         """
         if not identities:
             return 0
         operations = [
             UpdateOne(
                 {"season": season, "driver_number": int(number)},
-                {"$set": {
-                    "season": season,
-                    "driver_number": int(number),
-                    "driver": driver,
-                    "team": team,
-                    "last_seen": datetime.now(timezone.utc),
-                }},
+                {
+                    "$set": {
+                        "season": season,
+                        "driver_number": int(number),
+                        "team": team,
+                        "last_seen": datetime.now(timezone.utc),
+                    },
+                    "$setOnInsert": {"driver": driver},
+                },
                 upsert=True,
             )
             for number, (driver, team) in identities.items()
