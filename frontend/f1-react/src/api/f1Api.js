@@ -139,3 +139,8 @@ export const getBlogFeed = (limit = 24) =>
   request(`/blog/feed?limit=${limit}`)
 
 export const getGlobe = () => request('/globe')
+
+export const getDrivers = (season) => request(`/drivers/${season}`)
+export const getDriver = (season, driver) =>
+  request(`/drivers/${season}/${encodeURIComponent(driver)}`)
+export const getRaceReview = (season, round) => request(`/race-review/${season}/${round}`)

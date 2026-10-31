@@ -1226,3 +1226,39 @@ a { color: var(--accent); }
   .race-call .tyre { width: 42px; height: 42px; border-width: 6px; font-size: 16px; }
   .rejoin-value { font-size: 26px; }
 }
+
+/* ── Pit stop review ──────────────────────────────────────────────────────── */
+
+.season-pick { font-size: 0.9rem; }
+.season-pick select { margin-left: 0.4rem; font: inherit; padding: 0.2rem 0.4rem; }
+
+.stint-chart { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 4px; }
+.stint-chart li {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(7rem, 11rem) 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.stint-pos { font-family: var(--mono); color: var(--muted); }
+.stint-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stint-track { display: flex; height: 1.1rem; gap: 2px; }
+.rr-stint {
+  border-radius: 3px;
+  font: 600 0.65rem/1.1rem var(--mono);
+  text-align: center;
+  color: #15171c;
+  border: 1px solid var(--line);
+  min-width: 2px;
+}
+.rr-stint.c-soft { background: var(--tyre-soft); color: #fff; }
+.rr-stint.c-medium { background: var(--tyre-medium); }
+.rr-stint.c-hard { background: var(--tyre-hard); }
+.rr-stint.c-intermediate { background: var(--tyre-intermediate); color: #fff; }
+.rr-stint.c-wet { background: var(--tyre-wet); color: #fff; }
+.rr-stint.c-unknown { background: var(--line-soft); }
+.mono { font-family: var(--mono); }
+
+@media (max-width: 560px) {
+  .stint-chart li { grid-template-columns: 2.25rem 6rem 1fr; }
+}

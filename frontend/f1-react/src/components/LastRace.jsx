@@ -67,6 +67,9 @@ export default function LastRace({ race }) {
           than treating all {win.drivers_scored} cars as equally likely.{' '}
           <Link className="link" to={`/blog/${race.season}/${race.round}`}>
             See the full weekend →
+          </Link>{' '}
+          <Link className="link" to={`/race-review/${race.season}/${race.round}`}>
+            Pit stop review →
           </Link>
         </p>
       )}

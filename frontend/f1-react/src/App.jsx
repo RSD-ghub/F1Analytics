@@ -10,6 +10,9 @@ import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
 import Blog from './pages/Blog'
 import Home from './pages/Home'
+import Drivers from './pages/Drivers'
+import Driver from './pages/Driver'
+import RaceReview from './pages/RaceReview'
 
 /**
  * Routing.
@@ -32,6 +35,9 @@ export default function App() {
         {/* The entries moved under /blog when One Blog got a front door.
             Old links stay working. */}
         <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
+        <Route path="/drivers" element={<Drivers />} />
+        <Route path="/drivers/:season/:driver" element={<Driver />} />
+        <Route path="/race-review/:season/:round" element={<RaceReview />} />
         <Route path="/news" element={<News />} />
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/bernie" element={<Bernie />} />
