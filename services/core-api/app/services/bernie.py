@@ -25,7 +25,7 @@ complaint that shaped this prompt.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Tuple
 
 from f1_common.llm import LLMBillingRequired, LLMClient
 
@@ -234,6 +234,52 @@ class Bernie:
         """Answer strictly from the supplied facts. Text only."""
         return (await self.converse(question, facts, max_tokens, history))[0]
 
+    def _conversation_prompt(self, question: str, facts: Dict[str, Any]) -> str:
+        return (
+            "Question: {}\n\n"
+            "facts (the only information you may use for this answer):\n{}\n"
+        ).format(question, _render_facts(facts))
+
+    async def converse_stream(
+        self,
+        question: str,
+        facts: Dict[str, Any],
+        max_tokens: int = 900,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> AsyncIterator[str]:
+        """Same turn as ``converse``, yielded as the model writes it.
+
+        Same prompt and settings, so a streamed answer is the answer the
+        non-streamed route would have given. A client without streaming falls
+        back to one fragment holding the whole answer. Failures raise
+        ``BernieUnavailable`` with the same reasons as ``converse``.
+        """
+        if not self.available:
+            raise BernieUnavailable(
+                "no LLM provider configured", reason="not_configured"
+            )
+        if not hasattr(self._client, "stream"):
+            answer, _ = await self.converse(question, facts, max_tokens, history)
+            yield answer
+            return
+
+        try:
+            async for fragment in self._client.stream(
+                prompt=self._conversation_prompt(question, facts),
+                system=SYSTEM_PROMPT,
+                max_tokens=max_tokens,
+                reasoning_effort="none",
+                temperature=0.3,
+                history=history,
+            ):
+                yield fragment
+        except LLMBillingRequired as exc:
+            logger.error("Bernie is out of credit: %s", exc)
+            raise BernieUnavailable(str(exc), reason="billing") from exc
+        except Exception as exc:
+            logger.warning("Bernie stream failed: %s", exc)
+            raise BernieUnavailable(str(exc), reason="provider_error") from exc
+
     async def converse(
         self,
         question: str,
@@ -257,10 +303,7 @@ class Bernie:
                 "no LLM provider configured", reason="not_configured"
             )
 
-        prompt = (
-            "Question: {}\n\n"
-            "facts (the only information you may use for this answer):\n{}\n"
-        ).format(question, _render_facts(facts))
+        prompt = self._conversation_prompt(question, facts)
 
         try:
             # complete_verbose returns the reasoning trace separately where the
