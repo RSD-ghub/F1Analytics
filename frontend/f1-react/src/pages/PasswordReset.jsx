@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { confirmPasswordReset, requestPasswordReset } from '../api/f1Api'
 import { Panel } from '../components/Panel'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +15,7 @@ import { Label } from '@/components/ui/label'
 export default function PasswordReset() {
   const [params] = useSearchParams()
   const token = params.get('token')
+  usePageTitle(token ? 'Choose a new password' : 'Reset your password')
   return token ? <ChooseNew token={token} /> : <AskForLink />
 }
 
