@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Carousel, Pill, SectionTitle } from '../components/Pit'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronDown } from 'lucide-react'
 
@@ -76,22 +77,18 @@ export default function Blog() {
 
       {upcoming.length > 0 && (
         <section>
-          <h2 className="section-head">Still to come</h2>
-          <ul className="weekend-list">
-            {upcoming.slice(0, 4).map((w) => (
-              <li key={w.round}>
-                {/* Not links: before a race there is nothing to read. */}
-                <div className="weekend-card weekend-card-soon">
-                  <span className="weekend-round">R{w.round}</span>
-                  <span className="weekend-name">
-                    {w.race_name}
-                    <span className="weekend-circuit">{w.circuit}</span>
-                  </span>
-                  <span className="weekend-when">{when(w.race_start_utc)}</span>
-                </div>
-              </li>
+          <SectionTitle>Still to come</SectionTitle>
+          <Carousel label="Weekends still to come">
+            {upcoming.slice(0, 6).map((w) => (
+              /* Not links: before a race there is nothing to read. */
+              <div key={w.round} role="listitem" className="round-card is-soon">
+                <Pill tone="dark">Round {w.round}</Pill>
+                <span className="round-country">{w.circuit}</span>
+                <span className="round-name">{w.race_name}</span>
+                <span className="round-date">{when(w.race_start_utc)}</span>
+              </div>
             ))}
-          </ul>
+          </Carousel>
         </section>
       )}
 
@@ -132,7 +129,7 @@ function WeekendCard({ item, lead = false }) {
           aria-label={item.circuit}
         >
           <div className="weekend-photo-label">
-            <Badge variant="secondary">R{item.round}</Badge>
+            <Pill>Round {item.round}</Pill>
             <span>{item.circuit}</span>
           </div>
         </div>
