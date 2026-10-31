@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { initials, splitName, teamColour } from '../lib/teams'
+import { useHeadshot } from '../lib/headshots'
 
 /**
  * The shared furniture of the pit-wall look: avatars, team bars, the podium,
@@ -11,10 +13,19 @@ import { initials, splitName, teamColour } from '../lib/teams'
 /** Initials in a circle ringed in the team colour. We hold no rights to
     driver photographs, and initials say who it is without pretending. */
 export function Avatar({ name, team, size = 40 }) {
+  const found = useHeadshot(name)
+  // OpenF1 links the one-column rendition; big avatars ask for the two-column one.
+  const photo = found && size > 48 ? found.replace('/1col/', '/2col/') : found
+  const [broken, setBroken] = useState(null)
+  const show = photo && broken !== photo
   return (
-    <span className="avatar" style={{ '--team': teamColour(team), width: size, height: size, fontSize: size * 0.36 }}
+    <span className={`avatar${show ? ' has-photo' : ''}`}
+          style={{ '--team': teamColour(team), width: size, height: size, fontSize: size * 0.36 }}
           aria-hidden="true">
-      {initials(name)}
+      {show
+        ? <img src={photo} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
+               onError={() => setBroken(photo)} />
+        : initials(name)}
     </span>
   )
 }
@@ -77,7 +88,7 @@ export function Podium({ entries, caption }) {
         {order.map(([e, pos]) => (
           <li key={pos} className={`podium-step step-${pos}`} style={{ '--team': teamColour(e.team) }}>
             <div className="podium-who">
-              <Avatar name={e.name} team={e.team} size={pos === 1 ? 72 : 58} />
+              <Avatar name={e.name} team={e.team} size={pos === 1 ? 84 : 66} />
               {e.value != null && <span className="podium-value num">{e.value}</span>}
               <DriverName name={e.name} />
             </div>
