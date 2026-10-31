@@ -17,7 +17,7 @@ done
 grep -v '^-' "$root/requirements-dev.txt" > "$work/dev.txt"
 echo 'redis>=5.0' > "$work/f1-common.txt"
 
-(cd "$work" && uv pip compile --quiet --universal --python-version 3.12 --no-header \
+(cd "$work" && uv pip compile --quiet --universal --python-version 3.9 --no-header \
   core-api.txt ingestion-service.txt prediction-service.txt scoring-service.txt \
   dev.txt f1-common.txt -o body.txt)
 
