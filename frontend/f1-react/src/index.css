@@ -1226,3 +1226,12 @@ a { color: var(--accent); }
   .race-call .tyre { width: 42px; height: 42px; border-width: 6px; font-size: 16px; }
   .rejoin-value { font-size: 26px; }
 }
+
+/* Reliability diagram on the Track Record page */
+.reliability { display: block; margin: 0.25rem 0 0.75rem; max-width: 100%; height: auto; }
+.reliability-frame { fill: none; stroke: var(--muted); stroke-opacity: 0.4; }
+.reliability-grid line { stroke: var(--muted); stroke-opacity: 0.15; }
+.reliability-diagonal { stroke: var(--muted); stroke-dasharray: 3 3; }
+.reliability-dot { fill: var(--good); fill-opacity: 0.75; }
+.reliability-dot.off { fill: var(--bad); }
+.reliability-axis { font-size: 9px; fill: var(--muted); }

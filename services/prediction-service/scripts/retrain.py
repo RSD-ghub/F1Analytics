@@ -247,6 +247,9 @@ def main() -> int:
     logger.info("challenger        : %.4f  (at scale %.2f)",
                 decision.challenger_score, decision.challenger_scale)
     logger.info("relative gain     : %+.2f%%", 100 * decision.relative_gain)
+    if decision.gain_ci_low is not None:
+        logger.info("90%% interval      : %+.2f%% to %+.2f%% (paired bootstrap)",
+                    100 * decision.gain_ci_low, 100 * decision.gain_ci_high)
     logger.info("decision          : %s", "PROMOTE" if decision.promote else "HOLD")
     logger.info("reason            : %s", decision.reason)
 
