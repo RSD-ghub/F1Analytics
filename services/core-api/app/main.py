@@ -21,6 +21,7 @@ from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
 from app.services.usage import UsageStore
 from app.services.users import UserStore
+from app.services.password_reset import ResetStore
 from f1_common import cache
 from f1_common.health import build_health_router
 
@@ -36,6 +37,7 @@ async def lifespan(_: FastAPI):
 
     try:
         await UserStore(db.db()).ensure_indexes()
+        await ResetStore(db.db()).ensure_indexes()
         await ConversationStore(db.db()).ensure_indexes()
         await UsageStore(db.db()).ensure_indexes()
     except Exception:

@@ -53,6 +53,21 @@ class Settings(ServiceSettings):
     bernie_calls_per_user_per_day: int = 20
     bernie_calls_per_day: int = 500
 
+    # Behind Caddy in production, every request arrives from the proxy's
+    # address; set this so rate limits key on the real client. Leave it off
+    # when core-api is reachable directly, or callers can pick their own key.
+    trust_forwarded_for: bool = False
+
+    # Password reset email. Without SMTP_HOST the link is logged instead,
+    # which is fine on a laptop and wrong on a public deployment.
+    public_base_url: str = "http://localhost:5173"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_starttls: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
