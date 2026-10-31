@@ -11,156 +11,125 @@
  * guessing at colours again.
  */
 @theme {
-  --color-background: #f7f6f3;
-  --color-foreground: #15171c;
+  --color-background: #120a1a;
+  --color-foreground: #efe8f5;
 
-  --color-card: #ffffff;
-  --color-card-foreground: #15171c;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #15171c;
+  --color-card: #1e1329;
+  --color-card-foreground: #efe8f5;
+  --color-popover: #291b37;
+  --color-popover-foreground: #efe8f5;
 
-  /* The accent, rationed: it marks the thing a view is about. */
-  --color-primary: #cc3328;
-  --color-primary-foreground: #ffffff;
+  /* Gold, rationed: it marks the thing a view is about. Dark text sits on it. */
+  --color-primary: #ffd54f;
+  --color-primary-foreground: #2b2000;
 
-  --color-secondary: #f2f1ee;
-  --color-secondary-foreground: #15171c;
+  --color-secondary: #291b37;
+  --color-secondary-foreground: #efe8f5;
 
-  --color-muted: #f2f1ee;
-  --color-muted-foreground: #5f6672;
+  --color-muted: #291b37;
+  --color-muted-foreground: #bba9d9;
 
-  --color-accent: #f2f1ee;
-  --color-accent-foreground: #15171c;
+  --color-accent: #33234a;
+  --color-accent-foreground: #efe8f5;
 
-  --color-destructive: #c0392b;
-  --color-destructive-foreground: #ffffff;
+  --color-destructive: #ff7a7a;
+  --color-destructive-foreground: #2b0a0a;
 
-  --color-border: #e2e0da;
-  --color-input: #e2e0da;
-  --color-ring: #cc3328;
+  --color-border: #34244a;
+  --color-input: #3d2a55;
+  --color-ring: #ffd54f;
 
-  /* Ours, kept alongside shadcn's. Data series take the blue so a chart is
-     never competing with the brand for attention. */
-  --color-data: #2f6bb0;
-  --color-data-deep: #24548c;
-  --color-good: #1d7a4d;
-  --color-warn: #8a5d08;
-  --color-dim: #656d7d;
+  --color-data: #9d8bff;
+  --color-data-deep: #6c3fe8;
+  --color-good: #6ee7a0;
+  --color-warn: #ffb74d;
+  --color-dim: #a08dc2;
 
   --font-sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --radius: 0.625rem;
+  --radius: 1rem;
 }
 
-/* The look is an instrument readout, not a broadcast graphic.
-   
-   This product's claim is that it publishes a number before a race and is
-   marked against it afterwards, so its credibility is legibility: dense
-   figures, ordered, checkable at a glance. Archivo carries the voice; IBM
-   Plex Mono carries every number, because a lap time and a probability are
-   measurements and should read like measurements.
-   
-   The accent is rationed. It used to mark the brand, every link, every bar,
-   the win segment and the penalties, which left nothing on a page looking
-   more important than anything else. Red now means "the thing this view is
-   about"; data series take the blue. */
-
+/* The pit wall at night.
+ *
+ * A violet-black ground with tonal surfaces stacked by depth (lighter means
+ * closer), one gold accent for whatever a view is about, and heavy italic
+ * display type. The product's claim is unchanged: it publishes a number before
+ * a race and is marked against it afterwards, so every figure stays in IBM
+ * Plex Mono and every colour pair below was measured, not picked by eye.
+ *
+ * Contrast, measured on the card surface (#1e1329) unless noted; small text
+ * needs 4.5:1. Values on the deepest raised surface (#33234a) in brackets.
+ */
 :root {
-  /* Paper, not white. A pure #fff ground under a page of tables reads as
-     unfinished; a warm off-white gives the panels something to sit on. */
-  --bg: #f7f6f3;
-  --panel: #ffffff;
-  --panel-soft: #f2f1ee;
-  --line: #e2e0da;
-  --line-soft: #ebe9e4;
+  --bg: #120a1a;
+  --panel: #1e1329;        /* cards */
+  --panel-soft: #291b37;   /* wells inside cards, hover */
+  --panel-high: #33234a;   /* raised: chips, active rows */
+  --line: #34244a;
+  --line-soft: #2a1d39;
 
-  /* Every one of these was checked against the ground rather than chosen by
-     eye. Small text needs 4.5:1 and the first pass missed twice — the table
-     headers and the warning colour both sat around 3.2 and 4.3. */
-  --text: #15171c;     /* 16.6:1 on a panel */
-  --muted: #5f6672;    /*  5.4:1 */
-  --dim: #656d7d;      /*  4.8:1 — table headers are 11px, so they count */
+  --text: #efe8f5;     /* 14.9:1 (11.8) */
+  --muted: #bba9d9;    /*  8.3:1 (6.6)  */
+  --dim: #a08dc2;      /*  6.0:1 (4.8)  */
 
-  /* Text that sits on the photograph rather than on a panel. Measured against
-     the brightest region of the image through the scrim: 10.1:1 and 6.0:1. */
+  /* Text on a photograph or the violet glow. */
   --on-photo: #ffffff;
-  --on-photo-soft: #d4d9e3;
+  --on-photo-soft: #d6c9e8;
 
-  --accent: #cc3328;   /*  4.8:1 */
-  --accent-soft: #e0574c;
-  --data: #2f6bb0;     /*  5.1:1 */
-  --data-deep: #24548c;
+  --accent: #ffd54f;       /* 12.6:1 (10.1) — gold */
+  --accent-soft: #ffe28a;
+  --accent-deep: #f2b92e;  /* rules and borders, and text at 10:1 */
+  --on-accent: #2b2000;    /* 11.4:1 on gold */
+  --violet: #6c3fe8;       /* glow and fills only, never small text */
+  --data: #9d8bff;         /*  6.4:1 (5.1) — data series */
+  --data-deep: #6c3fe8;
 
-  /* Editorial layer.
-   *
-   * The red above was the whole accent, and at 4.8:1 it could only ever be a
-   * small mark — used for a rule or a masthead block it sat too light against
-   * paper to feel structural. The oxide is the same hue taken down to pigment:
-   * 6.2:1 on paper, 6.7:1 on a panel, 6.7:1 white on top, so it can carry
-   * weight as a surface and still take text. Bright red stays for the small
-   * marks it was already good at.
-   *
-   * Ink is the display colour. It is a near-black pulled fractionally warm so a
-   * headline reads as part of the red family rather than as borrowed UI text;
-   * at 17:1 the warmth costs nothing in legibility.
-   *
-   * Prose takes its own colour. Body text at 13.3:1 rather than the interface's
-   * 16.6:1 is a deliberate step down — a full-strength near-black is right for
-   * a label and tiring over a paragraph. */
-  --accent-deep: #b22219;  /*  6.2:1 on paper, 6.7:1 on a panel */
-  --ink: #191210;          /* 17.1:1 — display type */
-  --prose: #2b2a28;        /* 13.3:1 — running text */
-  --rule: #d8d4cc;         /* decorative hairline, never text */
+  --ink: #faf6fd;          /* display type */
+  --prose: #ddd3e8;        /* 12.3:1 — running text */
+  --rule: #4a3863;         /* decorative hairline, never text */
 
   --serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
 
-  /* Archivo carries a width axis. Headlines are set expanded so display type
-     is a different shape from the interface, not merely a larger size of it. */
-  --display-wide: 'wdth' 118;
-  --display-mid: 'wdth' 106;
+  /* Archivo's width axis: headlines are set expanded and italic so display
+     type is a different shape from the interface, not a larger size of it. */
+  --display-wide: 'wdth' 125;
+  --display-mid: 'wdth' 112;
 
-  /* One editorial measure, used everywhere prose runs. Beyond about 70
-     characters the eye loses the start of the next line. */
   --measure: 66ch;
 
-  --good: #1d7a4d;     /*  4.9:1 */
-  --bad: #c0392b;      /*  5.0:1 */
-  --warn: #8a5d08;     /*  5.3:1 */
+  --good: #6ee7a0;     /* 11.5:1 */
+  --bad: #ff7a7a;      /*  7.0:1 */
+  --warn: #ffb74d;     /* 10.3:1 */
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 20px;
+  --radius-sm: 12px;
 
   --sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* A panel on paper needs a shadow rather than a border to lift off it. */
-  /* Heavier than it would be on paper: these cards now float on a
-     photograph and need to read as above it. */
-  --lift: 0 2px 6px rgba(0, 0, 0, 0.18), 0 10px 34px rgba(0, 0, 0, 0.22);
+  --lift: 0 2px 8px rgba(0, 0, 0, 0.35), 0 14px 40px rgba(0, 0, 0, 0.35);
+  --glow: 0 0 0 1px rgba(255, 213, 79, 0.25), 0 8px 28px rgba(108, 63, 232, 0.35);
 
-  color-scheme: light;
+  --rail: 248px;      /* desktop sidebar */
+  --tabbar: 64px;     /* phone tab bar */
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  /*
-   * The photograph is the page, fixed so it sits still while the content
-   * scrolls over it.
-   *
-   * The scrim over it is not decoration. This image is dark but its sky is
-   * not — around #b9bec6 — and white text on that alone measures 1.87:1.
-   * Through 60% black it reaches 10:1, and the secondary tone 6:1. Anything
-   * lighter fails somewhere in the frame, which is the part a reader would
-   * find rather than me.
-   */
+  /* A violet haze behind the top of the page, the way a pit wall's screens
+     glow at night. Fixed so it stays put while the content scrolls. */
   background:
-    linear-gradient(rgba(10, 12, 16, 0.60), rgba(10, 12, 16, 0.72)),
-    url('/backgrounds/race.jpg') center / cover no-repeat fixed,
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(108, 63, 232, 0.42), rgba(108, 63, 232, 0) 70%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(186, 72, 196, 0.18), rgba(186, 72, 196, 0) 70%),
     var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font: 400 15px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -177,7 +146,7 @@ body {
   font-feature-settings: 'tnum' 1;
 }
 
-::selection { background: rgba(204, 51, 40, 0.16); }
+::selection { background: rgba(255, 213, 79, 0.28); }
 
 /* Keyboard focus has to be visible, and the default ring disappears against a
    dark ground. */
@@ -187,88 +156,114 @@ body {
   border-radius: 3px;
 }
 
-.app { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+/* A rail on the left on wide screens, a drawer below 1024px, and a tab bar
+   along the bottom on a phone. Content sits in one column beside the rail. */
+.app-main { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (min-width: 1024px) {
+  .app-main { margin-left: var(--rail); padding: 0 40px; max-width: calc(1120px + var(--rail)); }
+}
 
-/* ── Masthead ─────────────────────────────────────────────────────────────── */
-/* On the photograph, so it takes the light tones and a hairline instead of a
-   solid rule. */
 .masthead {
-  display: flex; align-items: center; gap: 32px;
-  padding: 20px 0 0; margin-bottom: 34px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex; align-items: center; gap: 14px;
+  min-height: 72px; margin-bottom: 18px;
 }
+.account { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.account-name { color: var(--muted); font-size: 13px; }
+
+/* The mark is ours: a gold italic F in a slanted tile. */
 .brand {
-  display: flex; align-items: center; gap: 10px; color: var(--on-photo);
-  text-decoration: none; font-weight: 700; letter-spacing: -0.015em;
-  padding-bottom: 16px;
+  display: inline-flex; align-items: center; gap: 10px;
+  color: var(--ink); text-decoration: none;
 }
-/* The one piece of pure brand on the page, and the only place the accent is
-   spent without a datum behind it. */
-.brand-mark { width: 10px; height: 10px; border-radius: 2px; background: var(--accent); }
-.masthead nav { display: flex; gap: 26px; flex: 1; }
-.masthead nav a {
-  color: var(--on-photo-soft); text-decoration: none; font-size: 14px; font-weight: 500;
-  padding: 4px 0 16px; border-bottom: 2px solid transparent;
-  transition: color 120ms ease, border-color 120ms ease;
+.brand-mark {
+  display: inline-grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 9px; background: var(--accent); color: var(--on-accent);
+  font: italic 900 18px/1 var(--sans); font-variation-settings: var(--display-wide);
+  transform: skewX(-8deg); box-shadow: 0 4px 18px rgba(255, 213, 79, 0.28);
 }
-.masthead nav a:hover { color: var(--on-photo); }
-.masthead nav a.active { color: var(--on-photo); border-bottom-color: var(--accent); }
-.account { padding-bottom: 14px; }
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.brand-word {
+  font-weight: 800; font-style: italic; font-size: 17px; letter-spacing: 0.01em;
+  text-transform: uppercase; font-variation-settings: var(--display-mid);
+}
+.brand-word em { font-style: italic; color: var(--accent); }
+
 .menu-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; margin-bottom: 14px; padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: var(--radius-sm);
-  background: transparent; color: var(--on-photo); cursor: pointer;
+  width: 40px; height: 40px; padding: 0; flex: none;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text); cursor: pointer;
   transition: background 120ms ease;
 }
-.menu-toggle:hover { background: rgba(255, 255, 255, 0.1); }
-.masthead .menu-toggle { margin-right: -16px; }
+.menu-toggle:hover { background: var(--panel-high); }
+
 .sidebar-scrim {
   position: fixed; inset: 0; z-index: 40;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(8, 4, 12, 0.6);
   opacity: 0; pointer-events: none; transition: opacity 180ms ease;
 }
 .sidebar-scrim.open { opacity: 1; pointer-events: auto; }
 .sidebar {
   position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
-  width: 260px; max-width: 85vw; overflow-y: auto;
-  background: var(--ink); color: var(--on-photo);
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: var(--lift);
+  width: var(--rail); max-width: 85vw; overflow-y: auto;
+  background: linear-gradient(180deg, #1c1128 0%, #150d1c 100%);
+  border-right: 1px solid var(--line-soft);
   transform: translateX(-100%); transition: transform 200ms ease;
 }
 .sidebar.open { transform: translateX(0); }
+@media (max-width: 1023px) { .sidebar { box-shadow: var(--lift); } }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 16px 4px 20px;
+  min-height: 72px; padding: 0 16px 0 20px;
 }
-.sidebar-head .menu-toggle { margin-bottom: 0; }
-.sidebar-title {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--on-photo-soft);
-}
-.sidebar nav { display: flex; flex-direction: column; padding: 8px 0 24px; }
+.sidebar nav { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 24px; }
 .sidebar nav a {
-  color: var(--on-photo-soft); text-decoration: none; font-size: 15px; font-weight: 500;
-  padding: 11px 20px; border-left: 3px solid transparent;
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 600;
+  padding: 11px 14px; border-radius: 14px;
   transition: color 120ms ease, background 120ms ease;
 }
-.sidebar nav a:hover { color: var(--on-photo); background: rgba(255, 255, 255, 0.06); }
-.sidebar nav a.active { color: var(--on-photo); border-left-color: var(--accent); }
+.sidebar nav a svg { color: var(--dim); transition: color 120ms ease; }
+.sidebar nav a:hover { color: var(--text); background: var(--panel-soft); }
+.sidebar nav a.active { color: var(--ink); background: var(--panel-high); box-shadow: inset 3px 0 0 var(--accent); }
+.sidebar nav a.active svg { color: var(--accent); }
+
+/* ── Phone tab bar ────────────────────────────────────────────────────────── */
+.tabbar { display: none; }
+@media (max-width: 719px) {
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    height: calc(var(--tabbar) + env(safe-area-inset-bottom));
+    padding: 6px 6px env(safe-area-inset-bottom);
+    background: rgba(21, 13, 28, 0.92); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line-soft);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--muted); text-decoration: none; font-size: 11px; font-weight: 600;
+  }
+  .tabbar-icon {
+    display: inline-grid; place-items: center; width: 52px; height: 28px; border-radius: 999px;
+    transition: background 120ms ease;
+  }
+  .tabbar a.active { color: var(--accent); }
+  .tabbar a.active .tabbar-icon { background: rgba(108, 63, 232, 0.45); color: var(--ink); }
+  body { padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); }
+}
 
 /* ── Bernie shortcut ──────────────────────────────────────────────────────── */
 .bernie-fab {
   position: fixed; right: 24px; bottom: 24px; z-index: 30;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 56px; height: 56px; border-radius: 50%;
-  background: var(--accent); color: #fff; box-shadow: var(--lift);
+  width: 58px; height: 58px; border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  box-shadow: 0 6px 24px rgba(255, 213, 79, 0.32), var(--lift);
   transition: background 120ms ease, transform 120ms ease;
 }
-.bernie-fab:hover { background: var(--accent-deep); transform: translateY(-1px); }
+.bernie-fab:hover { background: var(--accent-soft); transform: translateY(-2px); }
 .bernie-fab:focus-visible { border-radius: 50%; outline-offset: 3px; }
-
-.account { display: flex; align-items: center; gap: 12px; }
+@media (max-width: 719px) { .bernie-fab { display: none; } }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .stack { display: flex; flex-direction: column; gap: 24px; }
@@ -278,38 +273,41 @@ body {
    is how the colour and the margin ended up in separate rules. */
 .page-head {
   margin-bottom: 4px;
-  color: var(--on-photo);
-  padding-bottom: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding-bottom: 8px;
 }
-/* The headline is the one place the width axis is spent fully open. Set at the
-   same width as the body it would read as a big label; expanded, it reads as a
-   masthead, and the page announces itself before anything is scanned.
-
-   Fluid rather than stepped: this type is large enough that a fixed size either
-   wraps awkwardly on a laptop or looks timid on a wide screen. */
+/* The headline is where the display face is spent fully: black weight, wide,
+   italic and upper case, so a page announces itself before anything is
+   scanned. Fluid rather than stepped, because type this large either wraps
+   awkwardly on a laptop or looks timid on a wide screen. */
 .page-head h1 {
-  margin: 10px 0 10px;
-  font-size: clamp(2.25rem, 1.3rem + 3.1vw, 3.75rem);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
-  font-weight: 700;
+  margin: 12px 0 12px;
+  font-size: clamp(2.1rem, 1.2rem + 3vw, 3.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  font-weight: 900;
+  font-style: italic;
+  text-transform: uppercase;
   font-variation-settings: var(--display-wide);
   text-wrap: balance;
-  color: var(--on-photo);
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
 }
 .page-head .lede, .page-head .muted {
-  max-width: 54ch; color: var(--on-photo-soft);
-  font-size: 15px; line-height: 1.55;
+  max-width: 58ch; color: var(--muted);
+  font-size: 15.5px; line-height: 1.6;
 }
-/* On the photograph the deep oxide disappears; the eyebrow keeps the bright
-   red, which is what it was always for. */
-.page-head .eyebrow { color: var(--accent-soft); }
+/* The eyebrow is a gold pill, the tag that says what kind of page this is. */
 .eyebrow {
-  margin: 0; color: var(--accent); font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.11em;
-  font-family: var(--mono);
+  display: inline-flex; align-items: center; width: fit-content;
+  margin: 0; padding: 4px 11px; border-radius: 999px;
+  background: rgba(255, 213, 79, 0.14); color: var(--accent);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+  font-family: var(--sans);
+}
+/* Section titles inside a page: gold, italic, in the display face. */
+.section-head, h2.section-head {
+  margin: 8px 0 14px; color: var(--accent);
+  font-size: 19px; font-weight: 800; font-style: italic; letter-spacing: 0.01em;
+  font-variation-settings: var(--display-mid);
 }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
@@ -321,8 +319,10 @@ body {
    What is left here is the type — the heading was rendering at Card's default
    weight and size, which is louder than this product wants when a page is a
    stack of six of them. */
+.panel { border-color: var(--line-soft); border-radius: var(--radius); box-shadow: none; }
 .panel [data-slot="card-title"] {
-  font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
+  font-size: 17px; font-weight: 800; font-style: italic; letter-spacing: 0.005em;
+  font-variation-settings: var(--display-mid); color: var(--ink);
 }
 .panel [data-slot="card-description"] { font-size: 13px; }
 .panel-foot { display: block; }
@@ -331,7 +331,7 @@ body {
 
 .notice { background: var(--panel-soft); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 6px 6px 0; margin: 0 0 14px; font-size: 14px; }
 .notice.warn { border-left-color: var(--warn); }
-.unavailable { background: #fdf3f2; border: 1px solid #f2d6d3; border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
+.unavailable { background: rgba(255, 122, 122, 0.08); border: 1px solid rgba(255, 122, 122, 0.3); border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
 .loading { color: var(--muted); padding: 24px 0; }
 .error { color: var(--bad); font-size: 14px; }
 
@@ -484,7 +484,7 @@ tr.thin td { opacity: 0.55; }
    red stripe along the top edge that the F1 site uses on its own tiles. */
 .news-card-fallback {
   display: flex; align-items: flex-end; padding: 14px 16px;
-  background: linear-gradient(135deg, #15171c 0%, #2a2d35 100%);
+  background: linear-gradient(135deg, #2a1b3d 0%, #4a2a7a 100%);
   border-top: 4px solid var(--accent);
 }
 .news-card-fallback span {
@@ -668,14 +668,21 @@ input { background: var(--panel); border: 1px solid var(--line); border-radius: 
 input:focus { outline: none; border-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; }
 
-.button { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
+.button { background: var(--accent); color: var(--on-accent); border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
 .button:disabled { opacity: 0.45; cursor: default; }
 .button.subtle { background: none; border: 1px solid var(--line); color: var(--text); }
 .link { color: var(--accent); text-decoration: none; font-size: 14px; }
-a { color: var(--accent); }
+/* Text links take the gold; a link styled as a button keeps its own colours. */
+a:where(:not([data-slot])) { color: var(--accent); }
+
+/* Tailwind's bare `border` utility draws in currentColor unless the base layer
+   says otherwise, which on a dark page gave every card a pale outline. */
+@layer base {
+  *, ::before, ::after { border-color: var(--line); }
+}
 
 /* Also on the photograph. */
-.colophon { border-top: 1px solid rgba(255, 255, 255, 0.16); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
+.colophon { border-top: 1px solid var(--line-soft); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
 
 /* ── Venue photographs ────────────────────────────────────────────────────── */
 .venue {
@@ -727,7 +734,7 @@ a { color: var(--accent); }
 .trackmap-key { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .trackmap-ramp {
   flex: 0 0 120px; height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, rgb(47,107,176), rgb(199,145,20), rgb(204,51,40));
+  background: linear-gradient(90deg, rgb(157,139,255), rgb(255,183,77), rgb(255,122,122));
 }
 /* Reserves its own space so the row does not reflow as the pointer moves. */
 .trackmap-readout { margin-left: auto; color: var(--muted); min-width: 13ch; text-align: right; font-variant-numeric: tabular-nums; }
@@ -738,9 +745,9 @@ a { color: var(--accent); }
   font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em;
   border: 1px solid var(--line); color: var(--text);
 }
-.tag-power { border-color: #eab5b0; color: var(--accent); background: #fdf2f1; }
-.tag-technical { border-color: #b7cbe4; color: var(--data); background: #f1f5fb; }
-.tag-balanced { border-color: #e2cd94; color: var(--warn); background: #fbf6ea; }
+.tag-power { border-color: rgba(255, 122, 122, 0.4); color: var(--bad); background: rgba(255, 122, 122, 0.1); }
+.tag-technical { border-color: rgba(157, 139, 255, 0.4); color: var(--data); background: rgba(157, 139, 255, 0.1); }
+.tag-balanced { border-color: rgba(255, 183, 77, 0.4); color: var(--warn); background: rgba(255, 183, 77, 0.1); }
 
 .brief-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
 .brief-stat { display: flex; flex-direction: column; gap: 1px; }
@@ -769,7 +776,7 @@ a { color: var(--accent); }
 }
 .odds-track { position: relative; height: 9px; border-radius: 5px; background: var(--line); overflow: hidden; }
 .odds-seg { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
-.odds-points { background: #b9cde6; }
+.odds-points { background: #4a3a78; }
 .odds-podium { background: var(--data); }
 .odds-win { background: var(--accent); }
 
@@ -790,8 +797,8 @@ a { color: var(--accent); }
 .podium { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .podium li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 13px; background: var(--panel-soft); border-radius: 7px; border-left: 3px solid var(--line); }
 .podium-1 { border-left-color: var(--accent); }
-.podium-2 { border-left-color: #9aa2b1; }
-.podium-3 { border-left-color: #c6cbd4; }
+.podium-2 { border-left-color: #c9c3d6; }
+.podium-3 { border-left-color: #c48a52; }
 .podium-pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .podium-1 .podium-driver { font-weight: 650; }
 .podium-team { color: var(--muted); font-size: 13px; text-align: right; }
@@ -805,26 +812,15 @@ a { color: var(--accent); }
   * { transition-duration: 0.01ms !important; }
 }
 
-@media (max-width: 860px) {
-  /* With the section links in the sidebar the masthead holds only the menu
-     button, the brand, Home and the account, which fit one row on a phone. */
-  .masthead { gap: 16px; padding-top: 14px; }
-  .masthead .menu-toggle { margin-right: -6px; margin-bottom: 10px; }
-  .brand { padding-bottom: 12px; }
-  .masthead nav { gap: 20px; }
-  .masthead nav a { white-space: nowrap; padding-bottom: 12px; }
-  .account { padding-bottom: 10px; }
-}
 
 @media (max-width: 720px) {
-  .app { padding: 0 16px; }
-  .bernie-fab { right: 16px; bottom: 16px; width: 52px; height: 52px; }
+  .app-main { padding: 0 16px; }
 
   /* background-attachment: fixed is unreliable on mobile browsers — iOS
      Safari ignores it and others repaint the whole image on every scroll
      frame. Scrolling with the page costs the parallax and keeps the
      photograph. */
-  body { background-attachment: scroll, scroll; }
+  body { background-attachment: scroll; }
   .page-head h1 { font-size: 28px; }
 
   .bernie { grid-template-columns: 1fr; }
@@ -878,8 +874,8 @@ a { color: var(--accent); }
 /* Pale land on a lit ocean. The markers are what the eye is meant to find, so
    the planet under them stays low-contrast — but light, not dark: against a
    dark photograph a dark globe read as a hole rather than a sphere. */
-.globe-land { fill: #eef1e9; stroke: #c3cbbd; stroke-width: 0.4; }
-.globe-rim { stroke: rgba(255, 255, 255, 0.5); stroke-width: 1; }
+.globe-land { fill: #8f7bc0; stroke: #b6a6e0; stroke-width: 0.4; }
+.globe-rim { stroke: rgba(157, 139, 255, 0.55); stroke-width: 1; }
 .globe-wrap { position: relative; }
 
 /* Markers are the navigation, so they are focusable and show it. */
@@ -889,11 +885,9 @@ a { color: var(--accent); }
 .stop-dot { stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; transition: r 120ms ease; }
 /* Restated for a pale planet: the old tones were picked against a dark one
    and the "raced" marker in particular vanished into the land. */
-.stop-raced .stop-dot { fill: #2f3a46; }
+.stop-raced .stop-dot { fill: #8b7aa8; }
 .stop-next .stop-dot { fill: var(--accent); }
-.stop-scheduled .stop-dot { fill: #1f5fa8; }
-.key-raced { background: #2f3a46; }
-.key-scheduled { background: #1f5fa8; }
+.stop-scheduled .stop-dot { fill: #9d8bff; }
 .stop:hover .stop-dot, .stop:focus-visible .stop-dot { r: 7; }
 .stop:focus-visible .stop-dot { stroke: #fff; stroke-width: 2; }
 .stop.is-selected .stop-dot { stroke: #fff; stroke-width: 2; }
@@ -914,7 +908,7 @@ a { color: var(--accent); }
 .key-dot { width: 9px; height: 9px; border-radius: 50%; }
 .key-raced { background: var(--on-photo-soft); }
 .key-next { background: var(--accent); }
-.key-scheduled { background: #6f8bb0; }
+.key-scheduled { background: #9d8bff; }
 
 .atlas-name { margin: 10px 0 2px; font-size: 20px; letter-spacing: -0.015em; }
 .atlas-when { margin: 10px 0 0; font-family: var(--mono); font-size: 14px; }
@@ -1017,7 +1011,7 @@ a { color: var(--accent); }
 }
 
 .race-call {
-  background: linear-gradient(135deg, rgba(21, 23, 28, 0.86), rgba(36, 18, 16, 0.78));
+  background: linear-gradient(135deg, #2a1846 0%, #1e1329 60%, #2b1a1f 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px; padding: 22px 22px 18px;
   color: var(--on-photo); box-shadow: var(--lift);
@@ -1069,8 +1063,8 @@ a { color: var(--accent); }
 }
 .lap-window {
   position: absolute; top: -5px; bottom: -5px; border-radius: 6px;
-  background: repeating-linear-gradient(135deg, rgba(47, 107, 176, 0.16) 0 5px, rgba(47, 107, 176, 0.06) 5px 10px);
-  border: 1px dashed rgba(47, 107, 176, 0.5);
+  background: repeating-linear-gradient(135deg, rgba(157, 139, 255, 0.2) 0 5px, rgba(157, 139, 255, 0.07) 5px 10px);
+  border: 1px dashed rgba(157, 139, 255, 0.55);
 }
 .stint {
   position: absolute; top: 4px; bottom: 4px; border-radius: 6px;
@@ -1082,14 +1076,14 @@ a { color: var(--accent); }
 .stint:hover { transform: translateY(-1px); }
 .stint.c-soft { background: var(--tyre-soft); color: #fff; }
 .stint.c-medium { background: var(--tyre-medium); color: #2a2200; }
-.stint.c-hard { background: var(--tyre-hard); color: #26282d; box-shadow: inset 0 0 0 1px #c9c6be; }
+.stint.c-hard { background: var(--tyre-hard); color: #26282d; }
 .stint.c-intermediate { background: var(--tyre-intermediate); color: #fff; }
 .stint.c-wet { background: var(--tyre-wet); color: #fff; }
 .stint-text { overflow: hidden; text-overflow: ellipsis; }
 .pit-pin { position: absolute; top: -9px; bottom: -9px; width: 0; border-left: 2px solid var(--ink); }
 .pit-pin-label {
   position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-  background: var(--ink); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+  background: var(--ink); color: var(--bg); font-size: 10px; padding: 1px 5px; border-radius: 4px;
 }
 .lap-chart .lap-row:first-child { margin-top: 6px; }
 .lap-track-sc { height: 22px; background: transparent; border-top: 1px dashed var(--line); border-radius: 0; }
@@ -1100,7 +1094,7 @@ a { color: var(--accent); }
   white-space: nowrap;
 }
 .sc-window { background: repeating-linear-gradient(135deg, var(--sc) 0 6px, #f3c062 6px 12px); color: #3a2600; }
-.sc-extra { background: rgba(29, 122, 77, 0.16); border: 1px solid rgba(29, 122, 77, 0.45); color: var(--good); }
+.sc-extra { background: rgba(110, 231, 160, 0.12); border: 1px solid rgba(110, 231, 160, 0.4); color: var(--good); }
 .sc-badge {
   font: 700 11px/1 var(--mono); background: var(--sc); color: #3a2600;
   padding: 4px 6px; border-radius: 4px;
@@ -1112,18 +1106,18 @@ a { color: var(--accent); }
 .lap-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); padding-top: 4px; }
 .lap-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-swatch { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
-.legend-swatch.window { background: rgba(47, 107, 176, 0.18); border: 1px dashed rgba(47, 107, 176, 0.6); }
+.legend-swatch.window { background: rgba(157, 139, 255, 0.2); border: 1px dashed rgba(157, 139, 255, 0.6); }
 .legend-swatch.sc { background: repeating-linear-gradient(135deg, var(--sc) 0 3px, #f3c062 3px 6px); }
-.legend-swatch.extra { background: rgba(29, 122, 77, 0.2); border: 1px solid rgba(29, 122, 77, 0.5); }
+.legend-swatch.extra { background: rgba(110, 231, 160, 0.2); border: 1px solid rgba(110, 231, 160, 0.5); }
 
 .plan-badge {
   display: inline-grid; place-items: center; flex: none;
   width: 24px; height: 24px; border-radius: 6px;
   font: 700 13px/1 var(--mono); color: #fff; background: var(--dim);
 }
-.plan-badge.plan-a { background: var(--accent-deep); }
+.plan-badge.plan-a { background: var(--accent); color: var(--on-accent); }
 .plan-badge.plan-b { background: var(--data-deep); }
-.plan-badge.plan-c { background: #4b5160; }
+.plan-badge.plan-c { background: #5a4878; }
 .plan-notes { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 8px; font-size: 14px; }
 .plan-notes li { display: flex; gap: 10px; align-items: flex-start; }
 
@@ -1139,7 +1133,7 @@ a { color: var(--accent); }
 .character-scale { padding: 6px 4px 0; }
 .character-bar {
   position: relative; height: 8px; border-radius: 999px;
-  background: linear-gradient(90deg, var(--data-deep), #8d8a84 50%, var(--accent));
+  background: linear-gradient(90deg, var(--data-deep), #8b7aa8 50%, var(--accent));
 }
 .character-marker {
   position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%;
@@ -1192,7 +1186,7 @@ a { color: var(--accent); }
 .gap-bar { height: 100%; border-radius: 999px; background: var(--data); }
 .gap-gain { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; background: var(--accent); }
 .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
-.pill-good { background: rgba(29, 122, 77, 0.12); color: var(--good); }
+.pill-good { background: rgba(110, 231, 160, 0.14); color: var(--good); }
 .pill-dim { background: var(--panel-soft); color: var(--muted); }
 
 .edge-cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
@@ -1203,7 +1197,7 @@ a { color: var(--accent); }
 .guide-quotes { display: grid; gap: 10px; margin-top: 16px; }
 .guide-quote {
   position: relative; margin: 0; padding: 14px 16px 12px 44px;
-  background: #faf8f4; border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--panel-soft); border: 1px solid var(--line-soft); border-radius: var(--radius);
 }
 .guide-quote::before {
   content: '\201C'; position: absolute; left: 12px; top: 2px;
