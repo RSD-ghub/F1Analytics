@@ -175,6 +175,33 @@ def _named_session(
     return None
 
 
+def canonical_driver_names(
+    frame: pd.DataFrame, names: Optional[Dict[int, str]]
+) -> pd.DataFrame:
+    """Rename drivers in a results frame to the spelling we already store.
+
+    FastF1 names a driver from whichever backend answered. F1's live timing
+    calls car 12 "Kimi Antonelli"; when live timing is missing it falls back to
+    jolpica, which calls him "Andrea Kimi Antonelli". Every join downstream —
+    scoring, the last-race panel, the model's driver history — is on the name,
+    so the 2026 United States Grand Prix result forked him into a second driver
+    and our favourite was scored as a non-starter in a race he won.
+
+    The car number is the same on both backends, so it decides. A number the
+    registry does not know keeps FastF1's name: a new driver is not an error.
+    """
+    if not names or frame is None or frame.empty:
+        return frame
+    if "DriverNumber" not in frame.columns or "FullName" not in frame.columns:
+        return frame
+    frame = frame.copy()
+    for index, row in frame.iterrows():
+        known = names.get(safe_int(row.get("DriverNumber"), 0))
+        if known and known != row.get("FullName"):
+            frame.at[index, "FullName"] = known
+    return frame
+
+
 class FastF1Source:
     """Fetches schedules and race sessions from FastF1."""
 
@@ -182,6 +209,17 @@ class FastF1Source:
         self._cache_dir = cache_dir
         self._load_telemetry = load_telemetry
         self._cache_enabled = False
+        #: season -> {car number: driver}, the spellings already in our data.
+        self._driver_names: Dict[int, Dict[int, str]] = {}
+
+    def use_driver_names(self, season: int, names: Dict[int, str]) -> None:
+        """Name drivers this way in ``season``, whichever backend answers."""
+        self._driver_names[season] = dict(names or {})
+
+    def _results_frame(self, session: Any, season: int) -> pd.DataFrame:
+        return canonical_driver_names(
+            _session_frame(session, "results"), self._driver_names.get(season)
+        )
 
     # ── Library plumbing ─────────────────────────────────────────────────────
 
@@ -335,7 +373,7 @@ class FastF1Source:
                 "session load failed for {}: {}".format(expected.key, exc)
             ) from exc
 
-        results = _session_frame(session, "results")
+        results = self._results_frame(session, expected.season)
         laps = _session_frame(session, "laps")
 
         frames = SessionFrames(
@@ -371,7 +409,7 @@ class FastF1Source:
             ) from exc
 
         return transforms.extract_results(
-            expected, _session_frame(session, "results")
+            expected, self._results_frame(session, expected.season)
         )
 
     def load_race_frames_results_only(
@@ -399,7 +437,7 @@ class FastF1Source:
                 "results load failed for {}: {}".format(expected.key, exc)
             ) from exc
 
-        results = _session_frame(session, "results")
+        results = self._results_frame(session, expected.season)
         if results.empty:
             raise SessionFetchError(
                 "results for {} came back empty; treating as a failed fetch "
@@ -474,7 +512,9 @@ class FastF1Source:
                 "sprint load failed for {}: {}".format(expected.key, exc)
             ) from exc
 
-        rows = transforms.extract_results(expected, _session_frame(session, "results"))
+        rows = transforms.extract_results(
+            expected, self._results_frame(session, expected.season)
+        )
         if not any(1 <= row.position < 999 for row in rows):
             raise SessionUnavailableError(
                 "sprint for {} has no classification yet ({} rows)".format(
@@ -534,7 +574,7 @@ class FastF1Source:
                 "{} for {} has no laps".format(session_code, expected.key)
             )
 
-        names = build_driver_name_map(_session_frame(session, "results"))
+        names = build_driver_name_map(self._results_frame(session, expected.season))
         return practice_pace.extract_practice_pace(
             expected, session_code, laps, names
         )
@@ -565,7 +605,7 @@ class FastF1Source:
             ) from exc
 
         rows = transforms.extract_qualifying(
-            expected, _session_frame(session, "results")
+            expected, self._results_frame(session, expected.season)
         )
         if session_name != "Q" and rows and not any(r.position < 999 for r in rows):
             # Sprint qualifying is never classified upstream (see
@@ -683,7 +723,7 @@ class FastF1Source:
                 "qualifying entry list unavailable for {}: {}".format(expected.key, exc)
             ) from exc
 
-        frame = _session_frame(session, "results")
+        frame = self._results_frame(session, expected.season)
         entries = {}
         if frame is None or frame.empty:
             return entries
