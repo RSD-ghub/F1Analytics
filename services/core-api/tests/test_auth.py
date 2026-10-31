@@ -64,6 +64,33 @@ def test_a_corrupt_stored_hash_reads_as_a_mismatch():
     assert not verify_password("anything", "not-a-bcrypt-hash")
 
 
+def test_a_password_over_72_bytes_is_refused_at_registration():
+    """bcrypt 5 raises on more than 72 bytes, which used to surface as a 500.
+    Bytes, not characters: 40 accented letters are 80 bytes."""
+    from pydantic import ValidationError
+
+    from app.models.schemas import RegisterRequest
+
+    with pytest.raises(ValidationError, match="at most 72 bytes"):
+        RegisterRequest(email="a@b.co", password="é" * 40)
+    assert RegisterRequest(email="a@b.co", password="x" * 72)
+
+
+def test_a_long_password_at_login_is_a_mismatch_not_an_error():
+    hashed = hash_password("correct horse battery staple")
+    assert not verify_password("y" * 200, hashed)
+
+
+def test_an_account_from_before_bcrypt_5_still_logs_in():
+    """bcrypt 4 hashed only the first 72 bytes of a longer password. Simulate
+    such a stored hash and check the full password still verifies against it."""
+    import bcrypt
+
+    long_password = "k" * 100
+    legacy = bcrypt.hashpw(long_password.encode()[:72], bcrypt.gensalt()).decode()
+    assert verify_password(long_password, legacy)
+
+
 # ── Tokens ───────────────────────────────────────────────────────────────────
 
 

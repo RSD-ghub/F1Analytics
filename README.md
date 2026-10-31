@@ -57,6 +57,18 @@ every read goes to the service as before.
 
 Prerequisites: MongoDB on 27017, a Python venv at `.venv`, `npm`.
 
+Install the Python packages at the pinned versions in `constraints.txt` (the
+same ones Docker uses), from the repo root:
+
+```bash
+for s in core-api ingestion-service prediction-service scoring-service; do
+  (cd services/$s && ../../.venv/bin/pip install -c ../../constraints.txt -r requirements.txt)
+done
+.venv/bin/pip install -r requirements-dev.txt   # pytest, for the test suites
+```
+
+`scripts/lock_requirements.sh` regenerates the pins when you want to upgrade.
+
 ```bash
 export $(grep -E '^(JWT_SECRET|TINKER_API_KEY|TINKER_BASE_URL|INKLING_MODEL)=' .env | sed 's/"//g' | xargs)
 
