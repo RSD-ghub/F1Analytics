@@ -58,6 +58,21 @@ class Settings(ServiceSettings):
     weather_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
     weather_timeout_seconds: float = 5.0
 
+    # Behind Caddy in production, every request arrives from the proxy's
+    # address; set this so rate limits key on the real client. Leave it off
+    # when core-api is reachable directly, or callers can pick their own key.
+    trust_forwarded_for: bool = False
+
+    # Password reset email. Without SMTP_HOST the link is logged instead,
+    # which is fine on a laptop and wrong on a public deployment.
+    public_base_url: str = "http://localhost:5173"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_starttls: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -17,6 +17,8 @@ import RaceReview from './pages/RaceReview'
 
 import DataHealth from './pages/DataHealth'
 
+import PasswordReset from './pages/PasswordReset'
+
 /**
  * Routing.
  *
@@ -51,6 +53,7 @@ export default function App() {
         <Route path="/bernie" element={<Bernie />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login mode="register" />} />
+        <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </ErrorBoundary>
