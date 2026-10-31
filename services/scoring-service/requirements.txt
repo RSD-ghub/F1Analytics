@@ -9,3 +9,6 @@ httpx>=0.27
 
 # Scoring maths
 numpy>=2.0.0,<3.0.0
+
+# Locks and reconciles on a schedule (app/services/scheduler.py)
+apscheduler>=3.10

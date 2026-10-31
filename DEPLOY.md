@@ -179,6 +179,18 @@ of which weights produced which published forecast.
 All three tick once at startup as well as on their interval, so a restart does
 not postpone an open window.
 
+Retraining is scheduled from outside the services, with
+`scripts/weekly_retrain.sh`. It exports results from ingestion, runs
+`retrain.py` behind the promotion gate, refits the pace network and finishes
+with the smoke test. It is report-only unless given `--apply`, and exits
+non-zero if any step fails. A crontab line is in the script's header; restart
+prediction-service after an `--apply` run that promoted.
+
+Every request now carries an `X-Request-ID` (minted, or kept from the caller),
+which is echoed on the response, put on each log line and forwarded by core-api
+to the services it calls. Set `LOG_FORMAT=json` for one JSON object per line.
+`/data-health` (page and API) shows completeness, open gaps and row counts.
+
 Reconciliation after a race is still manual:
 
 ```bash

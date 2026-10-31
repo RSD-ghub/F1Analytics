@@ -93,7 +93,7 @@ export default function Layout({ children }) {
         <p>
           Forecasts are locked before each race and scored afterwards, whatever
           they turn out to be. Every prediction we have ever published stays on
-          the <Link to="/track-record">track record</Link>.
+          the <Link to="/track-record">track record</Link>. <Link to="/data-health">Data health</Link>.
         </p>
         <p className="disclaimer">
           An unofficial, non-commercial project. Not associated with, endorsed
