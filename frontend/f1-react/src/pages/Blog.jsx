@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronDown } from 'lucide-react'
 
@@ -37,6 +38,7 @@ function when(iso) {
 }
 
 export default function Blog() {
+  usePageTitle('One Blog')
   const [params, setParams] = useSearchParams()
   const season = params.get('season')
   const feed = useAsync(() => getBlogFeed(10), [])

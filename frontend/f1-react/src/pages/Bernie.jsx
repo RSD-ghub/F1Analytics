@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useAuth } from '../context/useAuth'
 import { Link } from 'react-router-dom'
 import { getNextRace, listThreads, readThread, streamTurn } from '../api/f1Api'
@@ -20,6 +21,7 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * grounding cannot support.
  */
 export default function Bernie() {
+  usePageTitle('Bernie')
   const { auth } = useAuth()
   const [threads, setThreads] = useState([])
   const [active, setActive] = useState(null)

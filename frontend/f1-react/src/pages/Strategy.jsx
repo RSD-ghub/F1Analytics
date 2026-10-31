@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { BookOpen, Flag } from 'lucide-react'
 import { getNextRace, getStrategy } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
@@ -20,6 +21,7 @@ import {
  * would change the call are all positions in the race, not rows in a table.
  */
 export default function Strategy() {
+  usePageTitle('Strategy')
   const next = useAsync(() => getNextRace(), [])
   if (next.status === 'loading') return <Loading what="Finding the next race" />
   if (next.status === 'error')
