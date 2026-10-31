@@ -57,6 +57,25 @@ every read goes to the service as before.
 
 Prerequisites: MongoDB on 27017, a Python venv at `.venv`, `npm`.
 
+Install the Python packages at the pinned versions in `constraints.txt` (the
+same ones Docker uses), from the repo root:
+
+```bash
+for s in core-api ingestion-service prediction-service scoring-service; do
+  (cd services/$s && ../../.venv/bin/pip install -c ../../constraints.txt -r requirements.txt)
+done
+.venv/bin/pip install -r requirements-dev.txt   # pytest, for the test suites
+```
+
+`scripts/lock_requirements.sh` regenerates the pins when you want to upgrade.
+
+**Alerts and backups.** Set `ALERT_WEBHOOK_URL` in `.env` (an ntfy.sh topic
+works as a phone push) and scoring-service will tell you when a lock window
+passes with no forecast or a race stays unscored; test it with
+`curl -X POST localhost:8003/watchdog/test`. `scripts/backup_mongo.sh` backs up
+the locked forecasts, accounts and scores (needs `brew install
+mongodb-database-tools`); see DEPLOY.md sections 7 and 8.
+
 ```bash
 export $(grep -E '^(JWT_SECRET|TINKER_API_KEY|TINKER_BASE_URL|INKLING_MODEL)=' .env | sed 's/"//g' | xargs)
 

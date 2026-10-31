@@ -601,3 +601,22 @@ async def test_the_penalties_reach_the_model_as_facts():
     prompt = llm.calls[0]["prompt"]
     assert "30-place" in prompt
     assert "Additional power unit elements" in prompt
+
+
+def test_a_question_has_a_length_limit():
+    """Every later turn resends the question, so an unbounded one costs on
+    every message of the thread."""
+    import pytest
+    from pydantic import ValidationError
+
+    from app.models.conversation import (
+        MAX_QUESTION_CHARS,
+        AskRequest,
+        StartThreadRequest,
+    )
+
+    assert AskRequest(question="x" * MAX_QUESTION_CHARS)
+    with pytest.raises(ValidationError):
+        AskRequest(question="x" * (MAX_QUESTION_CHARS + 1))
+    with pytest.raises(ValidationError):
+        StartThreadRequest(season=2026, round=20, question="")

@@ -7,11 +7,12 @@ score is much harder to explain away later than a delayed one.
 """
 
 import logging
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.models.schemas import (
     RACE,
     SPRINT,
+    HeldPrediction,
     Market,
     PredictionScore,
     RaceOutcome,
@@ -25,15 +26,21 @@ from app.services.clients import (
     PredictionClient,
     UpstreamUnavailable,
 )
+from app.services.grid_baseline import GridRates, HistoricalStart
 from app.services.reconciliation import (
     POINTS_POSITIONS,
     build_outcome,
+    name_mismatches,
     score_prediction,
     sprint_points_positions,
 )
 from app.services.storage import ScoringStore
 
 logger = logging.getLogger(__name__)
+
+#: Seasons of Grand Prix history behind the grid-order baseline. Ten is a few
+#: thousand starts: plenty per slot, recent enough to reflect modern racing.
+GRID_HISTORY_SEASONS = 10
 
 
 class Reconciler:
@@ -46,6 +53,8 @@ class Reconciler:
         self._ingestion = ingestion
         self._predictions = predictions
         self._store = store
+        #: Finished seasons never change, so their starts are fetched once.
+        self._season_starts: Dict[int, List[HistoricalStart]] = {}
 
     async def reconcile_race(
         self, season: int, round_number: int, event: str = RACE
@@ -85,6 +94,7 @@ class Reconciler:
         predictions = await self._predictions.predictions_for(
             season, round_number, event=event
         )
+        grid_rates = await self._grid_rates(season, round_number, points_positions)
         scores: List[PredictionScore] = []
         for prediction in predictions:
             if prediction.is_late_lock:
@@ -111,15 +121,87 @@ class Reconciler:
                     prediction.prediction_id, prediction.locked_at,
                     prediction.race_start_utc,
                 )
-            score = score_prediction(prediction, outcome)
+            score = score_prediction(prediction, outcome, grid_rates)
+            mismatches = name_mismatches(
+                score.predicted_not_raced, score.raced_not_predicted
+            )
+            if mismatches:
+                logger.error(
+                    "HOLDING %s for %s-%s %s: forecast and results name the same "
+                    "driver differently (%s). Fix the names, then reconcile again.",
+                    prediction.prediction_id, season, round_number, event,
+                    ", ".join(
+                        "{!r} vs {!r}".format(m.forecast_name, m.result_name)
+                        for m in mismatches
+                    ),
+                )
+                outcome.held.append(HeldPrediction(
+                    prediction_id=prediction.prediction_id,
+                    window=prediction.window,
+                    mismatches=mismatches,
+                ))
+                continue
             await self._store.save_score(score)
             scores.append(score)
+
+        if outcome.held:
+            # Saved with the outcome so the track record can count them.
+            await self._store.save_outcome(outcome)
 
         logger.info(
             "reconciled %s-%s %s: %s prediction(s) scored",
             season, round_number, event, len(scores),
         )
         return outcome, scores
+
+    async def _grid_rates(
+        self, season: int, round_number: int, points_positions: int
+    ) -> Optional[GridRates]:
+        """Grid-slot rates from Grand Prix results before this round.
+
+        Sprints use Grand Prix history too: there are too few sprints to give
+        every slot a rate, and the points market is counted to the sprint's own
+        number of scoring places. A failure here costs only the extra baseline,
+        so it is logged and the race is still scored.
+        """
+        starts: List[HistoricalStart] = []
+        try:
+            for year in range(season - GRID_HISTORY_SEASONS, season + 1):
+                starts.extend(await self._starts_for(year, finished=year < season))
+        except UpstreamUnavailable as exc:
+            logger.warning(
+                "no grid baseline for %s-%s: history unavailable (%s)",
+                season, round_number, exc,
+            )
+            return None
+        rates = GridRates.from_history(
+            starts, before=(season, round_number), points_positions=points_positions
+        )
+        if not rates.usable:
+            logger.info(
+                "no grid baseline for %s-%s: only %s past races",
+                season, round_number, rates.races,
+            )
+            return None
+        return rates
+
+    async def _starts_for(self, season: int, finished: bool) -> List[HistoricalStart]:
+        if finished and season in self._season_starts:
+            return self._season_starts[season]
+        rows = await self._ingestion.season_results(season)
+        starts = [
+            HistoricalStart(
+                season=row.season,
+                round=row.round,
+                grid_position=row.grid_position,
+                position=row.position,
+                classified=row.classified,
+            )
+            for row in rows
+        ]
+        if finished:
+            self._season_starts[season] = starts
+        return starts
 
     async def reconcile_season(self, season: int) -> List[PredictionScore]:
         """Sweep every race and sprint that has a locked prediction and a result."""
@@ -156,11 +238,27 @@ class Reconciler:
         """
         scores = await self._store.list_scores(season=season)
         pending, refused_late = await self._count_pending(season, scores)
+        held = await self._count_held(season, scores)
         samples = await self._calibration_samples(season, scores)
-        return record_builder.build_track_record(
-            scores, samples, pending=pending, refused_late=refused_late,
-            buckets=buckets
+        record = record_builder.build_track_record(
+            scores, samples, pending=max(pending - held, 0),
+            refused_late=refused_late, buckets=buckets
         )
+        record.predictions_held_name_mismatch = held
+        return record
+
+    async def _count_held(
+        self, season: Optional[int], scores: Sequence[PredictionScore]
+    ) -> int:
+        """Forecasts currently held for a name mismatch and still unscored."""
+        scored_ids = {score.prediction_id for score in scores}
+        outcomes = await self._store.list_outcomes(season)
+        return len({
+            held.prediction_id
+            for outcome in outcomes
+            for held in outcome.held
+            if held.prediction_id not in scored_ids
+        })
 
     async def _count_pending(
         self, season: Optional[int], scores: Sequence[PredictionScore]

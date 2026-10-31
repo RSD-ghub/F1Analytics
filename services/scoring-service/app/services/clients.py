@@ -31,6 +31,8 @@ class RaceResultRow(BaseModel):
     position: int = 999
     classified_position: str = ""
     status: str = ""
+    #: 0 means a pit-lane start or no slot recorded.
+    grid_position: int = 0
 
     @property
     def classified(self) -> bool:
@@ -38,6 +40,17 @@ class RaceResultRow(BaseModel):
         if self.classified_position:
             return self.classified_position.isdigit()
         return 1 <= self.position <= 30
+
+
+class CalendarWeekend(BaseModel):
+    """One round of the season calendar, as the watchdog needs it."""
+
+    season: int
+    round: int
+    race_name: str = ""
+    race_start_utc: Optional[datetime] = None
+    is_sprint_weekend: bool = False
+    sprint_start_utc: Optional[datetime] = None
 
 
 class DriverProbabilityRow(BaseModel):
@@ -146,6 +159,10 @@ class IngestionClient(_JsonClient):
     async def season_results(self, season: int) -> List[RaceResultRow]:
         payload = await self._get("/data/results", {"season": season, "limit": 20000})
         return [RaceResultRow(**row) for row in payload]
+
+    async def calendar(self, season: int) -> List[CalendarWeekend]:
+        payload = await self._get("/forward/calendar/{}".format(season))
+        return [CalendarWeekend(**row) for row in payload]
 
     async def sprint_results(
         self, season: int, round_number: int

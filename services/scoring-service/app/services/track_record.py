@@ -40,6 +40,7 @@ def build_window_record(
 ) -> WindowRecord:
     brier: Dict[str, float] = {}
     skill: Dict[str, float] = {}
+    skill_vs_grid: Dict[str, float] = {}
 
     for market in Market:
         market_scores = [
@@ -50,6 +51,9 @@ def build_window_record(
             continue
         brier[market.value] = sum(m.brier for m in usable) / len(usable)
         skill[market.value] = sum(m.skill_vs_baseline for m in usable) / len(usable)
+        against_grid = [m.skill_vs_grid for m in usable if m.skill_vs_grid is not None]
+        if against_grid:
+            skill_vs_grid[market.value] = sum(against_grid) / len(against_grid)
 
     log_scores = [
         score.market(Market.WIN).log_score
@@ -62,6 +66,7 @@ def build_window_record(
         predictions_scored=len(scores),
         brier_by_market=brier,
         skill_by_market=skill,
+        skill_vs_grid_by_market=skill_vs_grid,
         mean_log_score=_mean(log_scores),
         top_pick_hit_rate=_mean(
             # Scores that made no win claim are excluded rather than counted as

@@ -143,6 +143,9 @@ services:
       MONGO_DATABASE: "f1_scoring"
       INGESTION_SERVICE_URL: "http://ingestion-service:8001"
       PREDICTION_SERVICE_URL: "http://prediction-service:8002"
+      # Missed-lock and unscored-race alerts; see .env.example.
+      ALERT_WEBHOOK_URL: "${ALERT_WEBHOOK_URL:-}"
+      ALERT_WEBHOOK_FORMAT: "${ALERT_WEBHOOK_FORMAT:-text}"
     depends_on:
       mongodb:
         condition: service_healthy

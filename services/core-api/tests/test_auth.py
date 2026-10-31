@@ -64,6 +64,33 @@ def test_a_corrupt_stored_hash_reads_as_a_mismatch():
     assert not verify_password("anything", "not-a-bcrypt-hash")
 
 
+def test_a_password_over_72_bytes_is_refused_at_registration():
+    """bcrypt 5 raises on more than 72 bytes, which used to surface as a 500.
+    Bytes, not characters: 40 accented letters are 80 bytes."""
+    from pydantic import ValidationError
+
+    from app.models.schemas import RegisterRequest
+
+    with pytest.raises(ValidationError, match="at most 72 bytes"):
+        RegisterRequest(email="a@b.co", password="é" * 40)
+    assert RegisterRequest(email="a@b.co", password="x" * 72)
+
+
+def test_a_long_password_at_login_is_a_mismatch_not_an_error():
+    hashed = hash_password("correct horse battery staple")
+    assert not verify_password("y" * 200, hashed)
+
+
+def test_an_account_from_before_bcrypt_5_still_logs_in():
+    """bcrypt 4 hashed only the first 72 bytes of a longer password. Simulate
+    such a stored hash and check the full password still verifies against it."""
+    import bcrypt
+
+    long_password = "k" * 100
+    legacy = bcrypt.hashpw(long_password.encode()[:72], bcrypt.gensalt()).decode()
+    assert verify_password(long_password, legacy)
+
+
 # ── Tokens ───────────────────────────────────────────────────────────────────
 
 
@@ -100,3 +127,41 @@ def test_bearer_is_case_insensitive():
     """Clients differ on capitalisation; the scheme is case-insensitive per RFC."""
     assert bearer_token("bearer abc123") == "abc123"
     assert bearer_token("Bearer abc123") == "abc123"
+
+
+async def test_login_does_not_block_other_requests():
+    """bcrypt runs in a worker thread, so the event loop keeps serving."""
+    import asyncio
+    import time
+
+    from app.services import users as users_module
+
+    def slow_verify(password, hashed):
+        time.sleep(0.3)
+        return False
+
+    class _Collection:
+        async def find_one(self, query):
+            return None
+
+    store = users_module.UserStore({users_module.USERS: _Collection()})
+    original = users_module.verify_password
+    users_module.verify_password = slow_verify
+    try:
+        finished = []
+
+        async def ticker():
+            for _ in range(5):
+                await asyncio.sleep(0.02)
+            finished.append("ticker")
+
+        async def login():
+            await store.authenticate("a@b.co", "pw")
+            finished.append("login")
+
+        await asyncio.gather(login(), ticker())
+    finally:
+        users_module.verify_password = original
+    # Blocking bcrypt would hold the loop for the whole 0.3 s, so the ticker
+    # could only finish after the login.
+    assert finished == ["ticker", "login"]

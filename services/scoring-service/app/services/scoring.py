@@ -99,6 +99,7 @@ def score_market(
     probabilities: Sequence[float],
     outcomes: Sequence[bool],
     winners: Optional[int] = None,
+    grid_probabilities: Optional[Sequence[float]] = None,
 ) -> MarketScore:
     """Score one market for one race.
 
@@ -116,6 +117,11 @@ def score_market(
     model_brier = brier_score(probabilities, outcomes)
     baseline_brier = brier_score([baseline] * field_size, outcomes)
 
+    grid_brier = grid_skill = None
+    if grid_probabilities is not None and len(grid_probabilities) == field_size:
+        grid_brier = brier_score(grid_probabilities, outcomes)
+        grid_skill = skill_score(model_brier, grid_brier)
+
     return MarketScore(
         market=market,
         brier=model_brier,
@@ -123,6 +129,8 @@ def score_market(
         skill_vs_baseline=skill_score(model_brier, baseline_brier),
         log_score=log_score(probabilities, outcomes),
         drivers_scored=field_size,
+        grid_baseline_brier=grid_brier,
+        skill_vs_grid=grid_skill,
     )
 
 

@@ -39,6 +39,9 @@ class DriverOutcome(BaseModel):
     won: bool = False
     podium: bool = False
     points: bool = False
+    #: Starting slot, 0 for a pit-lane start or when it was not recorded. Feeds
+    #: the grid-order baseline, never the forecast's own score.
+    grid: int = 0
 
 
 #: Windows that forecast the sprint rather than the Grand Prix. Mirrors
@@ -61,6 +64,27 @@ def outcome_key(season: int, round_number: int, event: str = RACE) -> str:
     return base if event == RACE else f"{base}-{event}"
 
 
+class NameMismatch(BaseModel):
+    """A forecast name and a result name that look like one driver."""
+
+    forecast_name: str
+    result_name: str
+
+
+class HeldPrediction(BaseModel):
+    """A forecast left unscored because its names do not match the results.
+
+    Scoring it would mark the real driver as "did not race" and the result's
+    spelling as "not forecast", so a correct call reads as a confident miss
+    (the Austin 2026 bug). It is held until the names agree, then scored by the
+    next reconcile.
+    """
+
+    prediction_id: str
+    window: str
+    mismatches: List[NameMismatch] = Field(default_factory=list)
+
+
 class RaceOutcome(BaseModel):
     """What actually happened. Written once the race results are ingested."""
 
@@ -74,6 +98,8 @@ class RaceOutcome(BaseModel):
     #: Places that scored in this race: ten in a Grand Prix, eight in a sprint
     #: since 2022. The points market is defined by it, and so is its baseline.
     points_positions: int = 10
+    #: Forecasts not scored because of a name mismatch; see HeldPrediction.
+    held: List[HeldPrediction] = Field(default_factory=list)
 
     @property
     def key(self) -> str:
@@ -94,6 +120,11 @@ class MarketScore(BaseModel):
     skill_vs_baseline: float = 0.0
     log_score: Optional[float] = None
     drivers_scored: int = 0
+    #: Brier of a forecast that knew only the starting grid (see
+    #: ``grid_baseline.py``), and the model's skill against it. ``None`` for a
+    #: window that did not know the grid, or with too little history.
+    grid_baseline_brier: Optional[float] = None
+    skill_vs_grid: Optional[float] = None
 
 
 class PredictionScore(BaseModel):
@@ -163,6 +194,9 @@ class WindowRecord(BaseModel):
     predictions_scored: int = 0
     brier_by_market: Dict[str, float] = Field(default_factory=dict)
     skill_by_market: Dict[str, float] = Field(default_factory=dict)
+    #: Skill against the grid-order baseline, averaged over the scores that
+    #: have one. Absent for windows that do not know the grid.
+    skill_vs_grid_by_market: Dict[str, float] = Field(default_factory=dict)
     mean_log_score: Optional[float] = None
     #: How often the most likely driver actually won. Intuitive, but a weak
     #: measure — it ignores everything the probabilities said about everyone
@@ -189,5 +223,8 @@ class TrackRecord(BaseModel):
     #: be" — the opposite claim about the record's integrity.
     predictions_refused_late: int = 0
     predictions_incomplete_data: int = 0
+    #: Held back because forecast and result spell a driver differently. Not
+    #: "pending": they will not be scored until someone fixes the names.
+    predictions_held_name_mismatch: int = 0
     windows: List[WindowRecord] = Field(default_factory=list)
     calibration: List[CalibrationCurve] = Field(default_factory=list)
