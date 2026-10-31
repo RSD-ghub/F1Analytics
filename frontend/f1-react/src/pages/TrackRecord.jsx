@@ -1,6 +1,7 @@
 import { getTrackRecord } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable } from '../components/Panel'
+import ReliabilityChart from '../components/ReliabilityChart'
 
 /**
  * The public accuracy record — deliberately unauthenticated.
@@ -181,6 +182,11 @@ function Calibration({ curves }) {
             {MARKET_LABEL[curve.market] ?? curve.market}
             <span className="muted"> · {CURVE_WINDOW[curve.window] ?? 'grid set'}</span>
           </h3>
+          <ReliabilityChart
+            buckets={curve.buckets}
+            minSamples={MIN_BAND_SAMPLES}
+            label={MARKET_LABEL[curve.market] ?? curve.market}
+          />
           <table className="datatable compact">
             <thead>
               <tr>
