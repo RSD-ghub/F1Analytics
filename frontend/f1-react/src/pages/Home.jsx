@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useNavigate } from 'react-router-dom'
 
 import { getGlobe } from '../api/f1Api'
@@ -41,6 +42,7 @@ function daysUntil(iso) {
 }
 
 export default function Home() {
+  usePageTitle(null)
   const navigate = useNavigate()
   const state = useAsync(() => getGlobe(), [])
   const [selected, setSelected] = useState(null)
