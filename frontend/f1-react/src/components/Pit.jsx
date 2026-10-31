@@ -35,7 +35,7 @@ export function Pill({ children, tone = 'gold', className = '' }) {
   return <span className={`pit-pill pit-pill-${tone} ${className}`}>{children}</span>
 }
 
-/** A gold section title with an optional "View all" link on the right. */
+/** A section title with an optional "View all" link on the right. */
 export function SectionTitle({ children, to, action = 'View all' }) {
   return (
     <div className="section-title">
@@ -49,7 +49,7 @@ export function SectionTitle({ children, to, action = 'View all' }) {
   )
 }
 
-/** Two or three options, one active, the active one in gold. */
+/** Two or three options, one active, the active one in red. */
 export function Segmented({ options, value, onChange, label }) {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
@@ -75,7 +75,7 @@ export function Podium({ entries, caption }) {
     <figure className="podium-stage">
       <ol className="podium-steps">
         {order.map(([e, pos]) => (
-          <li key={pos} className={`podium-step step-${pos}`}>
+          <li key={pos} className={`podium-step step-${pos}`} style={{ '--team': teamColour(e.team) }}>
             <div className="podium-who">
               <Avatar name={e.name} team={e.team} size={pos === 1 ? 72 : 58} />
               {e.value != null && <span className="podium-value num">{e.value}</span>}

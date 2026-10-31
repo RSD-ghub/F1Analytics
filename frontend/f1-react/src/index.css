@@ -11,39 +11,39 @@
  * guessing at colours again.
  */
 @theme {
-  --color-background: #120a1a;
-  --color-foreground: #efe8f5;
+  --color-background: #0b090b;
+  --color-foreground: #f3eff0;
 
-  --color-card: #1e1329;
-  --color-card-foreground: #efe8f5;
-  --color-popover: #291b37;
-  --color-popover-foreground: #efe8f5;
+  --color-card: #1a1618;
+  --color-card-foreground: #f3eff0;
+  --color-popover: #241e21;
+  --color-popover-foreground: #f3eff0;
 
-  /* Gold, rationed: it marks the thing a view is about. Dark text sits on it. */
-  --color-primary: #ffd54f;
-  --color-primary-foreground: #2b2000;
+  /* F1 red, rationed: it marks the thing a view is about. White text sits on it. */
+  --color-primary: #e10600;
+  --color-primary-foreground: #ffffff;
 
-  --color-secondary: #291b37;
-  --color-secondary-foreground: #efe8f5;
+  --color-secondary: #241e21;
+  --color-secondary-foreground: #f3eff0;
 
-  --color-muted: #291b37;
-  --color-muted-foreground: #bba9d9;
+  --color-muted: #241e21;
+  --color-muted-foreground: #c4b8bc;
 
-  --color-accent: #33234a;
-  --color-accent-foreground: #efe8f5;
+  --color-accent: #2e262a;
+  --color-accent-foreground: #f3eff0;
 
   --color-destructive: #ff7a7a;
   --color-destructive-foreground: #2b0a0a;
 
-  --color-border: #34244a;
-  --color-input: #3d2a55;
-  --color-ring: #ffd54f;
+  --color-border: #3a2f33;
+  --color-input: #45383d;
+  --color-ring: #ff4d55;
 
-  --color-data: #9d8bff;
-  --color-data-deep: #6c3fe8;
+  --color-data: #3fd7b8;
+  --color-data-deep: #1f9e86;
   --color-good: #6ee7a0;
   --color-warn: #ffb74d;
-  --color-dim: #a08dc2;
+  --color-dim: #a5979c;
 
   --font-sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
@@ -54,55 +54,56 @@
 
 /* The pit wall at night.
  *
- * A violet-black ground with tonal surfaces stacked by depth (lighter means
- * closer), one gold accent for whatever a view is about, and heavy italic
- * display type. The product's claim is unchanged: it publishes a number before
+ * A near-black ground warmed with crimson, tonal surfaces stacked by depth
+ * (lighter means closer), one F1 red accent for whatever a view is about,
+ * team colours on standings and podiums, and heavy upright display type. The product's claim is unchanged: it publishes a number before
  * a race and is marked against it afterwards, so every figure stays in IBM
  * Plex Mono and every colour pair below was measured, not picked by eye.
  *
- * Contrast, measured on the card surface (#1e1329) unless noted; small text
- * needs 4.5:1. Values on the deepest raised surface (#33234a) in brackets.
+ * Contrast, measured on the card surface (#1a1618) unless noted; small text
+ * needs 4.5:1. Values on the deepest raised surface (#2e262a) in brackets.
  */
 :root {
-  --bg: #120a1a;
-  --panel: #1e1329;        /* cards */
-  --panel-soft: #291b37;   /* wells inside cards, hover */
-  --panel-high: #33234a;   /* raised: chips, active rows */
-  --line: #34244a;
-  --line-soft: #2a1d39;
+  --bg: #0b090b;
+  --panel: #1a1618;        /* cards */
+  --panel-soft: #241e21;   /* wells inside cards, hover */
+  --panel-high: #2e262a;   /* raised: chips, active rows */
+  --line: #3a2f33;
+  --line-soft: #2a2225;
 
-  --text: #efe8f5;     /* 14.9:1 (11.8) */
-  --muted: #bba9d9;    /*  8.3:1 (6.6)  */
-  --dim: #a08dc2;      /*  6.0:1 (4.8)  */
+  --text: #f3eff0;     /* 15.7:1 (12.9) */
+  --muted: #c4b8bc;    /*  9.3:1 (7.7)  */
+  --dim: #a5979c;      /*  6.4:1 (5.3)  */
 
-  /* Text on a photograph or the violet glow. */
+  /* Text on a photograph or the crimson glow. */
   --on-photo: #ffffff;
-  --on-photo-soft: #d6c9e8;
+  --on-photo-soft: #ddd2d5;
 
-  --accent: #ffd54f;       /* 12.6:1 (10.1) — gold */
-  --accent-soft: #ffe28a;
-  --accent-deep: #f2b92e;  /* rules and borders, and text at 10:1 */
-  --on-accent: #2b2000;    /* 11.4:1 on gold */
-  --violet: #6c3fe8;       /* glow and fills only, never small text */
-  --data: #9d8bff;         /*  6.4:1 (5.1) — data series */
-  --data-deep: #6c3fe8;
+  --accent: #ff4d55;       /* text and marks: 5.5:1 on cards (4.5 raised) */
+  --accent-fill: #e10600;  /* filled buttons and chips, white text 5.0:1 */
+  --accent-soft: #ff8086;
+  --accent-deep: #ff6b6b;  /* rules and borders, and text at 6.5:1 */
+  --on-accent: #ffffff;    /* 5.0:1 on --accent-fill */
+  --violet: #b3121f;       /* crimson glow and fills only, never small text */
+  --data: #3fd7b8;         /*  9.9:1 (8.2) — data series, teal */
+  --data-deep: #1f9e86;
 
-  --ink: #faf6fd;          /* display type */
-  --prose: #ddd3e8;        /* 12.3:1 — running text */
-  --rule: #4a3863;         /* decorative hairline, never text */
+  --ink: #faf7f8;          /* display type */
+  --prose: #e2dadd;        /* 13.1:1 — running text */
+  --rule: #4a3c41;         /* decorative hairline, never text */
 
   --serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
 
-  /* Archivo's width axis: headlines are set expanded and italic so display
-     type is a different shape from the interface, not a larger size of it. */
-  --display-wide: 'wdth' 125;
-  --display-mid: 'wdth' 112;
+  /* Archivo's width axis, kept at normal width: display type is upright and
+     heavy, set apart from the interface by weight and size. */
+  --display-wide: 'wdth' 100;
+  --display-mid: 'wdth' 100;
 
   --measure: 66ch;
 
-  --good: #6ee7a0;     /* 11.5:1 */
-  --bad: #ff7a7a;      /*  7.0:1 */
-  --warn: #ffb74d;     /* 10.3:1 */
+  --good: #6ee7a0;     /* 11.6:1 */
+  --bad: #ff7a7a;      /*  7.1:1 */
+  --warn: #ffb74d;     /* 10.4:1 */
 
   --radius: 20px;
   --radius-sm: 12px;
@@ -111,7 +112,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --lift: 0 2px 8px rgba(0, 0, 0, 0.35), 0 14px 40px rgba(0, 0, 0, 0.35);
-  --glow: 0 0 0 1px rgba(255, 213, 79, 0.25), 0 8px 28px rgba(108, 63, 232, 0.35);
+  --glow: 0 0 0 1px rgba(225, 6, 0, 0.25), 0 8px 28px rgba(179, 18, 31, 0.35);
 
   --rail: 248px;      /* desktop sidebar */
   --tabbar: 64px;     /* phone tab bar */
@@ -123,11 +124,11 @@
 
 body {
   margin: 0;
-  /* A violet haze behind the top of the page, the way a pit wall's screens
+  /* A crimson haze behind the top of the page, the way a pit wall's screens
      glow at night. Fixed so it stays put while the content scrolls. */
   background:
-    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(108, 63, 232, 0.42), rgba(108, 63, 232, 0) 70%),
-    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(186, 72, 196, 0.18), rgba(186, 72, 196, 0) 70%),
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(179, 18, 31, 0.42), rgba(179, 18, 31, 0) 70%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(120, 10, 30, 0.18), rgba(120, 10, 30, 0) 70%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -146,7 +147,7 @@ body {
   font-feature-settings: 'tnum' 1;
 }
 
-::selection { background: rgba(255, 213, 79, 0.28); }
+::selection { background: rgba(225, 6, 0, 0.28); }
 
 /* Keyboard focus has to be visible, and the default ring disappears against a
    dark ground. */
@@ -171,22 +172,22 @@ body {
 .account { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .account-name { color: var(--muted); font-size: 13px; }
 
-/* The mark is ours: a gold italic F in a slanted tile. */
+/* The mark is ours: a white F in a slanted red tile. */
 .brand {
   display: inline-flex; align-items: center; gap: 10px;
   color: var(--ink); text-decoration: none;
 }
 .brand-mark {
   display: inline-grid; place-items: center; width: 30px; height: 30px;
-  border-radius: 9px; background: var(--accent); color: var(--on-accent);
-  font: italic 900 18px/1 var(--sans); font-variation-settings: var(--display-wide);
-  transform: skewX(-8deg); box-shadow: 0 4px 18px rgba(255, 213, 79, 0.28);
+  border-radius: 9px; background: var(--accent-fill); color: var(--on-accent);
+  font: 800 18px/1 var(--sans); font-variation-settings: var(--display-wide);
+  transform: skewX(-8deg); box-shadow: 0 4px 18px rgba(225, 6, 0, 0.28);
 }
 .brand-word {
-  font-weight: 800; font-style: italic; font-size: 17px; letter-spacing: 0.01em;
-  text-transform: uppercase; font-variation-settings: var(--display-mid);
+  font-weight: 800; font-size: 18px; letter-spacing: -0.01em;
+  font-variation-settings: var(--display-mid);
 }
-.brand-word em { font-style: italic; color: var(--accent); }
+.brand-word em { font-style: normal; color: var(--accent); }
 
 .menu-toggle {
   display: inline-flex; align-items: center; justify-content: center;
@@ -199,14 +200,14 @@ body {
 
 .sidebar-scrim {
   position: fixed; inset: 0; z-index: 40;
-  background: rgba(8, 4, 12, 0.6);
+  background: rgba(6, 4, 5, 0.6);
   opacity: 0; pointer-events: none; transition: opacity 180ms ease;
 }
 .sidebar-scrim.open { opacity: 1; pointer-events: auto; }
 .sidebar {
   position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
   width: var(--rail); max-width: 85vw; overflow-y: auto;
-  background: linear-gradient(180deg, #1c1128 0%, #150d1c 100%);
+  background: linear-gradient(180deg, #171315 0%, #110e10 100%);
   border-right: 1px solid var(--line-soft);
   transform: translateX(-100%); transition: transform 200ms ease;
 }
@@ -232,12 +233,15 @@ body {
 .tabbar { display: none; }
 @media (max-width: 719px) {
   .tabbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+    /* A floating pill rather than a docked bar. */
+    position: fixed; left: 12px; right: 12px; z-index: 35;
+    bottom: calc(10px + env(safe-area-inset-bottom));
     display: grid; grid-template-columns: repeat(5, 1fr);
-    height: calc(var(--tabbar) + env(safe-area-inset-bottom));
-    padding: 6px 6px env(safe-area-inset-bottom);
-    background: rgba(21, 13, 28, 0.92); backdrop-filter: blur(14px);
-    border-top: 1px solid var(--line-soft);
+    height: var(--tabbar); padding: 6px;
+    border-radius: 26px;
+    background: rgba(36, 30, 33, 0.86); backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   }
   .tabbar a {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
@@ -247,9 +251,9 @@ body {
     display: inline-grid; place-items: center; width: 52px; height: 28px; border-radius: 999px;
     transition: background 120ms ease;
   }
-  .tabbar a.active { color: var(--accent); }
-  .tabbar a.active .tabbar-icon { background: rgba(108, 63, 232, 0.45); color: var(--ink); }
-  body { padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); }
+  .tabbar a.active { color: var(--ink); }
+  .tabbar a.active .tabbar-icon { background: rgba(225, 6, 0, 0.32); color: #ff8086; }
+  body { padding-bottom: calc(var(--tabbar) + 24px + env(safe-area-inset-bottom)); }
 }
 
 /* ── Bernie shortcut ──────────────────────────────────────────────────────── */
@@ -257,11 +261,11 @@ body {
   position: fixed; right: 24px; bottom: 24px; z-index: 30;
   display: inline-flex; align-items: center; justify-content: center;
   width: 58px; height: 58px; border-radius: 50%;
-  background: var(--accent); color: var(--on-accent);
-  box-shadow: 0 6px 24px rgba(255, 213, 79, 0.32), var(--lift);
+  background: var(--accent-fill); color: var(--on-accent);
+  box-shadow: 0 6px 24px rgba(225, 6, 0, 0.32), var(--lift);
   transition: background 120ms ease, transform 120ms ease;
 }
-.bernie-fab:hover { background: var(--accent-soft); transform: translateY(-2px); }
+.bernie-fab:hover { background: #ff1a10; transform: translateY(-2px); }
 .bernie-fab:focus-visible { border-radius: 50%; outline-offset: 3px; }
 @media (max-width: 719px) { .bernie-fab { display: none; } }
 
@@ -275,18 +279,16 @@ body {
   margin-bottom: 4px;
   padding-bottom: 8px;
 }
-/* The headline is where the display face is spent fully: black weight, wide,
-   italic and upper case, so a page announces itself before anything is
+/* The headline is where the display face is spent fully: heavy, upright and
+   tightly set in sentence case, so a page announces itself before anything is
    scanned. Fluid rather than stepped, because type this large either wraps
    awkwardly on a laptop or looks timid on a wide screen. */
 .page-head h1 {
   margin: 12px 0 12px;
   font-size: clamp(2.1rem, 1.2rem + 3vw, 3.6rem);
   line-height: 0.98;
-  letter-spacing: -0.01em;
-  font-weight: 900;
-  font-style: italic;
-  text-transform: uppercase;
+  letter-spacing: -0.025em;
+  font-weight: 800;
   font-variation-settings: var(--display-wide);
   text-wrap: balance;
   color: var(--ink);
@@ -295,18 +297,18 @@ body {
   max-width: 58ch; color: var(--muted);
   font-size: 15.5px; line-height: 1.6;
 }
-/* The eyebrow is a gold pill, the tag that says what kind of page this is. */
+/* The eyebrow is a red pill, the tag that says what kind of page this is. */
 .eyebrow {
   display: inline-flex; align-items: center; width: fit-content;
   margin: 0; padding: 4px 11px; border-radius: 999px;
-  background: rgba(255, 213, 79, 0.14); color: var(--accent);
+  background: rgba(225, 6, 0, 0.14); color: var(--accent);
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
   font-family: var(--sans);
 }
-/* Section titles inside a page: gold, italic, in the display face. */
+/* Section titles inside a page: white and heavy, in the display face. */
 .section-head, h2.section-head {
-  margin: 8px 0 14px; color: var(--accent);
-  font-size: 19px; font-weight: 800; font-style: italic; letter-spacing: 0.01em;
+  margin: 8px 0 14px; color: var(--ink);
+  font-size: 20px; font-weight: 800; letter-spacing: -0.01em;
   font-variation-settings: var(--display-mid);
 }
 .muted { color: var(--muted); }
@@ -321,7 +323,7 @@ body {
    stack of six of them. */
 .panel { border-color: var(--line-soft); border-radius: var(--radius); box-shadow: none; }
 .panel [data-slot="card-title"] {
-  font-size: 17px; font-weight: 800; font-style: italic; letter-spacing: 0.005em;
+  font-size: 17px; font-weight: 800; letter-spacing: 0.005em;
   font-variation-settings: var(--display-mid); color: var(--ink);
 }
 .panel [data-slot="card-description"] { font-size: 13px; }
@@ -388,7 +390,7 @@ body {
    reserved for. */
 .tiles .tile:first-child {
   border-top-color: var(--accent);
-  background: linear-gradient(160deg, rgba(255, 213, 79, 0.12), var(--panel) 55%);
+  background: linear-gradient(160deg, rgba(225, 6, 0, 0.12), var(--panel) 55%);
 }
 .tile-value {
   font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -488,7 +490,7 @@ tr.thin td { opacity: 0.55; }
    red stripe along the top edge that the F1 site uses on its own tiles. */
 .news-card-fallback {
   display: flex; align-items: flex-end; padding: 14px 16px;
-  background: linear-gradient(135deg, #2a1b3d 0%, #4a2a7a 100%);
+  background: linear-gradient(135deg, #24101a 0%, #4f121c 100%);
   border-top: 4px solid var(--accent);
 }
 .news-card-fallback span {
@@ -672,11 +674,11 @@ input { background: var(--panel); border: 1px solid var(--line); border-radius: 
 input:focus { outline: none; border-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; }
 
-.button { background: var(--accent); color: var(--on-accent); border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
+.button { background: var(--accent-fill); color: var(--on-accent); border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
 .button:disabled { opacity: 0.45; cursor: default; }
 .button.subtle { background: none; border: 1px solid var(--line); color: var(--text); }
 .link { color: var(--accent); text-decoration: none; font-size: 14px; }
-/* Text links take the gold; a link styled as a button keeps its own colours. */
+/* Text links take the red; a link styled as a button keeps its own colours. */
 a:where(:not([data-slot])) { color: var(--accent); }
 
 /* Tailwind's bare `border` utility draws in currentColor unless the base layer
@@ -750,7 +752,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
   border: 1px solid var(--line); color: var(--text);
 }
 .tag-power { border-color: rgba(255, 122, 122, 0.4); color: var(--bad); background: rgba(255, 122, 122, 0.1); }
-.tag-technical { border-color: rgba(157, 139, 255, 0.4); color: var(--data); background: rgba(157, 139, 255, 0.1); }
+.tag-technical { border-color: rgba(63, 215, 184, 0.4); color: var(--data); background: rgba(63, 215, 184, 0.1); }
 .tag-balanced { border-color: rgba(255, 183, 77, 0.4); color: var(--warn); background: rgba(255, 183, 77, 0.1); }
 
 .brief-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
@@ -780,7 +782,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 }
 .odds-track { position: relative; height: 9px; border-radius: 5px; background: var(--line); overflow: hidden; }
 .odds-seg { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
-.odds-points { background: #4a3a78; }
+.odds-points { background: #4a2026; }
 .odds-podium { background: var(--data); }
 .odds-win { background: var(--accent); }
 
@@ -801,7 +803,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 .podium { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .podium li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 13px; background: var(--panel-soft); border-radius: 7px; border-left: 3px solid var(--line); }
 .podium-1 { border-left-color: var(--accent); }
-.podium-2 { border-left-color: #c9c3d6; }
+.podium-2 { border-left-color: #cbc4c7; }
 .podium-3 { border-left-color: #c48a52; }
 .podium-pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .podium-1 .podium-driver { font-weight: 650; }
@@ -878,8 +880,8 @@ a:where(:not([data-slot])) { color: var(--accent); }
 /* Pale land on a lit ocean. The markers are what the eye is meant to find, so
    the planet under them stays low-contrast — but light, not dark: against a
    dark photograph a dark globe read as a hole rather than a sphere. */
-.globe-land { fill: #8f7bc0; stroke: #b6a6e0; stroke-width: 0.4; }
-.globe-rim { stroke: rgba(157, 139, 255, 0.55); stroke-width: 1; }
+.globe-land { fill: #9a8a90; stroke: #c0b2b6; stroke-width: 0.4; }
+.globe-rim { stroke: rgba(63, 215, 184, 0.55); stroke-width: 1; }
 .globe-wrap { position: relative; }
 
 /* Markers are the navigation, so they are focusable and show it. */
@@ -889,9 +891,9 @@ a:where(:not([data-slot])) { color: var(--accent); }
 .stop-dot { stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; transition: r 120ms ease; }
 /* Restated for a pale planet: the old tones were picked against a dark one
    and the "raced" marker in particular vanished into the land. */
-.stop-raced .stop-dot { fill: #8b7aa8; }
+.stop-raced .stop-dot { fill: #8f8287; }
 .stop-next .stop-dot { fill: var(--accent); }
-.stop-scheduled .stop-dot { fill: #9d8bff; }
+.stop-scheduled .stop-dot { fill: #3fd7b8; }
 .stop:hover .stop-dot, .stop:focus-visible .stop-dot { r: 7; }
 .stop:focus-visible .stop-dot { stroke: #fff; stroke-width: 2; }
 .stop.is-selected .stop-dot { stroke: #fff; stroke-width: 2; }
@@ -912,7 +914,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 .key-dot { width: 9px; height: 9px; border-radius: 50%; }
 .key-raced { background: var(--on-photo-soft); }
 .key-next { background: var(--accent); }
-.key-scheduled { background: #9d8bff; }
+.key-scheduled { background: #3fd7b8; }
 
 .atlas-name { margin: 10px 0 2px; font-size: 20px; letter-spacing: -0.015em; }
 .atlas-when { margin: 10px 0 0; font-family: var(--mono); font-size: 14px; }
@@ -1015,7 +1017,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 }
 
 .race-call {
-  background: linear-gradient(135deg, #2a1846 0%, #1e1329 60%, #2b1a1f 100%);
+  background: linear-gradient(135deg, #2c0b12 0%, #1a1618 60%, #2b1a1f 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px; padding: 22px 22px 18px;
   color: var(--on-photo); box-shadow: var(--lift);
@@ -1067,8 +1069,8 @@ a:where(:not([data-slot])) { color: var(--accent); }
 }
 .lap-window {
   position: absolute; top: -5px; bottom: -5px; border-radius: 6px;
-  background: repeating-linear-gradient(135deg, rgba(157, 139, 255, 0.2) 0 5px, rgba(157, 139, 255, 0.07) 5px 10px);
-  border: 1px dashed rgba(157, 139, 255, 0.55);
+  background: repeating-linear-gradient(135deg, rgba(63, 215, 184, 0.2) 0 5px, rgba(63, 215, 184, 0.07) 5px 10px);
+  border: 1px dashed rgba(63, 215, 184, 0.55);
 }
 .stint {
   position: absolute; top: 4px; bottom: 4px; border-radius: 6px;
@@ -1110,7 +1112,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 .lap-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); padding-top: 4px; }
 .lap-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-swatch { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
-.legend-swatch.window { background: rgba(157, 139, 255, 0.2); border: 1px dashed rgba(157, 139, 255, 0.6); }
+.legend-swatch.window { background: rgba(63, 215, 184, 0.2); border: 1px dashed rgba(63, 215, 184, 0.6); }
 .legend-swatch.sc { background: repeating-linear-gradient(135deg, var(--sc) 0 3px, #f3c062 3px 6px); }
 .legend-swatch.extra { background: rgba(110, 231, 160, 0.2); border: 1px solid rgba(110, 231, 160, 0.5); }
 
@@ -1119,9 +1121,9 @@ a:where(:not([data-slot])) { color: var(--accent); }
   width: 24px; height: 24px; border-radius: 6px;
   font: 700 13px/1 var(--mono); color: #fff; background: var(--dim);
 }
-.plan-badge.plan-a { background: var(--accent); color: var(--on-accent); }
+.plan-badge.plan-a { background: var(--accent-fill); color: var(--on-accent); }
 .plan-badge.plan-b { background: var(--data-deep); }
-.plan-badge.plan-c { background: #5a4878; }
+.plan-badge.plan-c { background: #5a4a50; }
 .plan-notes { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 8px; font-size: 14px; }
 .plan-notes li { display: flex; gap: 10px; align-items: flex-start; }
 
@@ -1137,7 +1139,7 @@ a:where(:not([data-slot])) { color: var(--accent); }
 .character-scale { padding: 6px 4px 0; }
 .character-bar {
   position: relative; height: 8px; border-radius: 999px;
-  background: linear-gradient(90deg, var(--data-deep), #8b7aa8 50%, var(--accent));
+  background: linear-gradient(90deg, var(--data-deep), #8f8287 50%, var(--accent));
 }
 .character-marker {
   position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%;
@@ -1228,15 +1230,15 @@ a:where(:not([data-slot])) { color: var(--accent); }
 /* ── Pit-wall furniture (components/Pit.jsx) ──────────────────────────────── */
 .avatar {
   display: inline-grid; place-items: center; flex: none; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #3d2a55, #1c1128);
-  color: var(--ink); font-weight: 800; font-style: italic; letter-spacing: 0.02em;
+  background: radial-gradient(circle at 35% 30%, #45383d, #171315);
+  color: var(--ink); font-weight: 800; letter-spacing: 0.02em;
   box-shadow: 0 0 0 2px var(--team, var(--dim)), 0 0 18px -4px var(--team, transparent);
 }
 
 .driver-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.driver-first { font-size: 12px; color: var(--muted); font-style: italic; }
+.driver-first { font-size: 12px; color: var(--muted); }
 .driver-last {
-  font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: var(--ink);
+  font-weight: 750; letter-spacing: -0.005em; color: var(--ink);
   font-variation-settings: var(--display-mid);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1247,16 +1249,16 @@ a:where(:not([data-slot])) { color: var(--accent); }
   padding: 3px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.1em;
 }
-.pit-pill-gold { background: var(--accent); color: var(--on-accent); }
-.pit-pill-soft { background: rgba(255, 213, 79, 0.14); color: var(--accent); }
-.pit-pill-dark { background: rgba(18, 10, 26, 0.72); color: var(--text); backdrop-filter: blur(6px); }
+.pit-pill-gold { background: var(--accent-fill); color: var(--on-accent); }
+.pit-pill-soft { background: rgba(225, 6, 0, 0.14); color: var(--accent); }
+.pit-pill-dark { background: rgba(11, 9, 11, 0.72); color: var(--text); backdrop-filter: blur(6px); }
 .pit-pill-good { background: rgba(110, 231, 160, 0.14); color: var(--good); }
 .pit-pill-bad { background: rgba(255, 122, 122, 0.14); color: var(--bad); }
 
 .section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 6px 0 12px; }
 .section-title h2 {
-  margin: 0; color: var(--accent);
-  font-size: 20px; font-weight: 800; font-style: italic; letter-spacing: 0.01em;
+  margin: 0; color: var(--ink);
+  font-size: 21px; font-weight: 800; letter-spacing: -0.01em;
   font-variation-settings: var(--display-mid);
 }
 .section-title-link {
@@ -1277,9 +1279,9 @@ a:where(:not([data-slot])) { color: var(--accent); }
   transition: background 120ms ease, color 120ms ease;
 }
 .segmented button:hover { color: var(--text); }
-.segmented button.is-on { background: var(--accent); color: var(--on-accent); }
+.segmented button.is-on { background: var(--accent-fill); color: var(--on-accent); }
 
-/* The podium: a gold first step between two violet ones. */
+/* The podium: each step in its driver's team colour, the winner's tallest. */
 .podium-stage { margin: 0; }
 .podium-steps {
   list-style: none; margin: 0 auto; padding: 0; max-width: 560px;
@@ -1293,15 +1295,18 @@ a:where(:not([data-slot])) { color: var(--accent); }
   padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
   background: var(--panel-high); color: var(--ink); border: 1px solid var(--line);
 }
-.step-1 .podium-value { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.step-1 .podium-value { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
 .podium-block {
   width: 100%; display: grid; place-items: center;
   border-radius: 14px 14px 4px 4px;
-  background: linear-gradient(180deg, #3d2a55, #241638);
-  font: italic 900 28px/1 var(--sans); color: var(--muted);
-  font-variation-settings: var(--display-wide);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--team, #45383d) 88%, #000) 0%,
+    color-mix(in srgb, var(--team, #45383d) 38%, #0b090b) 100%);
+  font: 800 30px/1 var(--sans); color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 12px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
-.step-1 .podium-block { height: 108px; background: linear-gradient(180deg, #ffd54f, #e0a92a); color: var(--on-accent); box-shadow: 0 10px 40px -10px rgba(255, 213, 79, 0.5); }
+.step-1 .podium-block { height: 108px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 40px -12px var(--team, rgba(225, 6, 0, 0.5)); }
 .step-2 .podium-block { height: 78px; }
 .step-3 .podium-block { height: 58px; }
 
@@ -1342,84 +1347,90 @@ a:where(:not([data-slot])) { color: var(--accent); }
   position: relative; display: block; overflow: hidden; isolation: isolate;
   min-height: 340px; border-radius: 26px; color: var(--ink); text-decoration: none;
   background:
-    radial-gradient(ellipse 70% 60% at 78% 18%, rgba(255, 183, 77, 0.55), rgba(255, 183, 77, 0) 60%),
-    radial-gradient(ellipse 80% 70% at 15% 0%, rgba(186, 72, 196, 0.55), rgba(186, 72, 196, 0) 65%),
-    linear-gradient(180deg, #4a2a86 0%, #2a1650 55%, #1a0f2b 100%);
-  box-shadow: 0 24px 60px -24px rgba(108, 63, 232, 0.6);
+    radial-gradient(ellipse 70% 60% at 78% 18%, rgba(225, 6, 0, 0.45), rgba(225, 6, 0, 0) 60%),
+    radial-gradient(ellipse 80% 70% at 15% 0%, rgba(120, 10, 30, 0.55), rgba(120, 10, 30, 0) 65%),
+    linear-gradient(180deg, #5a1420 0%, #2a0a10 55%, #170709 100%);
+  box-shadow: 0 24px 60px -24px rgba(179, 18, 31, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 /* A horizon of light streaks, the way a lit straight looks at night. */
 .race-hero::before {
   content: ''; position: absolute; inset: auto 0 0 0; height: 55%; z-index: -1;
   background:
-    repeating-linear-gradient(176deg, rgba(255, 213, 79, 0) 0 22px, rgba(255, 213, 79, 0.10) 22px 24px, rgba(255, 213, 79, 0) 24px 52px),
-    linear-gradient(180deg, rgba(18, 10, 26, 0), rgba(18, 10, 26, 0.65));
+    repeating-linear-gradient(176deg, rgba(225, 6, 0, 0) 0 22px, rgba(225, 6, 0, 0.10) 22px 24px, rgba(225, 6, 0, 0) 24px 52px),
+    linear-gradient(180deg, rgba(11, 9, 11, 0), rgba(11, 9, 11, 0.65));
 }
 .hero-art { position: absolute; inset: 56px 6% 120px 34%; z-index: -1; }
 .hero-art svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.hero-track, .hero-track-glow { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.hero-track { stroke: rgba(255, 255, 255, 0.92); stroke-width: 4; }
-.hero-track-glow { stroke: rgba(255, 213, 79, 0.55); stroke-width: 16; filter: blur(8px); }
+.hero-track, .hero-track-line, .hero-track-glow { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* A neon circuit: a warm halo, a red tube, and a white-hot core. */
+.hero-track-glow { stroke: rgba(255, 120, 40, 0.55); stroke-width: 20; filter: blur(10px); }
+.hero-track-line { stroke: #ff3b30; stroke-width: 8; filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.9)); }
+.hero-track { stroke: #fff4e6; stroke-width: 2.5; }
 
 .hero-tags { position: absolute; top: 18px; left: 18px; right: 18px; display: flex; justify-content: space-between; gap: 8px; }
 .hero-tags-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 .hero-glass {
   position: absolute; left: 14px; right: 14px; bottom: 14px;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 24px; align-items: center;
-  padding: 16px 20px; border-radius: 20px;
-  background: rgba(30, 19, 41, 0.62); backdrop-filter: blur(14px) saturate(1.2);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 24px; align-items: end;
+  padding: 18px 20px; border-radius: 22px;
+  background: rgba(26, 22, 24, 0.55); backdrop-filter: blur(14px) saturate(1.2);
   border: 1px solid rgba(255, 255, 255, 0.10);
 }
+.hero-title { grid-column: 1; }
 .hero-title h1, .hero-title h2 {
-  margin: 0; font-size: clamp(1.25rem, 0.9rem + 1.4vw, 1.9rem); line-height: 1.05;
-  font-weight: 900; font-style: italic; text-transform: uppercase; letter-spacing: 0.005em;
+  margin: 0; font-size: clamp(1.5rem, 1rem + 1.8vw, 2.3rem); line-height: 1.04;
+  font-weight: 800; letter-spacing: -0.025em;
   font-variation-settings: var(--display-wide);
 }
-.hero-title p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-.hero-facts { margin: 0; display: flex; align-items: center; gap: 22px; }
-.hero-facts > div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-left: 22px; border-left: 1px solid rgba(255, 255, 255, 0.12); }
-.hero-facts > div:first-child { padding-left: 0; border-left: 0; }
-.hero-facts dd { margin: 0; font-size: 22px; font-weight: 600; color: var(--ink); white-space: nowrap; }
-.hero-facts dd small { font-size: 12px; color: var(--muted); margin-left: 1px; }
-.hero-facts dt { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
-.hero-mini svg { width: 64px; height: 40px; }
-.hero-mini path { fill: none; stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.hero-title p { margin: 6px 0 0; color: var(--on-photo-soft); font-size: 14px; }
+.hero-when-line { grid-column: 1; margin: 0; color: var(--muted); font-size: 13px; }
+/* The countdown as four frosted tiles. */
+.count-tiles {
+  grid-column: 2; grid-row: 1 / span 2; list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(4, 64px); gap: 8px;
+}
+.count-tiles li {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  height: 70px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.count-tiles .num { font-size: 26px; font-weight: 600; line-height: 1; color: var(--ink); }
+.count-tiles small { font-size: 11px; color: var(--on-photo-soft); }
 a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 @media (hover: hover) {
-  a.race-hero:hover { transform: translateY(-2px); box-shadow: 0 30px 70px -24px rgba(108, 63, 232, 0.75); }
+  a.race-hero:hover { transform: translateY(-2px); box-shadow: 0 30px 70px -24px rgba(179, 18, 31, 0.75); }
 }
 @media (max-width: 719px) {
   .race-hero { min-height: 400px; border-radius: 22px; }
   .hero-art { inset: 56px 8% 190px 8%; }
   .hero-glass { grid-template-columns: 1fr; }
-  .hero-facts { justify-content: space-between; gap: 12px; }
-  .hero-facts > div { padding-left: 12px; }
-  .hero-facts dd { font-size: 18px; }
-  .hero-mini { display: none; }
+  .count-tiles { grid-column: 1; grid-row: auto; grid-template-columns: repeat(4, 1fr); margin-top: 8px; }
+  .count-tiles li { height: 62px; }
+  .count-tiles .num { font-size: 22px; }
 }
 
 /* ── Round cards (Home's upcoming rounds) ─────────────────────────────────── */
 .round-card {
   position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
   min-height: 150px; padding: 14px 16px; border-radius: 20px; overflow: hidden;
-  background: linear-gradient(160deg, #3a2466 0%, #23163a 70%);
+  background: linear-gradient(160deg, #3e0f17 0%, #210a0f 70%);
   border: 1px solid var(--line-soft); color: var(--ink); text-decoration: none;
 }
 .round-card .pit-pill { position: absolute; top: 12px; left: 12px; }
 .round-country { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
-.round-name { font-weight: 850; font-style: italic; text-transform: uppercase; font-size: 15px; line-height: 1.15; font-variation-settings: var(--display-mid); }
+.round-name { font-weight: 800; font-size: 16px; line-height: 1.15; font-variation-settings: var(--display-mid); }
 .round-date { font-size: 12px; color: var(--accent); font-weight: 650; }
 .round-card.is-raced { background: var(--panel); }
 .round-card.is-raced .round-date { color: var(--muted); }
 .round-card { cursor: pointer; text-align: left; font: inherit; }
-.round-card:hover { border-color: rgba(255, 213, 79, 0.35); }
+.round-card:hover { border-color: rgba(225, 6, 0, 0.35); }
 .atlas-globe { min-width: 0; width: 100%; }
 .globe-wrap svg { max-width: 100%; height: auto; }
-.atlas-name { font-weight: 850; font-style: italic; text-transform: uppercase; font-variation-settings: var(--display-mid); }
+.atlas-name { font-weight: 800; font-variation-settings: var(--display-mid); }
 
 /* ── Forecast list (Next race) ────────────────────────────────────────────── */
-.hero-when { margin: -12px 0 0 6px; }
 .forecast-list { margin-top: 22px; }
 .forecast-list-head, .forecast-list .rank-right {
   display: grid; grid-template-columns: 150px 54px 64px 60px; gap: 14px; align-items: center;
@@ -1481,14 +1492,14 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 .outlet-chip-mark {
   display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
   background: var(--panel-high); color: var(--ink);
-  font: italic 900 20px/1 var(--sans); font-variation-settings: var(--display-wide);
+  font: 800 20px/1 var(--sans); font-variation-settings: var(--display-wide);
   box-shadow: 0 0 0 2px var(--line); transition: box-shadow 120ms ease, background 120ms ease;
 }
 .outlet-chip:first-child .outlet-chip-mark { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
 .outlet-chip-name { font-size: 11px; line-height: 1.25; text-align: center; }
 .outlet-chip:hover .outlet-chip-mark { box-shadow: 0 0 0 2px var(--dim); }
 .outlet-chip.is-on { color: var(--accent); }
-.outlet-chip.is-on .outlet-chip-mark { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 2px var(--accent), 0 6px 20px rgba(255, 213, 79, 0.3); }
+.outlet-chip.is-on .outlet-chip-mark { background: var(--accent-fill); color: var(--on-accent); box-shadow: 0 0 0 2px var(--accent), 0 6px 20px rgba(225, 6, 0, 0.3); }
 
 .news-carousel { list-style: none; margin: 0; padding-left: 0; grid-auto-columns: minmax(280px, 38%); }
 .news-carousel-item { position: relative; display: flex; }
@@ -1512,11 +1523,11 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 .weekend-story { border-color: var(--line-soft); border-radius: var(--radius); }
 .weekend-photo::after {
   content: ''; position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(18, 10, 26, 0) 40%, rgba(18, 10, 26, 0.75));
+  background: linear-gradient(180deg, rgba(11, 9, 11, 0) 40%, rgba(11, 9, 11, 0.75));
 }
 .weekend-photo-label { z-index: 1; font-weight: 600; }
 .weekend-date::before { background: var(--accent); }
-.weekend-headline { font-weight: 850; font-style: italic; color: var(--ink); }
+.weekend-headline { font-weight: 850; color: var(--ink); }
 .weekend-story.is-lead .weekend-headline { text-transform: uppercase; letter-spacing: 0; }
 .verdict { gap: 10px; border-top: 0; padding: 4px 0 12px; }
 .verdict-cell { background: var(--panel-soft); border-radius: 14px; padding: 10px 14px; min-width: 150px; }
@@ -1528,10 +1539,10 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 .news-row-art .news-card-fallback span { font-size: 11px; overflow-wrap: anywhere; }
 
 /* ── Bernie ───────────────────────────────────────────────────────────────── */
-/* Her replies on raised violet cards; yours in gold, so the two voices are
+/* Her replies on raised charcoal cards; yours in red, so the two voices are
    told apart by colour as well as by shape. */
 .turn.assistant { background: var(--panel-high); border-color: transparent; color: var(--text); }
-.turn.user { background: rgba(255, 213, 79, 0.12); border: 1px solid rgba(255, 213, 79, 0.28); color: var(--ink); }
+.turn.user { background: rgba(225, 6, 0, 0.12); border: 1px solid rgba(225, 6, 0, 0.28); color: var(--ink); }
 .thread { border-color: var(--line-soft); border-radius: 14px; }
 .thread.active { border-color: var(--accent); background: var(--panel-high); box-shadow: inset 3px 0 0 var(--accent); }
 .composer input { border-radius: 999px; padding: 11px 18px; background: var(--panel-soft); border-color: var(--line); }
@@ -1542,7 +1553,7 @@ a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
 }
 
 /* ── Sign in ──────────────────────────────────────────────────────────────── */
-.narrow .panel { box-shadow: 0 18px 60px -20px rgba(108, 63, 232, 0.7); border-color: var(--line); }
-.auth-head h1 { font-weight: 900; font-style: italic; text-transform: uppercase; font-variation-settings: var(--display-wide); }
+.narrow .panel { box-shadow: 0 18px 60px -20px rgba(179, 18, 31, 0.7); border-color: var(--line); }
+.auth-head h1 { font-weight: 900; text-transform: uppercase; font-variation-settings: var(--display-wide); }
 .auth-head .lede { color: var(--muted); }
 input { background: var(--panel-soft); }

@@ -138,13 +138,13 @@ export default function Globe({ stops, size = 440, onSelect, selected }) {
       onPointerCancel={onPointerUp}
     >
       <defs>
-        {/* Lit from the upper left in the violet of the page glow, a step
+        {/* Lit from the upper left in a dark steel grey, a step
             lighter than the cards so the sphere reads as an object on the
             ground rather than a hole in it. */}
         <radialGradient id="globe-sea" cx="36%" cy="30%">
-          <stop offset="0%" stopColor="#5b3fa8" />
-          <stop offset="55%" stopColor="#3a2670" />
-          <stop offset="100%" stopColor="#221640" />
+          <stop offset="0%" stopColor="#34343c" />
+          <stop offset="55%" stopColor="#222227" />
+          <stop offset="100%" stopColor="#141417" />
         </radialGradient>
       </defs>
 

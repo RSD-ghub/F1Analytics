@@ -230,7 +230,7 @@ function Calibration({ curves }) {
         </div>
       ))}
       <p className="muted small">
-        In each row the gold bar is what we said and the violet bar what
+        In each row the red bar is what we said and the teal bar what
         happened. A positive gap means we were overconfident in that band. Bands with
         fewer than {MIN_BAND_SAMPLES} forecasts show no observed rate: with a
         handful of samples the outcome can only be 0% or 100%, so any gap would

@@ -37,8 +37,6 @@ export default function NextRace() {
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
 
-  const start = weekend.race_start_utc ? new Date(weekend.race_start_utc) : null
-
   return (
     <div className="stack">
       <RaceHero
@@ -48,11 +46,6 @@ export default function NextRace() {
         start={weekend.race_start_utc} sprint={weekend.is_sprint_weekend}
         outline={circuit?.map?.outline}
       />
-      {start && (
-        <p className="muted small hero-when">
-          {start.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}, your time
-        </p>
-      )}
 
       {circuit && (
         <Panel

@@ -4,8 +4,9 @@ import { Pill } from './Pit'
 
 /**
  * The next weekend as a hero card: an abstract night-track backdrop with the
- * circuit's own outline drawn large across it, gold tags on top, and a frosted
- * strip along the bottom carrying when, how long until, and where.
+ * circuit's own outline drawn large across it as a neon line, red tags on
+ * top, and a frosted strip along the bottom carrying the name, when, and a
+ * countdown in tiles.
  *
  * No illustration or photograph is needed. The outline is the circuit's real
  * shape from the track-map data; without it the card still stands on its
@@ -26,14 +27,17 @@ function outlinePath(outline) {
 function useCountdown(iso) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60000)
+    const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
   if (!iso) return null
   const ms = new Date(iso) - now
   if (ms <= 0) return null
-  const mins = Math.floor(ms / 60000)
-  return { days: Math.floor(mins / 1440), hours: Math.floor((mins % 1440) / 60), mins: mins % 60 }
+  const secs = Math.floor(ms / 1000)
+  return {
+    days: Math.floor(secs / 86400), hours: Math.floor((secs % 86400) / 3600),
+    mins: Math.floor((secs % 3600) / 60), secs: secs % 60,
+  }
 }
 
 export default function RaceHero({
@@ -51,6 +55,7 @@ export default function RaceHero({
         {shape && (
           <svg viewBox={shape.box} preserveAspectRatio="xMidYMid meet">
             <path d={shape.d} className="hero-track-glow" />
+            <path d={shape.d} className="hero-track-line" />
             <path d={shape.d} className="hero-track" />
           </svg>
         )}
@@ -67,25 +72,23 @@ export default function RaceHero({
           <Heading>{raceName}</Heading>
           <p>{[circuit, country].filter(Boolean).join(' · ')}</p>
         </div>
-        <dl className="hero-facts">
-          {date && (
-            <div>
-              <dd className="num">{date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</dd>
-              <dt>{date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} lights out</dt>
-            </div>
-          )}
-          {left && (
-            <div>
-              <dd className="num">{left.days}<small>d</small> {String(left.hours).padStart(2, '0')}<small>h</small> {String(left.mins).padStart(2, '0')}<small>m</small></dd>
-              <dt>to go</dt>
-            </div>
-          )}
-          {shape && (
-            <div className="hero-mini" aria-hidden="true">
-              <svg viewBox={shape.box}><path d={shape.d} /></svg>
-            </div>
-          )}
-        </dl>
+        {date && (
+          <p className="hero-when-line">
+            {date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+            {' · '}
+            {date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} lights out, your time
+          </p>
+        )}
+        {left && (
+          <ol className="count-tiles" aria-label={`${left.days} days, ${left.hours} hours and ${left.mins} minutes to go`}>
+            {[[left.days, 'Days'], [left.hours, 'Hours'], [left.mins, 'Min'], [left.secs, 'Sec']].map(([v, l]) => (
+              <li key={l} aria-hidden="true">
+                <span className="num">{String(v).padStart(2, '0')}</span>
+                <small>{l}</small>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </>
   )
