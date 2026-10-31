@@ -77,3 +77,7 @@ nb-configuration.xml
 # frontend/f1-react/public/backgrounds/ at a size a browser should download;
 # the 10MB original is kept locally and has no business in the history.
 /automobile-racing-sports-competition.jpg
+
+# Generated: Vite dependency cache and setuptools metadata from editable installs.
+.vite/
+*.egg-info/
