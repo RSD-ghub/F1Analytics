@@ -165,7 +165,12 @@ function Standings({ title, rows, nameKey = 'driver' }) {
         <span className="num">Projected</span>
       </div>
       <RankList label={`${title} standings`}>
-        {rows.map((row, i) => {
+        {/* Numbered by today's points, the same order as the podium above;
+            the feed arrives ranked by projected points, which put a driver
+            on fewer points above one on more. */}
+        {[...rows]
+          .sort((a, b) => b.current_points - a.current_points || b.p_champion - a.p_champion)
+          .map((row, i) => {
           const name = row[nameKey] ?? row.driver
           const longShot = row.p_champion <= LONG_SHOT
           return (
