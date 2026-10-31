@@ -127,3 +127,41 @@ def test_bearer_is_case_insensitive():
     """Clients differ on capitalisation; the scheme is case-insensitive per RFC."""
     assert bearer_token("bearer abc123") == "abc123"
     assert bearer_token("Bearer abc123") == "abc123"
+
+
+async def test_login_does_not_block_other_requests():
+    """bcrypt runs in a worker thread, so the event loop keeps serving."""
+    import asyncio
+    import time
+
+    from app.services import users as users_module
+
+    def slow_verify(password, hashed):
+        time.sleep(0.3)
+        return False
+
+    class _Collection:
+        async def find_one(self, query):
+            return None
+
+    store = users_module.UserStore({users_module.USERS: _Collection()})
+    original = users_module.verify_password
+    users_module.verify_password = slow_verify
+    try:
+        finished = []
+
+        async def ticker():
+            for _ in range(5):
+                await asyncio.sleep(0.02)
+            finished.append("ticker")
+
+        async def login():
+            await store.authenticate("a@b.co", "pw")
+            finished.append("login")
+
+        await asyncio.gather(login(), ticker())
+    finally:
+        users_module.verify_password = original
+    # Blocking bcrypt would hold the loop for the whole 0.3 s, so the ticker
+    # could only finish after the login.
+    assert finished == ["ticker", "login"]

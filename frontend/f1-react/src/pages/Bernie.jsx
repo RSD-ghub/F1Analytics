@@ -160,6 +160,7 @@ export default function Bernie() {
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={active ? 'Ask a follow-up…' : 'What strategy would you run from P5?'}
             disabled={busy || !race}
+            maxLength={2000}
             aria-label="Ask Bernie about this weekend"
           />
           <Button type="submit" disabled={busy || !question.trim() || !race}>
