@@ -109,9 +109,16 @@ def main() -> int:
         wet = (backtest.paired_difference([scores[i] for i in wet_index],
                                           [reference[i] for i in wet_index])
                if len(wet_index) >= 2 else None)
-        summary["variants"][label] = {"all": overall, "wet": wet, "verdict": backtest.verdict(overall)}
+        verdict = backtest.verdict(overall)
+        # The pooled verdict alone hides a loss concentrated in the few wet
+        # races, which is exactly where these features act.
+        if wet is not None and wet["high"] < 0:
+            verdict += "; worse on wet races (interval below zero)"
+        elif wet is not None and wet["low"] > 0:
+            verdict += "; better on wet races (interval above zero)"
+        summary["variants"][label] = {"all": overall, "wet": wet, "verdict": verdict}
         fmt = lambda p: "{:+.3f} [{:+.3f}, {:+.3f}]".format(p["mean"], p["low"], p["high"]) if p else "n/a"
-        logger.info("%-12s %28s %28s  %s", label, fmt(overall), fmt(wet), backtest.verdict(overall))
+        logger.info("%-12s %28s %28s  %s", label, fmt(overall), fmt(wet), verdict)
 
     if args.json:
         with open(args.json, "w") as handle:
