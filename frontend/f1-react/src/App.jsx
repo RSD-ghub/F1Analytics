@@ -15,6 +15,8 @@ import Drivers from './pages/Drivers'
 import Driver from './pages/Driver'
 import RaceReview from './pages/RaceReview'
 
+import DataHealth from './pages/DataHealth'
+
 /**
  * Routing.
  *
@@ -42,6 +44,8 @@ export default function App() {
         <Route path="/drivers" element={<Drivers />} />
         <Route path="/drivers/:season/:driver" element={<Driver />} />
         <Route path="/race-review/:season/:round" element={<RaceReview />} />
+
+        <Route path="/data-health" element={<DataHealth />} />
         <Route path="/news" element={<News />} />
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/bernie" element={<Bernie />} />

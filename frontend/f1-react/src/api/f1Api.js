@@ -197,3 +197,5 @@ export const getDrivers = (season) => request(`/drivers/${season}`)
 export const getDriver = (season, driver) =>
   request(`/drivers/${season}/${encodeURIComponent(driver)}`)
 export const getRaceReview = (season, round) => request(`/race-review/${season}/${round}`)
+
+export const getDataHealth = () => request('/data-health')
