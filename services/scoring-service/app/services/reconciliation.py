@@ -14,6 +14,8 @@ count is what makes that visible.
 """
 
 import logging
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence
@@ -22,6 +24,7 @@ from app.models.schemas import (
     RACE,
     DriverOutcome,
     Market,
+    NameMismatch,
     PredictionScore,
     RaceOutcome,
 )
@@ -69,6 +72,41 @@ def build_outcome(
         event=event,
         points_positions=points_positions,
     )
+
+
+def _name_tokens(name: str) -> List[str]:
+    """Lowercase words with accents and punctuation removed: "Sergio Pérez"
+    and "Sergio Perez" both become ["sergio", "perez"]."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.findall(r"[a-z]+", plain.lower())
+
+
+def likely_same_driver(a: str, b: str) -> bool:
+    """Two spellings of one driver, as the data sources actually differ.
+
+    Same words once accents are gone ("Nico Hülkenberg" / "Nico Hulkenberg"),
+    or one name's words all inside the other's with at least two of them
+    ("Kimi Antonelli" / "Andrea Kimi Antonelli"). A shared surname alone is not
+    enough: two Schumachers are two drivers.
+    """
+    left, right = _name_tokens(a), _name_tokens(b)
+    if not left or not right:
+        return False
+    if sorted(left) == sorted(right):
+        return True
+    small, large = sorted((set(left), set(right)), key=len)
+    return len(small) >= 2 and small <= large
+
+
+def name_mismatches(
+    predicted_not_raced: Sequence[str], raced_not_predicted: Sequence[str]
+) -> List[NameMismatch]:
+    return [
+        NameMismatch(forecast_name=forecast, result_name=result)
+        for forecast in predicted_not_raced
+        for result in raced_not_predicted
+        if likely_same_driver(forecast, result)
+    ]
 
 
 def sprint_points_positions(season: int) -> int:

@@ -85,6 +85,9 @@ class _Store:
     async def list_scores(self, season=None):
         return list(self.saved)
 
+    async def list_outcomes(self, season=None):
+        return []
+
 
 class _Ingestion:
     def __init__(self, results):

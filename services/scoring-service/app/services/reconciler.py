@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from app.models.schemas import (
     RACE,
     SPRINT,
+    HeldPrediction,
     Market,
     PredictionScore,
     RaceOutcome,
@@ -29,6 +30,7 @@ from app.services.grid_baseline import GridRates, HistoricalStart
 from app.services.reconciliation import (
     POINTS_POSITIONS,
     build_outcome,
+    name_mismatches,
     score_prediction,
     sprint_points_positions,
 )
@@ -120,8 +122,31 @@ class Reconciler:
                     prediction.race_start_utc,
                 )
             score = score_prediction(prediction, outcome, grid_rates)
+            mismatches = name_mismatches(
+                score.predicted_not_raced, score.raced_not_predicted
+            )
+            if mismatches:
+                logger.error(
+                    "HOLDING %s for %s-%s %s: forecast and results name the same "
+                    "driver differently (%s). Fix the names, then reconcile again.",
+                    prediction.prediction_id, season, round_number, event,
+                    ", ".join(
+                        "{!r} vs {!r}".format(m.forecast_name, m.result_name)
+                        for m in mismatches
+                    ),
+                )
+                outcome.held.append(HeldPrediction(
+                    prediction_id=prediction.prediction_id,
+                    window=prediction.window,
+                    mismatches=mismatches,
+                ))
+                continue
             await self._store.save_score(score)
             scores.append(score)
+
+        if outcome.held:
+            # Saved with the outcome so the track record can count them.
+            await self._store.save_outcome(outcome)
 
         logger.info(
             "reconciled %s-%s %s: %s prediction(s) scored",
@@ -213,11 +238,27 @@ class Reconciler:
         """
         scores = await self._store.list_scores(season=season)
         pending, refused_late = await self._count_pending(season, scores)
+        held = await self._count_held(season, scores)
         samples = await self._calibration_samples(season, scores)
-        return record_builder.build_track_record(
-            scores, samples, pending=pending, refused_late=refused_late,
-            buckets=buckets
+        record = record_builder.build_track_record(
+            scores, samples, pending=max(pending - held, 0),
+            refused_late=refused_late, buckets=buckets
         )
+        record.predictions_held_name_mismatch = held
+        return record
+
+    async def _count_held(
+        self, season: Optional[int], scores: Sequence[PredictionScore]
+    ) -> int:
+        """Forecasts currently held for a name mismatch and still unscored."""
+        scored_ids = {score.prediction_id for score in scores}
+        outcomes = await self._store.list_outcomes(season)
+        return len({
+            held.prediction_id
+            for outcome in outcomes
+            for held in outcome.held
+            if held.prediction_id not in scored_ids
+        })
 
     async def _count_pending(
         self, season: Optional[int], scores: Sequence[PredictionScore]

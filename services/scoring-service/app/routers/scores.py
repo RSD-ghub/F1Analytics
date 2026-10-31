@@ -17,6 +17,7 @@ from app.dependencies import get_reconciler, get_store
 from app.models.schemas import (
     RACE,
     SPRINT,
+    HeldPrediction,
     Market,
     PredictionScore,
     RaceOutcome,
@@ -37,6 +38,29 @@ class ReconcileResponse(BaseModel):
     reconciled: bool
     scored: int = 0
     message: str = ""
+    #: Forecasts left unscored because a driver is spelled differently in the
+    #: forecast and the results. Fix the names and reconcile again.
+    held: List[HeldPrediction] = []
+
+
+def _reconciled(season: int, round_number: int, outcome, scores) -> ReconcileResponse:
+    message = ""
+    if outcome.held:
+        pairs = sorted({
+            "{} / {}".format(m.forecast_name, m.result_name)
+            for held in outcome.held
+            for m in held.mismatches
+        })
+        message = (
+            "held {} forecast(s): the forecast and the results spell a driver "
+            "differently ({}). Fix the names, then reconcile again.".format(
+                len(outcome.held), "; ".join(pairs)
+            )
+        )
+    return ReconcileResponse(
+        season=season, round=round_number, reconciled=True, scored=len(scores),
+        message=message, held=outcome.held,
+    )
 
 
 def _guard(exc: Exception) -> HTTPException:
@@ -71,9 +95,7 @@ async def reconcile_race(
             reconciled=False,
             message="no classified winner ingested yet; nothing to score",
         )
-    return ReconcileResponse(
-        season=season, round=round_number, reconciled=True, scored=len(scores)
-    )
+    return _reconciled(season, round_number, outcome, scores)
 
 
 @router.post(
@@ -99,9 +121,7 @@ async def reconcile_sprint(
             reconciled=False,
             message="no classified sprint winner ingested yet; nothing to score",
         )
-    return ReconcileResponse(
-        season=season, round=round_number, reconciled=True, scored=len(scores)
-    )
+    return _reconciled(season, round_number, outcome, scores)
 
 
 @router.post("/reconcile/{season}", response_model=List[PredictionScore])
