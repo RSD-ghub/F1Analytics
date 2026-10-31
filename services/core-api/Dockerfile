@@ -11,5 +11,10 @@ RUN sed -i 's|-e ../../shared/f1_common|-e /shared/f1_common|' /tmp/requirements
 
 COPY services/core-api/app /app/app
 
+# Run as an unprivileged user: a compromised dependency or request handler
+# then cannot change the installed code or packages.
+RUN useradd --create-home --uid 10001 --user-group app
+USER app
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

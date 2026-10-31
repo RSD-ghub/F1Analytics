@@ -22,6 +22,11 @@ COPY services/prediction-service/scripts /app/scripts
 # it. Left unset, everything falls back to the packaged location, which is what
 # a local checkout has always done.
 ENV MODEL_STATE_DIR=/data/model
+# Run as an unprivileged user. The model state directory is created and owned
+# before VOLUME, so a new named volume inherits that owner and stays writable.
+RUN useradd --create-home --uid 10001 --user-group app \
+    && mkdir -p /data/model && chown app:app /data/model
+USER app
 VOLUME ["/data/model"]
 
 EXPOSE 8002

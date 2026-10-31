@@ -68,6 +68,13 @@ Do not carry `ANTHROPIC_API_KEY` over. Nothing reads it any more.
 
 ## 3. Start
 
+The Python services run as user id 10001, not root. `fastf1-data/` is mounted
+from the host, so give that user write access before the first start:
+
+```bash
+mkdir -p fastf1-data && sudo chown -R 10001:10001 fastf1-data
+```
+
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps
