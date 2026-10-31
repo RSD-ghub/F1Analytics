@@ -9,3 +9,4 @@ Requires-Dist: pydantic-settings>=2.2
 Requires-Dist: motor>=3.4
 Requires-Dist: httpx>=0.27
 Requires-Dist: pyjwt>=2.8
+Requires-Dist: redis>=5.0

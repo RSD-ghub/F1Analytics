@@ -10,6 +10,7 @@ import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
 import Blog from './pages/Blog'
 import Home from './pages/Home'
+import DataHealth from './pages/DataHealth'
 
 /**
  * Routing.
@@ -32,6 +33,7 @@ export default function App() {
         {/* The entries moved under /blog when One Blog got a front door.
             Old links stay working. */}
         <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
+        <Route path="/data-health" element={<DataHealth />} />
         <Route path="/news" element={<News />} />
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/bernie" element={<Bernie />} />

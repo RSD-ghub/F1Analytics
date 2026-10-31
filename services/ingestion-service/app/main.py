@@ -25,9 +25,10 @@ from app.services import scheduler
 from app.services.storage import IngestionStore
 from f1_common import cache
 from f1_common.health import build_health_router
+from f1_common.observability import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level)
+configure_logging(settings.log_level, settings.log_format, settings.service_name)
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +69,7 @@ app = FastAPI(
     description="FastF1 acquisition, completeness tracking, and point-in-time snapshots.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware, service=settings.service_name)
 
 app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)

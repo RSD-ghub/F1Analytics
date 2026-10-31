@@ -21,6 +21,7 @@ import httpx
 
 from app.services import cache_policy
 from f1_common import cache
+from f1_common.observability import outgoing_headers
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class ServiceClient:
         url = "{}{}".format(self._base_url, path)
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(url, params=params)
+                response = await client.get(url, params=params, headers=outgoing_headers())
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
@@ -73,7 +74,7 @@ class ServiceClient:
         url = "{}{}".format(self._base_url, path)
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(url, json=payload or {})
+                response = await client.post(url, json=payload or {}, headers=outgoing_headers())
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
