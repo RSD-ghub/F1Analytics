@@ -42,6 +42,17 @@ class RaceResultRow(BaseModel):
         return 1 <= self.position <= 30
 
 
+class CalendarWeekend(BaseModel):
+    """One round of the season calendar, as the watchdog needs it."""
+
+    season: int
+    round: int
+    race_name: str = ""
+    race_start_utc: Optional[datetime] = None
+    is_sprint_weekend: bool = False
+    sprint_start_utc: Optional[datetime] = None
+
+
 class DriverProbabilityRow(BaseModel):
     driver: str
     team: str = "Unknown"
@@ -148,6 +159,10 @@ class IngestionClient(_JsonClient):
     async def season_results(self, season: int) -> List[RaceResultRow]:
         payload = await self._get("/data/results", {"season": season, "limit": 20000})
         return [RaceResultRow(**row) for row in payload]
+
+    async def calendar(self, season: int) -> List[CalendarWeekend]:
+        payload = await self._get("/forward/calendar/{}".format(season))
+        return [CalendarWeekend(**row) for row in payload]
 
     async def sprint_results(
         self, season: int, round_number: int

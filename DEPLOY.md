@@ -212,10 +212,29 @@ The corpus is re-ingestable from FastF1 and the model can be retrained. What is
 product's entire claim, and a lost prediction cannot be honestly recreated
 because any replacement would be written after the race.
 
+`scripts/backup_mongo.sh` dumps `f1_prediction`, `f1_core` (accounts and
+Bernie conversations) and `f1_scoring` into a dated folder and keeps the newest
+30. It uses `mongodump` when installed, otherwise the `f1_mongodb` container
+with `MONGO_USER` / `MONGO_PASSWORD` from the environment:
+
 ```bash
-docker compose -f docker-compose.prod.yml exec mongodb \
-  mongodump -u "$MONGO_USER" -p "$MONGO_PASSWORD" --authenticationDatabase admin \
-  --db f1_prediction --archive > "predictions-$(date +%F).archive"
+set -a; . ./.env; set +a
+BACKUP_DIR=/srv/f1-backups scripts/backup_mongo.sh
 ```
 
-Run it on a schedule and keep the copies off the box.
+Run it nightly and keep the copies off the box, for example with cron:
+
+```
+30 3 * * * cd /srv/f1 && set -a && . ./.env && set +a && BACKUP_DIR=/srv/f1-backups scripts/backup_mongo.sh >> /var/log/f1-backup.log 2>&1
+```
+
+Restore one database with
+`mongorestore --gzip --archive=<folder>/f1_prediction.archive.gz`.
+
+## 8. Alerts
+
+scoring-service checks every hour for a lock window that passed with no
+forecast, or a race still unscored 30 hours after the start, and sends each
+problem once to `ALERT_WEBHOOK_URL` (see `.env.example`; an ntfy.sh topic gives
+a phone push with no account). `GET /watchdog` on scoring-service lists what it
+would alert about now; `POST /watchdog/test` sends a test alert.

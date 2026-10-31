@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
-from app.dependencies import get_reconciler, get_store
+from app.dependencies import get_reconciler, get_store, get_watchdog
 from app.models.schemas import (
     RACE,
     SPRINT,
@@ -26,6 +26,7 @@ from app.models.schemas import (
 from app.services.clients import UpstreamUnavailable
 from app.services.reconciler import Reconciler
 from app.services.storage import ScoringStore
+from app.services.watchdog import Watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -196,3 +197,34 @@ async def get_outcome(
             detail="{}-{} has not been reconciled".format(season, round_number),
         )
     return outcome
+
+
+# ── Watchdog ─────────────────────────────────────────────────────────────────
+
+
+class WatchdogAlert(BaseModel):
+    key: str
+    title: str
+    message: str
+
+
+@router.get("/watchdog", response_model=List[WatchdogAlert])
+async def watchdog_problems(watchdog: Watchdog = Depends(get_watchdog)):
+    """What the watchdog would alert about right now. Sends nothing."""
+    try:
+        found = await watchdog.check()
+    except Exception as exc:
+        raise _guard(exc)
+    return [WatchdogAlert(key=a.key, title=a.title, message=a.message) for a in found]
+
+
+@router.post("/watchdog/test")
+async def watchdog_test(watchdog: Watchdog = Depends(get_watchdog)):
+    """Send one test alert, to check the webhook reaches your phone or chat."""
+    delivered = await watchdog.send_test()
+    if not delivered:
+        raise HTTPException(
+            status_code=502,
+            detail="not delivered: set ALERT_WEBHOOK_URL, or see scoring-service's log",
+        )
+    return {"delivered": True}
