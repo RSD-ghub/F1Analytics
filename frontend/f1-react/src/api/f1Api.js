@@ -193,6 +193,7 @@ export const getBlogFeed = (limit = 24) =>
 
 export const getGlobe = () => request('/globe')
 
+export const getDataHealth = () => request('/data-health')
 export const getDrivers = (season) => request(`/drivers/${season}`)
 export const getDriver = (season, driver) =>
   request(`/drivers/${season}/${encodeURIComponent(driver)}`)
