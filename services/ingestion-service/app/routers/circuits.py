@@ -29,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/circuits", tags=["circuits"])
 
+#: Circuits the name search cannot find, placed by hand (start/finish line).
+#: OpenStreetMap has nothing called "Albert Park Grand Prix Circuit"; the
+#: nearest-sounding names land in a Brisbane park or 30 km west of the track.
+#: A wrong dot is worse than none, so these skip the search entirely.
+KNOWN_LOCATIONS: Dict[str, Any] = {
+    "melbourne": (-37.8497, 144.9680),
+    "albert park": (-37.8497, 144.9680),
+    "sakhir": (26.0325, 50.5106),
+    "bahrain": (26.0325, 50.5106),
+}
+
 
 async def _weekend(store: IngestionStore, season: int, round_number: int):
     weekends = await store.list_weekends(season, season)
@@ -70,6 +81,12 @@ async def refresh_locations(
         key = circuit_slug(name)
         record = await store.circuit_map(name) or {}
         if record.get("location"):
+            continue
+        known = KNOWN_LOCATIONS.get(key)
+        if known:
+            lat, lon = known
+            await store.save_circuit_location(key, lat, lon)
+            located.append({"circuit": name, "lat": lat, "lon": lon, "source": "known"})
             continue
         official = (record.get("official") or {}).get("official_name")
         try:
