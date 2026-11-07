@@ -69,7 +69,8 @@ ROUTES = {
     "stints": [
         {"driver_number": 4, "stint_number": 1, "lap_start": 1, "lap_end": 3,
          "compound": "MEDIUM", "tyre_age_at_start": 0},
-        {"driver_number": 4, "stint_number": 2, "lap_start": 4, "lap_end": 6,
+        # Lap 6 is left uncovered, as OpenF1 sometimes does.
+        {"driver_number": 4, "stint_number": 2, "lap_start": 4, "lap_end": 5,
          "compound": "HARD", "tyre_age_at_start": 0},
         {"driver_number": 12, "stint_number": 1, "lap_start": 1, "lap_end": 6,
          "compound": "HARD", "tyre_age_at_start": 2},
@@ -195,3 +196,11 @@ def test_requests_are_spaced_under_the_free_limit():
     now[0] = 0.5
     client.get("laps")
     assert waits and abs(waits[0] - 1.6) < 1e-9
+
+
+def test_a_lap_no_stint_covers_joins_the_nearest_stint():
+    client, _ = _client()
+    laps, _, _ = client.laps_frame(11404, with_pits=True)
+    last = laps[(laps["Driver"] == "NOR") & (laps["LapNumber"] == 6)].iloc[0]
+    assert (last["Compound"], last["Stint"]) == ("HARD", 2)
+    assert "Unknown" not in set(laps["Compound"])

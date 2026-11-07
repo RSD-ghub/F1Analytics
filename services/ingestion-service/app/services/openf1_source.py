@@ -62,6 +62,31 @@ SESSION_NAMES = {
 }
 
 
+#: FastF1's spelling, so one weekend never carries two.
+UNKNOWN_COMPOUND = "UNKNOWN"
+
+
+def _stint_for(stints: List[Dict[str, Any]], lap_number: int) -> Optional[Dict[str, Any]]:
+    """The stint a lap belongs to, or the nearest one when none covers it.
+
+    OpenF1's stint ranges sometimes leave a lap uncovered (often the last
+    lap, or the lap a car pitted on). Left alone, that lap became a
+    one-lap "stint 0" on an unknown tyre and shortened the real stint by
+    one; the car was on the tyre either side of it, so the nearest stint is
+    the honest answer.
+    """
+    best, best_gap = None, None
+    for stint in stints:
+        first = int(stint.get("lap_start") or 0)
+        last = int(stint.get("lap_end") or first)
+        if first <= lap_number <= last:
+            return stint
+        gap = first - lap_number if lap_number < first else lap_number - last
+        if best_gap is None or gap < best_gap:
+            best, best_gap = stint, gap
+    return best
+
+
 class OpenF1Unavailable(RuntimeError):
     """OpenF1 could not answer, or has no such session."""
 
@@ -251,17 +276,15 @@ class OpenF1Client:
             if number not in codes:
                 continue
             lap_number = int(lap.get("lap_number") or 0)
-            compound, stint_number, tyre_life = "Unknown", 0, float("nan")
-            for stint in stint_of.get(number, []):
+            compound, stint_number, tyre_life = UNKNOWN_COMPOUND, 0, float("nan")
+            stint = _stint_for(stint_of.get(number, []), lap_number)
+            if stint is not None:
                 first = int(stint.get("lap_start") or 0)
-                last = int(stint.get("lap_end") or first)
-                if first <= lap_number <= last:
-                    compound = (stint.get("compound") or "Unknown").upper()
-                    stint_number = int(stint.get("stint_number") or 0)
-                    age = stint.get("tyre_age_at_start")
-                    if age is not None:
-                        tyre_life = float(age) + (lap_number - first) + 1
-                    break
+                compound = (stint.get("compound") or UNKNOWN_COMPOUND).upper()
+                stint_number = int(stint.get("stint_number") or 0)
+                age = stint.get("tyre_age_at_start")
+                if age is not None:
+                    tyre_life = float(age) + max(lap_number - first, 0) + 1
             started = _parse_time(lap.get("date_start"))
             rows.append({
                 "Driver": codes[number][0],
