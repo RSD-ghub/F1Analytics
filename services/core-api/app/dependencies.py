@@ -103,3 +103,13 @@ async def current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
     return user
+
+
+async def admin_user(
+    user=Depends(current_user),
+    settings: Settings = Depends(get_settings),
+):
+    """The caller, if they are one of ``ADMIN_EMAILS``; otherwise 403."""
+    if not settings.is_admin(user.get("email", "")):
+        raise HTTPException(status_code=403, detail="only the site owner can do this")
+    return user
