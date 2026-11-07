@@ -52,19 +52,67 @@ function Picture({ src, outlet }) {
   )
 }
 
+function Card({ item, showSummary }) {
+  return (
+    <a className="news-card" href={item.url} target="_blank" rel="noopener noreferrer">
+      <Picture src={item.image_url} outlet={item.outlet} />
+      <div className="news-card-body">
+        <p className="news-meta">
+          <span className="news-outlet">{item.outlet}</span>
+          {item.published_at && (
+            <time dateTime={item.published_at}>
+              {when(item.published_at, item.published_estimated)}
+            </time>
+          )}
+        </p>
+        <h3 className="news-title">
+          {item.title}
+          <ExternalLink size={13} aria-label="opens the outlet's site" />
+        </h3>
+        {showSummary && item.summary && (
+          <p className="news-summary">{item.summary}</p>
+        )}
+      </div>
+    </a>
+  )
+}
+
 export default function NewsCards({ items, showSummary = true, featureFirst = false }) {
   return (
     <ul className={featureFirst ? 'news-grid news-grid-featured' : 'news-grid'}>
       {items.map((item) => (
+        <li key={item.id ?? item.url}><Card item={item} showSummary={showSummary} /></li>
+      ))}
+    </ul>
+  )
+}
+
+/** The leading stories as large cards in a sideways row. */
+export function NewsCarousel({ items }) {
+  return (
+    <ul className="carousel news-carousel" aria-label="Top stories">
+      {items.map((item, i) => (
+        <li key={item.id ?? item.url} className="news-carousel-item">
+          {i < 3 && <span className="news-rank pit-pill pit-pill-gold">No. {i + 1}</span>}
+          <Card item={item} showSummary={false} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Everything else as rows: outlet and time over the headline, picture right. */
+export function NewsList({ items }) {
+  return (
+    <ul className="news-list">
+      {items.map((item) => (
         <li key={item.id ?? item.url}>
-          <a
-            className="news-card"
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Picture src={item.image_url} outlet={item.outlet} />
-            <div className="news-card-body">
+          <a className="news-row" href={item.url} target="_blank" rel="noopener noreferrer">
+            <div className="news-row-text">
+              <h3 className="news-title">
+                {item.title}
+                <ExternalLink size={13} aria-label="opens the outlet's site" />
+              </h3>
               <p className="news-meta">
                 <span className="news-outlet">{item.outlet}</span>
                 {item.published_at && (
@@ -73,14 +121,8 @@ export default function NewsCards({ items, showSummary = true, featureFirst = fa
                   </time>
                 )}
               </p>
-              <h3 className="news-title">
-                {item.title}
-                <ExternalLink size={13} aria-label="opens the outlet's site" />
-              </h3>
-              {showSummary && item.summary && (
-                <p className="news-summary">{item.summary}</p>
-              )}
             </div>
+            <div className="news-row-art"><Picture src={item.image_url} outlet={item.outlet} /></div>
           </a>
         </li>
       ))}

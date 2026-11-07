@@ -11,160 +11,148 @@
  * guessing at colours again.
  */
 @theme {
-  --color-background: #f7f6f3;
-  --color-foreground: #15171c;
+  --color-background: #0b090b;
+  --color-foreground: #f3eff0;
 
-  --color-card: #ffffff;
-  --color-card-foreground: #15171c;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #15171c;
+  --color-card: #1a1618;
+  --color-card-foreground: #f3eff0;
+  --color-popover: #241e21;
+  --color-popover-foreground: #f3eff0;
 
-  /* The accent, rationed: it marks the thing a view is about. */
-  --color-primary: #cc3328;
+  /* F1 red, rationed: it marks the thing a view is about. White text sits on it. */
+  --color-primary: #e10600;
   --color-primary-foreground: #ffffff;
 
-  --color-secondary: #f2f1ee;
-  --color-secondary-foreground: #15171c;
+  --color-secondary: #241e21;
+  --color-secondary-foreground: #f3eff0;
 
-  --color-muted: #f2f1ee;
-  --color-muted-foreground: #5f6672;
+  --color-muted: #241e21;
+  --color-muted-foreground: #c4b8bc;
 
-  --color-accent: #f2f1ee;
-  --color-accent-foreground: #15171c;
+  --color-accent: #2e262a;
+  --color-accent-foreground: #f3eff0;
 
-  --color-destructive: #c0392b;
-  --color-destructive-foreground: #ffffff;
+  --color-destructive: #ff7a7a;
+  --color-destructive-foreground: #2b0a0a;
 
-  --color-border: #e2e0da;
-  --color-input: #e2e0da;
-  --color-ring: #cc3328;
+  --color-border: #3a2f33;
+  --color-input: #45383d;
+  --color-ring: #ff4d55;
 
-  /* Ours, kept alongside shadcn's. Data series take the blue so a chart is
-     never competing with the brand for attention. */
-  --color-data: #2f6bb0;
-  --color-data-deep: #24548c;
-  --color-good: #1d7a4d;
-  --color-warn: #8a5d08;
-  --color-dim: #656d7d;
+  --color-data: #3fd7b8;
+  --color-data-deep: #1f9e86;
+  --color-good: #6ee7a0;
+  --color-warn: #ffb74d;
+  --color-dim: #a5979c;
 
   --font-sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --radius: 0.625rem;
+  --radius: 1rem;
 }
 
-/* The look is an instrument readout, not a broadcast graphic.
-   
-   This product's claim is that it publishes a number before a race and is
-   marked against it afterwards, so its credibility is legibility: dense
-   figures, ordered, checkable at a glance. Archivo carries the voice; IBM
-   Plex Mono carries every number, because a lap time and a probability are
-   measurements and should read like measurements.
-   
-   The accent is rationed. It used to mark the brand, every link, every bar,
-   the win segment and the penalties, which left nothing on a page looking
-   more important than anything else. Red now means "the thing this view is
-   about"; data series take the blue. */
-
+/* The pit wall at night.
+ *
+ * A near-black ground warmed with crimson, tonal surfaces stacked by depth
+ * (lighter means closer), one F1 red accent for whatever a view is about,
+ * team colours on standings and podiums, and heavy upright display type. The product's claim is unchanged: it publishes a number before
+ * a race and is marked against it afterwards, so every figure stays in IBM
+ * Plex Mono and every colour pair below was measured, not picked by eye.
+ *
+ * Contrast, measured on the card surface (#1a1618) unless noted; small text
+ * needs 4.5:1. Values on the deepest raised surface (#2e262a) in brackets.
+ */
 :root {
-  /* Paper, not white. A pure #fff ground under a page of tables reads as
-     unfinished; a warm off-white gives the panels something to sit on. */
-  --bg: #f7f6f3;
-  --panel: #ffffff;
-  --panel-soft: #f2f1ee;
-  --line: #e2e0da;
-  --line-soft: #ebe9e4;
+  --bg: #0b090b;
+  --panel: #1a1618;        /* cards */
+  --panel-soft: #241e21;   /* wells inside cards, hover */
+  --panel-high: #2e262a;   /* raised: chips, active rows */
+  --line: #3a2f33;
+  --line-soft: #2a2225;
 
-  /* Every one of these was checked against the ground rather than chosen by
-     eye. Small text needs 4.5:1 and the first pass missed twice — the table
-     headers and the warning colour both sat around 3.2 and 4.3. */
-  --text: #15171c;     /* 16.6:1 on a panel */
-  --muted: #5f6672;    /*  5.4:1 */
-  --dim: #656d7d;      /*  4.8:1 — table headers are 11px, so they count */
+  --text: #f3eff0;     /* 15.7:1 (12.9) */
+  --muted: #c4b8bc;    /*  9.3:1 (7.7)  */
+  --dim: #a5979c;      /*  6.4:1 (5.3)  */
 
-  /* Text that sits on the photograph rather than on a panel. Measured against
-     the brightest region of the image through the scrim: 10.1:1 and 6.0:1. */
+  /* Text on a photograph or the crimson glow. */
   --on-photo: #ffffff;
-  --on-photo-soft: #d4d9e3;
+  --on-photo-soft: #ddd2d5;
 
-  --accent: #cc3328;   /*  4.8:1 */
-  --accent-soft: #e0574c;
-  --data: #2f6bb0;     /*  5.1:1 */
-  --data-deep: #24548c;
+  --accent: #ff4d55;       /* text and marks: 5.5:1 on cards (4.5 raised) */
+  --accent-fill: #e10600;  /* filled buttons and chips, white text 5.0:1 */
+  --accent-soft: #ff8086;
+  --accent-deep: #ff6b6b;  /* rules and borders, and text at 6.5:1 */
+  --on-accent: #ffffff;    /* 5.0:1 on --accent-fill */
+  --violet: #b3121f;       /* crimson glow and fills only, never small text */
+  --data: #3fd7b8;         /*  9.9:1 (8.2) — data series, teal */
+  --data-deep: #1f9e86;
 
-  /* Editorial layer.
-   *
-   * The red above was the whole accent, and at 4.8:1 it could only ever be a
-   * small mark — used for a rule or a masthead block it sat too light against
-   * paper to feel structural. The oxide is the same hue taken down to pigment:
-   * 6.2:1 on paper, 6.7:1 on a panel, 6.7:1 white on top, so it can carry
-   * weight as a surface and still take text. Bright red stays for the small
-   * marks it was already good at.
-   *
-   * Ink is the display colour. It is a near-black pulled fractionally warm so a
-   * headline reads as part of the red family rather than as borrowed UI text;
-   * at 17:1 the warmth costs nothing in legibility.
-   *
-   * Prose takes its own colour. Body text at 13.3:1 rather than the interface's
-   * 16.6:1 is a deliberate step down — a full-strength near-black is right for
-   * a label and tiring over a paragraph. */
-  --accent-deep: #b22219;  /*  6.2:1 on paper, 6.7:1 on a panel */
-  --ink: #191210;          /* 17.1:1 — display type */
-  --prose: #2b2a28;        /* 13.3:1 — running text */
-  --rule: #d8d4cc;         /* decorative hairline, never text */
+  --ink: #faf7f8;          /* display type */
+  --prose: #e2dadd;        /* 13.1:1 — running text */
+  --rule: #4a3c41;         /* decorative hairline, never text */
 
   --serif: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
 
-  /* Archivo carries a width axis. Headlines are set expanded so display type
-     is a different shape from the interface, not merely a larger size of it. */
-  --display-wide: 'wdth' 118;
-  --display-mid: 'wdth' 106;
+  /* Archivo's width axis, kept at normal width: display type is upright and
+     heavy, set apart from the interface by weight and size. */
+  --display-wide: 'wdth' 100;
+  --display-mid: 'wdth' 100;
 
-  /* One editorial measure, used everywhere prose runs. Beyond about 70
-     characters the eye loses the start of the next line. */
   --measure: 66ch;
 
-  --good: #1d7a4d;     /*  4.9:1 */
-  --bad: #c0392b;      /*  5.0:1 */
-  --warn: #8a5d08;     /*  5.3:1 */
+  --good: #6ee7a0;     /* 11.6:1 */
+  --bad: #ff7a7a;      /*  7.1:1 */
+  --warn: #ffb74d;     /* 10.4:1 */
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 20px;
+  --radius-sm: 12px;
 
   --sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* A panel on paper needs a shadow rather than a border to lift off it. */
-  /* Heavier than it would be on paper: these cards now float on a
-     photograph and need to read as above it. */
-  --lift: 0 2px 6px rgba(0, 0, 0, 0.18), 0 10px 34px rgba(0, 0, 0, 0.22);
+  --lift: 0 2px 8px rgba(0, 0, 0, 0.35), 0 14px 40px rgba(0, 0, 0, 0.35);
+  --glow: 0 0 0 1px rgba(225, 6, 0, 0.25), 0 8px 28px rgba(179, 18, 31, 0.35);
 
-  color-scheme: light;
+  --rail: 248px;      /* desktop sidebar */
+  --tabbar: 64px;     /* phone tab bar */
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  /*
-   * The photograph is the page, fixed so it sits still while the content
-   * scrolls over it.
-   *
-   * The scrim over it is not decoration. This image is dark but its sky is
-   * not — around #b9bec6 — and white text on that alone measures 1.87:1.
-   * Through 60% black it reaches 10:1, and the secondary tone 6:1. Anything
-   * lighter fails somewhere in the frame, which is the part a reader would
-   * find rather than me.
-   */
+  /* The red car down the main straight, fixed behind the page, under a
+     crimson haze and a near-black scrim.
+     The scrim is measured, not eyeballed: the photo's sky is about #b9bec6,
+     and through 70% near-black it lands near #3b3c3e, where the lede tone
+     (--muted) still reads at 5.6:1. The scrim deepens towards the bottom so
+     long pages settle into the plain ground. */
   background:
-    linear-gradient(rgba(10, 12, 16, 0.60), rgba(10, 12, 16, 0.72)),
-    url('/backgrounds/race.jpg') center / cover no-repeat fixed,
+    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(179, 18, 31, 0.38), rgba(179, 18, 31, 0) 70%),
+    linear-gradient(180deg, rgba(11, 9, 11, 0.70) 0%, rgba(11, 9, 11, 0.74) 45%, rgba(11, 9, 11, 0.90) 100%),
+    url('/backgrounds/race.jpg') center 40% / cover no-repeat,
     var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font: 400 15px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* On a phone the cover crop is mostly sky, the brightest part of the frame:
+   darken the scrim a step at the top, where the sky is. */
+@media (max-width: 719px) {
+  body {
+    background:
+      radial-gradient(ellipse 90% 45% at 50% -10%, rgba(179, 18, 31, 0.38), rgba(179, 18, 31, 0) 70%),
+      linear-gradient(180deg, rgba(11, 9, 11, 0.85) 0%, rgba(11, 9, 11, 0.78) 55%, rgba(11, 9, 11, 0.92) 100%),
+      url('/backgrounds/race.jpg') 50% 50% / cover no-repeat,
+      var(--bg);
+    background-attachment: fixed;
+  }
 }
 
 /* Every figure in the product, in one declaration. Lap times, probabilities,
@@ -177,7 +165,7 @@ body {
   font-feature-settings: 'tnum' 1;
 }
 
-::selection { background: rgba(204, 51, 40, 0.16); }
+::selection { background: rgba(225, 6, 0, 0.28); }
 
 /* Keyboard focus has to be visible, and the default ring disappears against a
    dark ground. */
@@ -187,88 +175,117 @@ body {
   border-radius: 3px;
 }
 
-.app { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+/* A rail on the left on wide screens, a drawer below 1024px, and a tab bar
+   along the bottom on a phone. Content sits in one column beside the rail. */
+.app-main { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+@media (min-width: 1024px) {
+  .app-main { margin-left: var(--rail); padding: 0 40px; max-width: calc(1120px + var(--rail)); }
+}
 
-/* ── Masthead ─────────────────────────────────────────────────────────────── */
-/* On the photograph, so it takes the light tones and a hairline instead of a
-   solid rule. */
 .masthead {
-  display: flex; align-items: center; gap: 32px;
-  padding: 20px 0 0; margin-bottom: 34px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex; align-items: center; gap: 14px;
+  min-height: 72px; margin-bottom: 18px;
 }
+.account { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.account-name { color: var(--muted); font-size: 13px; }
+
+/* The mark is ours: a white F in a slanted red tile. */
 .brand {
-  display: flex; align-items: center; gap: 10px; color: var(--on-photo);
-  text-decoration: none; font-weight: 700; letter-spacing: -0.015em;
-  padding-bottom: 16px;
+  display: inline-flex; align-items: center; gap: 10px;
+  color: var(--ink); text-decoration: none;
 }
-/* The one piece of pure brand on the page, and the only place the accent is
-   spent without a datum behind it. */
-.brand-mark { width: 10px; height: 10px; border-radius: 2px; background: var(--accent); }
-.masthead nav { display: flex; gap: 26px; flex: 1; }
-.masthead nav a {
-  color: var(--on-photo-soft); text-decoration: none; font-size: 14px; font-weight: 500;
-  padding: 4px 0 16px; border-bottom: 2px solid transparent;
-  transition: color 120ms ease, border-color 120ms ease;
+.brand-mark {
+  display: inline-grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 9px; background: var(--accent-fill); color: var(--on-accent);
+  font: 800 18px/1 var(--sans); font-variation-settings: var(--display-wide);
+  transform: skewX(-8deg); box-shadow: 0 4px 18px rgba(225, 6, 0, 0.28);
 }
-.masthead nav a:hover { color: var(--on-photo); }
-.masthead nav a.active { color: var(--on-photo); border-bottom-color: var(--accent); }
-.account { padding-bottom: 14px; }
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.brand-word {
+  font-weight: 800; font-size: 18px; letter-spacing: -0.01em;
+  font-variation-settings: var(--display-mid);
+}
+.brand-word em { font-style: normal; color: var(--accent); }
+
 .menu-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; margin-bottom: 14px; padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: var(--radius-sm);
-  background: transparent; color: var(--on-photo); cursor: pointer;
+  width: 40px; height: 40px; padding: 0; flex: none;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text); cursor: pointer;
   transition: background 120ms ease;
 }
-.menu-toggle:hover { background: rgba(255, 255, 255, 0.1); }
-.masthead .menu-toggle { margin-right: -16px; }
+.menu-toggle:hover { background: var(--panel-high); }
+
 .sidebar-scrim {
   position: fixed; inset: 0; z-index: 40;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(6, 4, 5, 0.6);
   opacity: 0; pointer-events: none; transition: opacity 180ms ease;
 }
 .sidebar-scrim.open { opacity: 1; pointer-events: auto; }
 .sidebar {
   position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
-  width: 260px; max-width: 85vw; overflow-y: auto;
-  background: var(--ink); color: var(--on-photo);
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: var(--lift);
+  width: var(--rail); max-width: 85vw; overflow-y: auto;
+  background: linear-gradient(180deg, #171315 0%, #110e10 100%);
+  border-right: 1px solid var(--line-soft);
   transform: translateX(-100%); transition: transform 200ms ease;
 }
 .sidebar.open { transform: translateX(0); }
+@media (max-width: 1023px) { .sidebar { box-shadow: var(--lift); } }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 16px 4px 20px;
+  min-height: 72px; padding: 0 16px 0 20px;
 }
-.sidebar-head .menu-toggle { margin-bottom: 0; }
-.sidebar-title {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--on-photo-soft);
-}
-.sidebar nav { display: flex; flex-direction: column; padding: 8px 0 24px; }
+.sidebar nav { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 24px; }
 .sidebar nav a {
-  color: var(--on-photo-soft); text-decoration: none; font-size: 15px; font-weight: 500;
-  padding: 11px 20px; border-left: 3px solid transparent;
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 600;
+  padding: 11px 14px; border-radius: 14px;
   transition: color 120ms ease, background 120ms ease;
 }
-.sidebar nav a:hover { color: var(--on-photo); background: rgba(255, 255, 255, 0.06); }
-.sidebar nav a.active { color: var(--on-photo); border-left-color: var(--accent); }
+.sidebar nav a svg { color: var(--dim); transition: color 120ms ease; }
+.sidebar nav a:hover { color: var(--text); background: var(--panel-soft); }
+.sidebar nav a.active { color: var(--ink); background: var(--panel-high); box-shadow: inset 3px 0 0 var(--accent); }
+.sidebar nav a.active svg { color: var(--accent); }
+
+/* ── Phone tab bar ────────────────────────────────────────────────────────── */
+.tabbar { display: none; }
+@media (max-width: 719px) {
+  .tabbar {
+    /* A floating pill rather than a docked bar. */
+    position: fixed; left: 12px; right: 12px; z-index: 35;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    height: var(--tabbar); padding: 6px;
+    border-radius: 26px;
+    background: rgba(36, 30, 33, 0.86); backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--muted); text-decoration: none; font-size: 11px; font-weight: 600;
+  }
+  .tabbar-icon {
+    display: inline-grid; place-items: center; width: 52px; height: 28px; border-radius: 999px;
+    transition: background 120ms ease;
+  }
+  .tabbar a.active { color: var(--ink); }
+  .tabbar a.active .tabbar-icon { background: rgba(225, 6, 0, 0.32); color: #ff8086; }
+  body { padding-bottom: calc(var(--tabbar) + 24px + env(safe-area-inset-bottom)); }
+}
 
 /* ── Bernie shortcut ──────────────────────────────────────────────────────── */
 .bernie-fab {
   position: fixed; right: 24px; bottom: 24px; z-index: 30;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 56px; height: 56px; border-radius: 50%;
-  background: var(--accent); color: #fff; box-shadow: var(--lift);
+  width: 58px; height: 58px; border-radius: 50%;
+  background: var(--accent-fill); color: var(--on-accent);
+  box-shadow: 0 6px 24px rgba(225, 6, 0, 0.32), var(--lift);
   transition: background 120ms ease, transform 120ms ease;
 }
-.bernie-fab:hover { background: var(--accent-deep); transform: translateY(-1px); }
+.bernie-fab:hover { background: #ff1a10; transform: translateY(-2px); }
 .bernie-fab:focus-visible { border-radius: 50%; outline-offset: 3px; }
-
-.account { display: flex; align-items: center; gap: 12px; }
+@media (max-width: 719px) { .bernie-fab { display: none; } }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .stack { display: flex; flex-direction: column; gap: 24px; }
@@ -278,38 +295,39 @@ body {
    is how the colour and the margin ended up in separate rules. */
 .page-head {
   margin-bottom: 4px;
-  color: var(--on-photo);
-  padding-bottom: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding-bottom: 8px;
 }
-/* The headline is the one place the width axis is spent fully open. Set at the
-   same width as the body it would read as a big label; expanded, it reads as a
-   masthead, and the page announces itself before anything is scanned.
-
-   Fluid rather than stepped: this type is large enough that a fixed size either
-   wraps awkwardly on a laptop or looks timid on a wide screen. */
+/* The headline is where the display face is spent fully: heavy, upright and
+   tightly set in sentence case, so a page announces itself before anything is
+   scanned. Fluid rather than stepped, because type this large either wraps
+   awkwardly on a laptop or looks timid on a wide screen. */
 .page-head h1 {
-  margin: 10px 0 10px;
-  font-size: clamp(2.25rem, 1.3rem + 3.1vw, 3.75rem);
-  line-height: 1.02;
-  letter-spacing: -0.03em;
-  font-weight: 700;
+  margin: 12px 0 12px;
+  font-size: clamp(2.1rem, 1.2rem + 3vw, 3.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  font-weight: 800;
   font-variation-settings: var(--display-wide);
   text-wrap: balance;
-  color: var(--on-photo);
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
 }
 .page-head .lede, .page-head .muted {
-  max-width: 54ch; color: var(--on-photo-soft);
-  font-size: 15px; line-height: 1.55;
+  max-width: 58ch; color: var(--muted);
+  font-size: 15.5px; line-height: 1.6;
 }
-/* On the photograph the deep oxide disappears; the eyebrow keeps the bright
-   red, which is what it was always for. */
-.page-head .eyebrow { color: var(--accent-soft); }
+/* The eyebrow is a red pill, the tag that says what kind of page this is. */
 .eyebrow {
-  margin: 0; color: var(--accent); font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.11em;
-  font-family: var(--mono);
+  display: inline-flex; align-items: center; width: fit-content;
+  margin: 0; padding: 4px 11px; border-radius: 999px;
+  background: rgba(225, 6, 0, 0.14); color: var(--accent);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+  font-family: var(--sans);
+}
+/* Section titles inside a page: white and heavy, in the display face. */
+.section-head, h2.section-head {
+  margin: 8px 0 14px; color: var(--ink);
+  font-size: 20px; font-weight: 800; letter-spacing: -0.01em;
+  font-variation-settings: var(--display-mid);
 }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
@@ -321,8 +339,16 @@ body {
    What is left here is the type — the heading was rendering at Card's default
    weight and size, which is louder than this product wants when a page is a
    stack of six of them. */
+/* Frosted rather than solid, so the photograph behind the page shows through
+   faintly; the tint is 88% card colour, so every contrast figure measured on
+   the card surface still holds. */
+.panel {
+  border-color: rgba(255, 255, 255, 0.07); border-radius: var(--radius); box-shadow: none;
+  background: rgba(26, 22, 24, 0.88); backdrop-filter: blur(16px) saturate(1.1);
+}
 .panel [data-slot="card-title"] {
-  font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
+  font-size: 17px; font-weight: 800; letter-spacing: 0.005em;
+  font-variation-settings: var(--display-mid); color: var(--ink);
 }
 .panel [data-slot="card-description"] { font-size: 13px; }
 .panel-foot { display: block; }
@@ -331,7 +357,7 @@ body {
 
 .notice { background: var(--panel-soft); border-left: 3px solid var(--accent); padding: 12px 14px; border-radius: 0 6px 6px 0; margin: 0 0 14px; font-size: 14px; }
 .notice.warn { border-left-color: var(--warn); }
-.unavailable { background: #fdf3f2; border: 1px solid #f2d6d3; border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
+.unavailable { background: rgba(255, 122, 122, 0.08); border: 1px solid rgba(255, 122, 122, 0.3); border-radius: var(--radius); padding: 14px 16px; font-size: 14px; }
 .loading { color: var(--muted); padding: 24px 0; }
 .error { color: var(--bad); font-size: 14px; }
 
@@ -377,8 +403,8 @@ body {
    set four points apart, which made them look like the same kind of thing. */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
 .tile {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 16px 16px 15px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 18px 18px 16px;
   display: flex; flex-direction: column; gap: 4px;
   border-top: 3px solid var(--rule);
 }
@@ -386,12 +412,16 @@ body {
    others qualify it. A rule on every tile said they were equals; a rule on the
    first says which one the page is actually about, which is what the accent is
    reserved for. */
-.tiles .tile:first-child { border-top-color: var(--accent-deep); }
+.tiles .tile:first-child {
+  border-top-color: var(--accent);
+  background: linear-gradient(160deg, rgba(225, 6, 0, 0.12), var(--panel) 55%);
+}
 .tile-value {
   font-size: 38px; font-weight: 700; font-variant-numeric: tabular-nums;
   font-variation-settings: var(--display-mid);
   letter-spacing: -0.03em; line-height: 1; color: var(--ink);
 }
+.tiles .tile:first-child .tile-value { color: var(--accent); }
 .tile-label {
   font-size: 11px; font-family: var(--mono); text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--dim); margin-top: 3px;
@@ -484,7 +514,7 @@ tr.thin td { opacity: 0.55; }
    red stripe along the top edge that the F1 site uses on its own tiles. */
 .news-card-fallback {
   display: flex; align-items: flex-end; padding: 14px 16px;
-  background: linear-gradient(135deg, #15171c 0%, #2a2d35 100%);
+  background: linear-gradient(135deg, #24101a 0%, #4f121c 100%);
   border-top: 4px solid var(--accent);
 }
 .news-card-fallback span {
@@ -668,14 +698,21 @@ input { background: var(--panel); border: 1px solid var(--line); border-radius: 
 input:focus { outline: none; border-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; }
 
-.button { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
+.button { background: var(--accent-fill); color: var(--on-accent); border: none; border-radius: 7px; padding: 9px 15px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; display: inline-block; }
 .button:disabled { opacity: 0.45; cursor: default; }
 .button.subtle { background: none; border: 1px solid var(--line); color: var(--text); }
 .link { color: var(--accent); text-decoration: none; font-size: 14px; }
-a { color: var(--accent); }
+/* Text links take the red; a link styled as a button keeps its own colours. */
+a:where(:not([data-slot])) { color: var(--accent); }
+
+/* Tailwind's bare `border` utility draws in currentColor unless the base layer
+   says otherwise, which on a dark page gave every card a pale outline. */
+@layer base {
+  *, ::before, ::after { border-color: var(--line); }
+}
 
 /* Also on the photograph. */
-.colophon { border-top: 1px solid rgba(255, 255, 255, 0.16); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
+.colophon { border-top: 1px solid var(--line-soft); margin-top: 44px; padding: 20px 0 40px; color: var(--on-photo-soft); font-size: 13px; }
 
 /* ── Venue photographs ────────────────────────────────────────────────────── */
 .venue {
@@ -727,7 +764,7 @@ a { color: var(--accent); }
 .trackmap-key { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .trackmap-ramp {
   flex: 0 0 120px; height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, rgb(47,107,176), rgb(199,145,20), rgb(204,51,40));
+  background: linear-gradient(90deg, rgb(157,139,255), rgb(255,183,77), rgb(255,122,122));
 }
 /* Reserves its own space so the row does not reflow as the pointer moves. */
 .trackmap-readout { margin-left: auto; color: var(--muted); min-width: 13ch; text-align: right; font-variant-numeric: tabular-nums; }
@@ -738,9 +775,9 @@ a { color: var(--accent); }
   font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.07em;
   border: 1px solid var(--line); color: var(--text);
 }
-.tag-power { border-color: #eab5b0; color: var(--accent); background: #fdf2f1; }
-.tag-technical { border-color: #b7cbe4; color: var(--data); background: #f1f5fb; }
-.tag-balanced { border-color: #e2cd94; color: var(--warn); background: #fbf6ea; }
+.tag-power { border-color: rgba(255, 122, 122, 0.4); color: var(--bad); background: rgba(255, 122, 122, 0.1); }
+.tag-technical { border-color: rgba(63, 215, 184, 0.4); color: var(--data); background: rgba(63, 215, 184, 0.1); }
+.tag-balanced { border-color: rgba(255, 183, 77, 0.4); color: var(--warn); background: rgba(255, 183, 77, 0.1); }
 
 .brief-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
 .brief-stat { display: flex; flex-direction: column; gap: 1px; }
@@ -769,7 +806,7 @@ a { color: var(--accent); }
 }
 .odds-track { position: relative; height: 9px; border-radius: 5px; background: var(--line); overflow: hidden; }
 .odds-seg { position: absolute; inset: 0 auto 0 0; border-radius: 5px; }
-.odds-points { background: #b9cde6; }
+.odds-points { background: #4a2026; }
 .odds-podium { background: var(--data); }
 .odds-win { background: var(--accent); }
 
@@ -790,8 +827,8 @@ a { color: var(--accent); }
 .podium { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .podium li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 13px; background: var(--panel-soft); border-radius: 7px; border-left: 3px solid var(--line); }
 .podium-1 { border-left-color: var(--accent); }
-.podium-2 { border-left-color: #9aa2b1; }
-.podium-3 { border-left-color: #c6cbd4; }
+.podium-2 { border-left-color: #cbc4c7; }
+.podium-3 { border-left-color: #c48a52; }
 .podium-pos { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .podium-1 .podium-driver { font-weight: 650; }
 .podium-team { color: var(--muted); font-size: 13px; text-align: right; }
@@ -805,26 +842,15 @@ a { color: var(--accent); }
   * { transition-duration: 0.01ms !important; }
 }
 
-@media (max-width: 860px) {
-  /* With the section links in the sidebar the masthead holds only the menu
-     button, the brand, Home and the account, which fit one row on a phone. */
-  .masthead { gap: 16px; padding-top: 14px; }
-  .masthead .menu-toggle { margin-right: -6px; margin-bottom: 10px; }
-  .brand { padding-bottom: 12px; }
-  .masthead nav { gap: 20px; }
-  .masthead nav a { white-space: nowrap; padding-bottom: 12px; }
-  .account { padding-bottom: 10px; }
-}
 
 @media (max-width: 720px) {
-  .app { padding: 0 16px; }
-  .bernie-fab { right: 16px; bottom: 16px; width: 52px; height: 52px; }
+  .app-main { padding: 0 16px; }
 
   /* background-attachment: fixed is unreliable on mobile browsers — iOS
      Safari ignores it and others repaint the whole image on every scroll
      frame. Scrolling with the page costs the parallax and keeps the
      photograph. */
-  body { background-attachment: scroll, scroll; }
+  body { background-attachment: scroll; }
   .page-head h1 { font-size: 28px; }
 
   .bernie { grid-template-columns: 1fr; }
@@ -878,8 +904,8 @@ a { color: var(--accent); }
 /* Pale land on a lit ocean. The markers are what the eye is meant to find, so
    the planet under them stays low-contrast — but light, not dark: against a
    dark photograph a dark globe read as a hole rather than a sphere. */
-.globe-land { fill: #eef1e9; stroke: #c3cbbd; stroke-width: 0.4; }
-.globe-rim { stroke: rgba(255, 255, 255, 0.5); stroke-width: 1; }
+.globe-land { fill: #9a8a90; stroke: #c0b2b6; stroke-width: 0.4; }
+.globe-rim { stroke: rgba(63, 215, 184, 0.55); stroke-width: 1; }
 .globe-wrap { position: relative; }
 
 /* Markers are the navigation, so they are focusable and show it. */
@@ -889,11 +915,9 @@ a { color: var(--accent); }
 .stop-dot { stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; transition: r 120ms ease; }
 /* Restated for a pale planet: the old tones were picked against a dark one
    and the "raced" marker in particular vanished into the land. */
-.stop-raced .stop-dot { fill: #2f3a46; }
+.stop-raced .stop-dot { fill: #8f8287; }
 .stop-next .stop-dot { fill: var(--accent); }
-.stop-scheduled .stop-dot { fill: #1f5fa8; }
-.key-raced { background: #2f3a46; }
-.key-scheduled { background: #1f5fa8; }
+.stop-scheduled .stop-dot { fill: #3fd7b8; }
 .stop:hover .stop-dot, .stop:focus-visible .stop-dot { r: 7; }
 .stop:focus-visible .stop-dot { stroke: #fff; stroke-width: 2; }
 .stop.is-selected .stop-dot { stroke: #fff; stroke-width: 2; }
@@ -914,7 +938,7 @@ a { color: var(--accent); }
 .key-dot { width: 9px; height: 9px; border-radius: 50%; }
 .key-raced { background: var(--on-photo-soft); }
 .key-next { background: var(--accent); }
-.key-scheduled { background: #6f8bb0; }
+.key-scheduled { background: #3fd7b8; }
 
 .atlas-name { margin: 10px 0 2px; font-size: 20px; letter-spacing: -0.015em; }
 .atlas-when { margin: 10px 0 0; font-family: var(--mono); font-size: 14px; }
@@ -1017,7 +1041,7 @@ a { color: var(--accent); }
 }
 
 .race-call {
-  background: linear-gradient(135deg, rgba(21, 23, 28, 0.86), rgba(36, 18, 16, 0.78));
+  background: linear-gradient(135deg, #2c0b12 0%, #1a1618 60%, #2b1a1f 100%);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px; padding: 22px 22px 18px;
   color: var(--on-photo); box-shadow: var(--lift);
@@ -1069,8 +1093,8 @@ a { color: var(--accent); }
 }
 .lap-window {
   position: absolute; top: -5px; bottom: -5px; border-radius: 6px;
-  background: repeating-linear-gradient(135deg, rgba(47, 107, 176, 0.16) 0 5px, rgba(47, 107, 176, 0.06) 5px 10px);
-  border: 1px dashed rgba(47, 107, 176, 0.5);
+  background: repeating-linear-gradient(135deg, rgba(63, 215, 184, 0.2) 0 5px, rgba(63, 215, 184, 0.07) 5px 10px);
+  border: 1px dashed rgba(63, 215, 184, 0.55);
 }
 .stint {
   position: absolute; top: 4px; bottom: 4px; border-radius: 6px;
@@ -1082,14 +1106,14 @@ a { color: var(--accent); }
 .stint:hover { transform: translateY(-1px); }
 .stint.c-soft { background: var(--tyre-soft); color: #fff; }
 .stint.c-medium { background: var(--tyre-medium); color: #2a2200; }
-.stint.c-hard { background: var(--tyre-hard); color: #26282d; box-shadow: inset 0 0 0 1px #c9c6be; }
+.stint.c-hard { background: var(--tyre-hard); color: #26282d; }
 .stint.c-intermediate { background: var(--tyre-intermediate); color: #fff; }
 .stint.c-wet { background: var(--tyre-wet); color: #fff; }
 .stint-text { overflow: hidden; text-overflow: ellipsis; }
 .pit-pin { position: absolute; top: -9px; bottom: -9px; width: 0; border-left: 2px solid var(--ink); }
 .pit-pin-label {
   position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-  background: var(--ink); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+  background: var(--ink); color: var(--bg); font-size: 10px; padding: 1px 5px; border-radius: 4px;
 }
 .lap-chart .lap-row:first-child { margin-top: 6px; }
 .lap-track-sc { height: 22px; background: transparent; border-top: 1px dashed var(--line); border-radius: 0; }
@@ -1100,7 +1124,7 @@ a { color: var(--accent); }
   white-space: nowrap;
 }
 .sc-window { background: repeating-linear-gradient(135deg, var(--sc) 0 6px, #f3c062 6px 12px); color: #3a2600; }
-.sc-extra { background: rgba(29, 122, 77, 0.16); border: 1px solid rgba(29, 122, 77, 0.45); color: var(--good); }
+.sc-extra { background: rgba(110, 231, 160, 0.12); border: 1px solid rgba(110, 231, 160, 0.4); color: var(--good); }
 .sc-badge {
   font: 700 11px/1 var(--mono); background: var(--sc); color: #3a2600;
   padding: 4px 6px; border-radius: 4px;
@@ -1112,18 +1136,18 @@ a { color: var(--accent); }
 .lap-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); padding-top: 4px; }
 .lap-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-swatch { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
-.legend-swatch.window { background: rgba(47, 107, 176, 0.18); border: 1px dashed rgba(47, 107, 176, 0.6); }
+.legend-swatch.window { background: rgba(63, 215, 184, 0.2); border: 1px dashed rgba(63, 215, 184, 0.6); }
 .legend-swatch.sc { background: repeating-linear-gradient(135deg, var(--sc) 0 3px, #f3c062 3px 6px); }
-.legend-swatch.extra { background: rgba(29, 122, 77, 0.2); border: 1px solid rgba(29, 122, 77, 0.5); }
+.legend-swatch.extra { background: rgba(110, 231, 160, 0.2); border: 1px solid rgba(110, 231, 160, 0.5); }
 
 .plan-badge {
   display: inline-grid; place-items: center; flex: none;
   width: 24px; height: 24px; border-radius: 6px;
   font: 700 13px/1 var(--mono); color: #fff; background: var(--dim);
 }
-.plan-badge.plan-a { background: var(--accent-deep); }
+.plan-badge.plan-a { background: var(--accent-fill); color: var(--on-accent); }
 .plan-badge.plan-b { background: var(--data-deep); }
-.plan-badge.plan-c { background: #4b5160; }
+.plan-badge.plan-c { background: #5a4a50; }
 .plan-notes { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 8px; font-size: 14px; }
 .plan-notes li { display: flex; gap: 10px; align-items: flex-start; }
 
@@ -1139,7 +1163,7 @@ a { color: var(--accent); }
 .character-scale { padding: 6px 4px 0; }
 .character-bar {
   position: relative; height: 8px; border-radius: 999px;
-  background: linear-gradient(90deg, var(--data-deep), #8d8a84 50%, var(--accent));
+  background: linear-gradient(90deg, var(--data-deep), #8f8287 50%, var(--accent));
 }
 .character-marker {
   position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%;
@@ -1192,7 +1216,7 @@ a { color: var(--accent); }
 .gap-bar { height: 100%; border-radius: 999px; background: var(--data); }
 .gap-gain { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; background: var(--accent); }
 .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
-.pill-good { background: rgba(29, 122, 77, 0.12); color: var(--good); }
+.pill-good { background: rgba(110, 231, 160, 0.14); color: var(--good); }
 .pill-dim { background: var(--panel-soft); color: var(--muted); }
 
 .edge-cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
@@ -1203,7 +1227,7 @@ a { color: var(--accent); }
 .guide-quotes { display: grid; gap: 10px; margin-top: 16px; }
 .guide-quote {
   position: relative; margin: 0; padding: 14px 16px 12px 44px;
-  background: #faf8f4; border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--panel-soft); border: 1px solid var(--line-soft); border-radius: var(--radius);
 }
 .guide-quote::before {
   content: '\201C'; position: absolute; left: 12px; top: 2px;
@@ -1226,3 +1250,342 @@ a { color: var(--accent); }
   .race-call .tyre { width: 42px; height: 42px; border-width: 6px; font-size: 16px; }
   .rejoin-value { font-size: 26px; }
 }
+
+/* ── Pit-wall furniture (components/Pit.jsx) ──────────────────────────────── */
+.avatar {
+  display: inline-grid; place-items: center; flex: none; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #45383d, #171315);
+  color: var(--ink); font-weight: 800; letter-spacing: 0.02em;
+  box-shadow: 0 0 0 2px var(--team, var(--dim)), 0 0 18px -4px var(--team, transparent);
+}
+
+/* With a headshot: the photo sits on a wash of the team colour, cropped to
+   head and shoulders, the ring kept so the team still reads at a glance. */
+.avatar { overflow: hidden; }
+.avatar.has-photo {
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--team, #45383d) 55%, #2e262a), #171315 75%);
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 8%; display: block; }
+
+.driver-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.driver-first { font-size: 12px; color: var(--muted); }
+.driver-last {
+  font-weight: 750; letter-spacing: -0.005em; color: var(--ink);
+  font-variation-settings: var(--display-mid);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.driver-team { font-size: 12px; color: var(--dim); }
+
+.pit-pill {
+  display: inline-flex; align-items: center; gap: 5px; width: fit-content;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.pit-pill-gold { background: var(--accent-fill); color: var(--on-accent); }
+.pit-pill-soft { background: rgba(225, 6, 0, 0.14); color: var(--accent); }
+.pit-pill-dark { background: rgba(11, 9, 11, 0.72); color: var(--text); backdrop-filter: blur(6px); }
+.pit-pill-good { background: rgba(110, 231, 160, 0.14); color: var(--good); }
+.pit-pill-bad { background: rgba(255, 122, 122, 0.14); color: var(--bad); }
+
+.section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 6px 0 12px; }
+.section-title h2 {
+  margin: 0; color: var(--ink);
+  font-size: 21px; font-weight: 800; letter-spacing: -0.01em;
+  font-variation-settings: var(--display-mid);
+}
+.section-title-link {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.section-title .section-title-link { color: var(--muted); }
+.section-title .section-title-link:hover { color: var(--text); }
+
+.segmented {
+  display: inline-flex; padding: 4px; gap: 4px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+}
+.segmented button {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  padding: 7px 18px; border-radius: 999px;
+  font: 750 12px/1 var(--sans); text-transform: uppercase; letter-spacing: 0.1em;
+  transition: background 120ms ease, color 120ms ease;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button.is-on { background: var(--accent-fill); color: var(--on-accent); }
+
+/* The podium: each step in its driver's team colour, the winner's tallest. */
+.podium-stage { margin: 0; }
+.podium-steps {
+  list-style: none; margin: 0 auto; padding: 0; max-width: 560px;
+  display: grid; grid-template-columns: 1fr 1.15fr 1fr; align-items: end; gap: 8px;
+}
+.podium-step { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
+.podium-who { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; min-width: 0; max-width: 100%; }
+.podium-who .driver-name { align-items: center; }
+.podium-value {
+  margin-top: -18px; position: relative; z-index: 1;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  background: var(--panel-high); color: var(--ink); border: 1px solid var(--line);
+}
+.step-1 .podium-value { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
+.podium-block {
+  width: 100%; display: grid; place-items: center;
+  border-radius: 14px 14px 4px 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--team, #45383d) 88%, #000) 0%,
+    color-mix(in srgb, var(--team, #45383d) 38%, #0b090b) 100%);
+  font: 800 30px/1 var(--sans); color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 12px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.step-1 .podium-block { height: 108px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 40px -12px var(--team, rgba(225, 6, 0, 0.5)); }
+.step-2 .podium-block { height: 78px; }
+.step-3 .podium-block { height: 58px; }
+
+/* Ranked rows: number, team bar, avatar, name, figure. */
+.rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rank-row {
+  display: grid; grid-template-columns: 30px 4px 34px minmax(0, 1fr) auto;
+  align-items: center; gap: 12px; padding: 10px 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.rank-row:first-child { border-top: 0; }
+.rank-row:hover { background: rgba(255, 255, 255, 0.025); }
+.rank-pos { color: var(--dim); font-size: 13px; }
+.rank-bar { width: 4px; height: 30px; border-radius: 2px; background: var(--team); }
+.rank-right { display: flex; align-items: center; gap: 14px; justify-content: flex-end; text-align: right; }
+.rank-row.is-dim .driver-last, .rank-row.is-dim .rank-right { color: var(--muted); }
+
+/* Carousel: cards scroll sideways and snap; the next one peeks in. */
+.carousel {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 31%);
+  gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory;
+  padding: 2px 2px 10px; margin: 0 -2px; scrollbar-width: thin;
+}
+.carousel > * { scroll-snap-align: start; min-width: 0; }
+@media (max-width: 719px) {
+  .carousel { grid-auto-columns: 78%; }
+  .podium-block { font-size: 22px; }
+  .step-1 .podium-block { height: 84px; }
+  .step-2 .podium-block { height: 60px; }
+  .step-3 .podium-block { height: 44px; }
+  .podium-who .driver-first { display: none; }
+  .podium-who .driver-last { font-size: 13px; }
+  .podium-value { font-size: 10px; padding: 2px 7px; }
+}
+
+/* ── Race hero card (components/RaceHero.jsx) ─────────────────────────────── */
+.race-hero {
+  position: relative; display: block; overflow: hidden; isolation: isolate;
+  min-height: 340px; border-radius: 26px; color: var(--ink); text-decoration: none;
+  background:
+    radial-gradient(ellipse 70% 60% at 78% 18%, rgba(225, 6, 0, 0.45), rgba(225, 6, 0, 0) 60%),
+    radial-gradient(ellipse 80% 70% at 15% 0%, rgba(120, 10, 30, 0.55), rgba(120, 10, 30, 0) 65%),
+    linear-gradient(180deg, #5a1420 0%, #2a0a10 55%, #170709 100%);
+  box-shadow: 0 24px 60px -24px rgba(179, 18, 31, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+/* A horizon of light streaks, the way a lit straight looks at night. */
+.race-hero::before {
+  content: ''; position: absolute; inset: auto 0 0 0; height: 55%; z-index: -1;
+  background:
+    repeating-linear-gradient(176deg, rgba(225, 6, 0, 0) 0 22px, rgba(225, 6, 0, 0.10) 22px 24px, rgba(225, 6, 0, 0) 24px 52px),
+    linear-gradient(180deg, rgba(11, 9, 11, 0), rgba(11, 9, 11, 0.65));
+}
+.hero-art { position: absolute; inset: 56px 6% 120px 34%; z-index: -1; }
+.hero-art svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.hero-track, .hero-track-line, .hero-track-glow { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* A neon circuit: a warm halo, a red tube, and a white-hot core. */
+.hero-track-glow { stroke: rgba(255, 120, 40, 0.55); stroke-width: 20; filter: blur(10px); }
+.hero-track-line { stroke: #ff3b30; stroke-width: 8; filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.9)); }
+.hero-track { stroke: #fff4e6; stroke-width: 2.5; }
+
+.hero-tags { position: absolute; top: 18px; left: 18px; right: 18px; display: flex; justify-content: space-between; gap: 8px; }
+.hero-tags-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.hero-glass {
+  position: absolute; left: 14px; right: 14px; bottom: 14px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 24px; align-items: end;
+  padding: 18px 20px; border-radius: 22px;
+  background: rgba(26, 22, 24, 0.55); backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+.hero-title { grid-column: 1; }
+.hero-title h1, .hero-title h2 {
+  margin: 0; font-size: clamp(1.5rem, 1rem + 1.8vw, 2.3rem); line-height: 1.04;
+  font-weight: 800; letter-spacing: -0.025em;
+  font-variation-settings: var(--display-wide);
+}
+.hero-title p { margin: 6px 0 0; color: var(--on-photo-soft); font-size: 14px; }
+.hero-when-line { grid-column: 1; margin: 0; color: var(--muted); font-size: 13px; }
+/* The countdown as four frosted tiles. */
+.count-tiles {
+  grid-column: 2; grid-row: 1 / span 2; list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(4, 64px); gap: 8px;
+}
+.count-tiles li {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  height: 70px; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.count-tiles .num { font-size: 26px; font-weight: 600; line-height: 1; color: var(--ink); }
+.count-tiles small { font-size: 11px; color: var(--on-photo-soft); }
+a.race-hero { transition: transform 160ms ease, box-shadow 160ms ease; }
+@media (hover: hover) {
+  a.race-hero:hover { transform: translateY(-2px); box-shadow: 0 30px 70px -24px rgba(179, 18, 31, 0.75); }
+}
+@media (max-width: 719px) {
+  .race-hero { min-height: 400px; border-radius: 22px; }
+  .hero-art { inset: 56px 8% 190px 8%; }
+  .hero-glass { grid-template-columns: 1fr; }
+  .count-tiles { grid-column: 1; grid-row: auto; grid-template-columns: repeat(4, 1fr); margin-top: 8px; }
+  .count-tiles li { height: 62px; }
+  .count-tiles .num { font-size: 22px; }
+}
+
+/* ── Round cards (Home's upcoming rounds) ─────────────────────────────────── */
+.round-card {
+  position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+  min-height: 150px; padding: 14px 16px; border-radius: 20px; overflow: hidden;
+  background: linear-gradient(160deg, #3e0f17 0%, #210a0f 70%);
+  border: 1px solid var(--line-soft); color: var(--ink); text-decoration: none;
+}
+.round-card .pit-pill { position: absolute; top: 12px; left: 12px; }
+.round-country { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.round-name { font-weight: 800; font-size: 16px; line-height: 1.15; font-variation-settings: var(--display-mid); }
+.round-date { font-size: 12px; color: var(--accent); font-weight: 650; }
+.round-card.is-raced { background: var(--panel); }
+.round-card.is-raced .round-date { color: var(--muted); }
+.round-card { cursor: pointer; text-align: left; font: inherit; }
+.round-card:hover { border-color: rgba(225, 6, 0, 0.35); }
+.atlas-globe { min-width: 0; width: 100%; }
+.globe-wrap svg { max-width: 100%; height: auto; }
+.atlas-name { font-weight: 800; font-variation-settings: var(--display-mid); }
+
+/* ── Forecast list (Next race) ────────────────────────────────────────────── */
+.forecast-list { margin-top: 22px; }
+.forecast-list-head, .forecast-list .rank-right {
+  display: grid; grid-template-columns: 150px 54px 64px 60px; gap: 14px; align-items: center;
+}
+.forecast-list-head {
+  grid-template-columns: minmax(0, 1fr) 150px 54px 64px 60px;
+  padding: 0 6px 8px 92px; font: 500 11px/1 var(--mono);
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--dim);
+}
+.forecast-list .num { text-align: right; }
+.forecast-list .odds { min-width: 0; }
+@media (max-width: 719px) {
+  .forecast-list-head { grid-template-columns: minmax(0, 1fr) 60px; padding-left: 92px; }
+  .forecast-list-head span:nth-child(2), .forecast-list-head span:nth-child(3), .forecast-list-head span:nth-child(5) { display: none; }
+  .forecast-list .rank-right { grid-template-columns: 52px; }
+  .forecast-list .rank-right .viz, .forecast-list .rank-right .num:nth-child(2), .forecast-list .rank-right .num:nth-child(4) { display: none; }
+}
+
+/* ── Championship ─────────────────────────────────────────────────────────── */
+.standings-switch { display: flex; justify-content: center; }
+.standings-head, .panel .rank-list .rank-right:has(.standings-points) {
+  display: grid; grid-template-columns: 56px 92px 110px 72px; gap: 14px; align-items: center;
+}
+.standings-head {
+  grid-template-columns: minmax(0, 1fr) 56px 92px 110px 72px;
+  padding: 0 6px 8px 92px; font: 500 11px/1 var(--mono);
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--dim);
+}
+.standings-head .num, .rank-right .num { text-align: right; }
+.standings-points { font-size: 16px; font-weight: 600; color: var(--ink); }
+.rank-right .viz { width: auto; }
+@media (max-width: 719px) {
+  .standings-head { grid-template-columns: minmax(0, 1fr) 48px 64px; padding-left: 92px; }
+  .standings-head span:nth-child(4), .standings-head span:nth-child(5) { display: none; }
+  .panel .rank-list .rank-right:has(.standings-points) { grid-template-columns: 48px 64px; }
+  .rank-right:has(.standings-points) .viz, .rank-right:has(.standings-points) .num:last-child { display: none; }
+}
+
+/* ── Track record ─────────────────────────────────────────────────────────── */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cal-bars { display: flex; flex-direction: column; gap: 3px; width: 120px; }
+.cal-bars > span { display: block; height: 5px; border-radius: 3px; min-width: 2px; }
+.cal-said { background: var(--accent); }
+.cal-happened { background: var(--data); }
+.market { border-left-color: var(--line); }
+.podium-stage figcaption { text-align: center; margin-top: 10px; }
+.markets + p, .markets ~ p { margin-top: 18px; }
+
+/* ── Paddock news ─────────────────────────────────────────────────────────── */
+.news-card { background: var(--panel); border-color: var(--line-soft); border-radius: var(--radius); color: var(--ink); }
+.news-outlet { color: var(--accent); }
+.news-title { color: var(--ink); }
+
+.outlet-chips { display: flex; gap: 18px; overflow-x: auto; padding: 4px 2px 6px; }
+.outlet-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 76px;
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font: inherit;
+}
+.outlet-chip-mark {
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--panel-high); color: var(--ink);
+  font: 800 20px/1 var(--sans); font-variation-settings: var(--display-wide);
+  box-shadow: 0 0 0 2px var(--line); transition: box-shadow 120ms ease, background 120ms ease;
+}
+.outlet-chip:first-child .outlet-chip-mark { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.outlet-chip-name { font-size: 11px; line-height: 1.25; text-align: center; }
+.outlet-chip:hover .outlet-chip-mark { box-shadow: 0 0 0 2px var(--dim); }
+.outlet-chip.is-on { color: var(--accent); }
+.outlet-chip.is-on .outlet-chip-mark { background: var(--accent-fill); color: var(--on-accent); box-shadow: 0 0 0 2px var(--accent), 0 6px 20px rgba(225, 6, 0, 0.3); }
+
+.news-carousel { list-style: none; margin: 0; padding-left: 0; grid-auto-columns: minmax(280px, 38%); }
+.news-carousel-item { position: relative; display: flex; }
+.news-carousel-item .news-card { height: 100%; }
+.news-carousel-item .news-title { font-size: 18px; }
+.news-rank { position: absolute; top: 12px; left: 12px; z-index: 1; }
+
+.news-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.news-list li + li { border-top: 1px solid var(--line-soft); }
+.news-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 16px; align-items: center; padding: 14px 16px; text-decoration: none; }
+.news-row .news-title { font-size: 15.5px; margin-bottom: 6px; }
+.news-row-art .news-card-art { border-radius: 12px; }
+.news-row-art .news-card-fallback span { font-size: 13px; }
+@media (hover: hover) { .news-row:hover .news-title { text-decoration: underline; text-underline-offset: 3px; } }
+@media (max-width: 719px) {
+  .news-carousel { grid-auto-columns: 84%; }
+  .news-row { grid-template-columns: minmax(0, 1fr) 96px; }
+}
+
+/* ── One Blog ─────────────────────────────────────────────────────────────── */
+.weekend-story { border-color: var(--line-soft); border-radius: var(--radius); }
+.weekend-photo::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(11, 9, 11, 0) 40%, rgba(11, 9, 11, 0.75));
+}
+.weekend-photo-label { z-index: 1; font-weight: 600; }
+.weekend-date::before { background: var(--accent); }
+.weekend-headline { font-weight: 850; color: var(--ink); }
+.weekend-story.is-lead .weekend-headline { text-transform: uppercase; letter-spacing: 0; }
+.verdict { gap: 10px; border-top: 0; padding: 4px 0 12px; }
+.verdict-cell { background: var(--panel-soft); border-radius: 14px; padding: 10px 14px; min-width: 150px; }
+.verdict-value.is-right { color: var(--good); }
+.round-card.is-soon { cursor: default; }
+.weekend-more { color: var(--accent); font-weight: 600; }
+.weekend-story:not(:has(.weekend-photo)) { padding-top: 24px; }
+.news-row-art .news-card-fallback { padding: 10px; }
+.news-row-art .news-card-fallback span { font-size: 11px; overflow-wrap: anywhere; }
+
+/* ── Bernie ───────────────────────────────────────────────────────────────── */
+/* Her replies on raised charcoal cards; yours in red, so the two voices are
+   told apart by colour as well as by shape. */
+.turn.assistant { background: var(--panel-high); border-color: transparent; color: var(--text); }
+.turn.user { background: rgba(225, 6, 0, 0.12); border: 1px solid rgba(225, 6, 0, 0.28); color: var(--ink); }
+.thread { border-color: var(--line-soft); border-radius: 14px; }
+.thread.active { border-color: var(--accent); background: var(--panel-high); box-shadow: inset 3px 0 0 var(--accent); }
+.composer input { border-radius: 999px; padding: 11px 18px; background: var(--panel-soft); border-color: var(--line); }
+.examples { list-style: none; padding: 0; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.examples li {
+  padding: 8px 14px; border-radius: 999px; background: var(--panel-high);
+  border: 1px solid var(--line); font-size: 13.5px;
+}
+
+/* ── Sign in ──────────────────────────────────────────────────────────────── */
+.narrow .panel { box-shadow: 0 18px 60px -20px rgba(179, 18, 31, 0.7); border-color: var(--line); }
+.auth-head h1 { font-weight: 900; text-transform: uppercase; font-variation-settings: var(--display-wide); }
+.auth-head .lede { color: var(--muted); }
+input { background: var(--panel-soft); }

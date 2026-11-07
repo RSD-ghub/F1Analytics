@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { getGlobe } from '../api/f1Api'
+import { Link } from 'react-router-dom'
+import { getGlobe, getNextRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Loading, Unavailable } from '../components/Panel'
 import Globe from '../components/Globe'
+import RaceHero from '../components/RaceHero'
+import { Carousel, Pill, SectionTitle } from '../components/Pit'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -43,6 +46,9 @@ function daysUntil(iso) {
 export default function Home() {
   const navigate = useNavigate()
   const state = useAsync(() => getGlobe(), [])
+  // Only for the circuit's outline on the hero card. If it fails the card
+  // stands on its own, so its failure is not shown.
+  const nextRace = useAsync(() => getNextRace(), [])
   const [selected, setSelected] = useState(null)
 
   if (state.status === 'loading') return <Loading what="Placing the season" />
@@ -52,6 +58,8 @@ export default function Home() {
   const stops = state.data || []
   const raced = stops.filter((s) => s.status === 'raced').length
   const next = stops.find((s) => s.status === 'next')
+  const upcoming = stops.filter((s) => s.status !== 'raced').slice(next ? 1 : 0, 9)
+  const outline = nextRace.status === 'ready' ? nextRace.data?.circuit?.map?.outline : null
 
   function choose(stop) {
     setSelected(stop)
@@ -62,50 +70,81 @@ export default function Home() {
   return (
     <div className="stack">
       <header className="page-head">
-        <p className="eyebrow">The season</p>
-        {/* Not a hardcoded count. The calendar is twenty-three rounds and the
-            globe shows twenty-two, because a circuit we cannot place is left
-            off rather than dropped in the Atlantic — so a number written into
-            the headline would be wrong, and wrong in a way nobody would think
-            to check. */}
+        <p className="eyebrow">The {next?.season || ''} season</p>
+        {/* Not a hardcoded count. The globe leaves off a circuit it cannot
+            place rather than dropping it in the Atlantic, so a number written
+            into the copy would be wrong in a way nobody would think to check. */}
         <h1>Where the season goes</h1>
         <p className="lede">
-          Turn the globe and pick a race. {raced} of these {stops.length} have
-          been run and written up; the rest are still to come.
+          {raced} of these {stops.length} rounds have been run and written up;
+          the rest are still to come.
         </p>
       </header>
 
-      <div className="atlas">
-        <div className="atlas-globe">
-          <Globe stops={stops} selected={selected} onSelect={choose} />
-          <ul className="atlas-key">
-            <li><span className="key-dot key-raced" /> Raced</li>
-            <li><span className="key-dot key-next" /> Next</li>
-            <li><span className="key-dot key-scheduled" /> To come</li>
-          </ul>
-        </div>
+      {next && (
+        <RaceHero
+          season={next.season} round={next.round} raceName={next.race_name}
+          circuit={next.circuit} country={next.country} start={next.race_start_utc}
+          outline={outline} to="/next-race"
+        />
+      )}
 
-        <div className="atlas-detail">
-          {selected ? (
-            <Chosen stop={selected} />
-          ) : next ? (
-            <Card>
-              <CardContent>
-                <Badge>Next</Badge>
-                <h2 className="atlas-name">{next.race_name}</h2>
-                <p className="muted">{next.circuit}{next.country ? ` · ${next.country}` : ''}</p>
-                <p className="atlas-when">{when(next.race_start_utc, true)}</p>
-                <p className="small muted">
-                  Pick any marker to see that weekend. A race already run opens
-                  its report; this one opens the forecast.
-                </p>
-              </CardContent>
-            </Card>
-          ) : null}
+      {upcoming.length > 0 && (
+        <section>
+          <SectionTitle>Upcoming rounds</SectionTitle>
+          <Carousel label="Upcoming rounds">
+            {upcoming.map((stop) => (
+              <button key={stop.round} type="button" role="listitem" className="round-card"
+                      onClick={() => { setSelected(stop); document.getElementById('atlas')?.scrollIntoView({ behavior: 'smooth' }) }}>
+                <Pill tone="dark">Round {stop.round}</Pill>
+                <span className="round-country">{stop.country}</span>
+                <span className="round-name">{stop.race_name}</span>
+                <span className="round-date">{shortDate(stop.race_start_utc)}</span>
+              </button>
+            ))}
+          </Carousel>
+        </section>
+      )}
+
+      <section id="atlas">
+        <SectionTitle to="/blog" action="All weekends">The season on a globe</SectionTitle>
+        <div className="atlas">
+          <div className="atlas-globe">
+            <Globe stops={stops} selected={selected} onSelect={choose} />
+            <ul className="atlas-key">
+              <li><span className="key-dot key-raced" /> Raced</li>
+              <li><span className="key-dot key-next" /> Next</li>
+              <li><span className="key-dot key-scheduled" /> To come</li>
+            </ul>
+          </div>
+
+          <div className="atlas-detail">
+            {selected ? (
+              <Chosen stop={selected} />
+            ) : next ? (
+              <Card>
+                <CardContent>
+                  <Badge>Next</Badge>
+                  <h2 className="atlas-name">{next.race_name}</h2>
+                  <p className="muted">{next.circuit}{next.country ? ` · ${next.country}` : ''}</p>
+                  <p className="atlas-when">{when(next.race_start_utc, true)}</p>
+                  <p className="small muted">
+                    Turn the globe and pick any marker. A race already run
+                    opens its report; <Link to="/next-race">this one opens the forecast</Link>.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   )
+}
+
+function shortDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 /**

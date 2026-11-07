@@ -42,6 +42,7 @@ export default function TrackRecord() {
   return (
     <div className="stack">
       <header className="page-head">
+        <p className="eyebrow">Scored, never edited</p>
         <h1>Track record</h1>
         <p className="muted">
           Every forecast we have ever locked, scored against what happened.
@@ -187,6 +188,7 @@ function Calibration({ curves }) {
                 <th>Band</th><th className="num">Forecasts</th>
                 <th className="num">We said</th><th className="num">It happened</th>
                 <th className="num">Gap</th>
+                <th className="viz"><span className="sr-only">Said against happened</span></th>
               </tr>
             </thead>
             <tbody>
@@ -211,6 +213,15 @@ function Calibration({ curves }) {
                         `${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}%`
                       )}
                     </td>
+                    {/* Said and happened drawn as two bars on one scale, so
+                        a gap reads as a difference in length. A thin band
+                        draws only what we said: it has no rate to compare. */}
+                    <td className="viz">
+                      <span className="cal-bars" aria-hidden="true">
+                        <span className="cal-said" style={{ width: `${bucket.predicted_mean * 100}%` }} />
+                        {!thin && <span className="cal-happened" style={{ width: `${bucket.observed_rate * 100}%` }} />}
+                      </span>
+                    </td>
                   </tr>
                 )
               })}
@@ -219,7 +230,8 @@ function Calibration({ curves }) {
         </div>
       ))}
       <p className="muted small">
-        A positive gap means we were overconfident in that band. Bands with
+        In each row the red bar is what we said and the teal bar what
+        happened. A positive gap means we were overconfident in that band. Bands with
         fewer than {MIN_BAND_SAMPLES} forecasts show no observed rate: with a
         handful of samples the outcome can only be 0% or 100%, so any gap would
         describe the sample size rather than the model. Bands with no forecasts
