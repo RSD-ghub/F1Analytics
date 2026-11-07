@@ -113,6 +113,59 @@ export const startThread = (season, round, question) =>
 export const continueThread = (threadId, question) =>
   post(`/bernie/threads/${threadId}`, { question }, { auth: true })
 
+/**
+ * A Bernie turn with the answer streamed in as it is written.
+ *
+ * `onDelta(textSoFar)` is called as fragments arrive. Resolves with the final
+ * turn (the same shape as startThread/continueThread return), whose `answer`
+ * is the saved text and should replace what was streamed. Errors before the
+ * stream starts (sign-in, daily limit) and `error` events both reject with an
+ * ApiError, so callers handle them exactly like the non-streamed calls.
+ */
+export async function streamTurn({ threadId, season, round, question }, onDelta) {
+  const path = threadId ? `/bernie/threads/${threadId}` : '/bernie/threads'
+  const body = threadId ? { question } : { season, round, question }
+  const token = getStoredToken()
+  const res = await fetch(`${BASE}${path}?stream=true`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+  if (res.status === 401 && token) expireStoredAuth()
+  if (!res.ok) throw await parseError(res)
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let text = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let cut
+    while ((cut = buffer.indexOf('\n\n')) !== -1) {
+      const block = buffer.slice(0, cut)
+      buffer = buffer.slice(cut + 2)
+      const event = /^event: (.*)$/m.exec(block)?.[1]
+      const data = /^data: (.*)$/m.exec(block)?.[1]
+      if (!event || data === undefined) continue
+      const payload = JSON.parse(data)
+      if (event === 'delta') {
+        text += payload.text
+        onDelta?.(text)
+      } else if (event === 'done') {
+        return payload
+      } else if (event === 'error') {
+        throw new ApiError(payload.message, 503, payload)
+      }
+    }
+  }
+  throw new ApiError('Bernie stopped before finishing her answer', 503, { reason: 'provider_error' })
+}
+
 export const listThreads = () => request('/bernie/threads', { auth: true })
 export const readThread = (threadId) =>
   request(`/bernie/threads/${threadId}`, { auth: true })

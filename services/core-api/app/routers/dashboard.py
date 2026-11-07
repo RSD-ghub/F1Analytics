@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.config import Settings, get_settings
 from app.models.schemas import HealthSummary, SystemStatus
 from app.routers.blog import WINDOW_PREFERENCE, race_scores
+from app.services import weather
 from app.services.downstream import ServiceClient, gather_optional
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,10 @@ class NextRaceView(BaseModel):
     #: own ``status``, so "the grid is not confirmed yet" is shown as such
     #: rather than as a missing panel.
     simulation: Optional[Dict[str, Any]] = None
+    #: Race-window rain forecast. ``None`` until the race is inside the
+    #: forecast horizon (or when the circuit has no location). Shown to
+    #: readers only: the forecast model does not use weather.
+    weather: Optional[Dict[str, Any]] = None
     unavailable: Unavailable = Field(default_factory=Unavailable)
 
 
@@ -168,6 +173,11 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
     fetched = await gather_optional(**calls)
 
     circuit = await _with_character(clients, fetched.get("circuit"))
+    forecast = await weather.race_forecast(
+        circuit, weekend.get("race_start_utc"),
+        url=settings.weather_forecast_url,
+        timeout=settings.weather_timeout_seconds,
+    )
 
     return NextRaceView(
         weekend=weekend,
@@ -176,6 +186,7 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         qualifying_freshness=fetched.get("freshness"),
         circuit=circuit,
         simulation=fetched.get("simulation"),
+        weather=forecast,
         unavailable=Unavailable(panels=fetched["_unavailable"]),
     )
 

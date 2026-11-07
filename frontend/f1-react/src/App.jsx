@@ -1,5 +1,6 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Layout from './components/Layout'
+import ErrorBoundary from './components/ErrorBoundary'
 import Bernie from './pages/Bernie'
 import Strategy from './pages/Strategy'
 import Championship from './pages/Championship'
@@ -23,8 +24,11 @@ import RaceReview from './pages/RaceReview'
  * conversations are private and are the only thing that spends model calls.
  */
 export default function App() {
+  const { pathname } = useLocation()
   return (
     <Layout>
+      {/* Keyed on the path, so a crash on one page clears on navigating away. */}
+      <ErrorBoundary key={pathname}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/next-race" element={<NextRace />} />
@@ -45,6 +49,7 @@ export default function App() {
         <Route path="/register" element={<Login mode="register" />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </Layout>
   )
 }
