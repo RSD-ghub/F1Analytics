@@ -40,7 +40,7 @@ _POLICIES = {
         # Recent races' laps, stops and race control, reduced: a Mongo scan
         # of thousands of laps per Bernie turn otherwise.
         (r"/circuits/\d+/\d+/strategy", Policy(HOUR, ("ingestion",))),
-        (r"/data/(seasons|results|practice|qualifying)", Policy(10 * MINUTE, ("ingestion",))),
+        (r"/data/(seasons|results|practice|qualifying|stints|pit_stops)", Policy(10 * MINUTE, ("ingestion",))),
         (r"/news", Policy(5 * MINUTE, ("news",))),
         # A race week's bounds come from the weekend record, so both domains.
         (r"/news/(weekend/\d+/\d+|search)", Policy(5 * MINUTE, ("news", "ingestion"))),

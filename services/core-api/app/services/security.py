@@ -55,6 +55,10 @@ def require_secret(secret: str) -> str:
     return secret
 
 
+#: bcrypt reads at most this many bytes of a password (see MAX_PASSWORD_BYTES).
+BCRYPT_MAX_BYTES = 72
+
+
 def hash_password(password: str) -> str:
     """bcrypt with a per-password salt, generated for us.
 
@@ -70,8 +74,12 @@ def verify_password(password: str, hashed: str) -> bool:
     A corrupt stored hash must read as "wrong password", not as a 500 — the
     error response itself would tell an attacker that the account exists.
     """
+    # Accounts made under bcrypt 4 may have a longer password, of which bcrypt
+    # only ever hashed the first 72 bytes. bcrypt 5 raises on such input, so cut
+    # it the way the hash was made, or those accounts could never log in again.
+    candidate = password.encode("utf-8")[:BCRYPT_MAX_BYTES]
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(candidate, hashed.encode("utf-8"))
     except (ValueError, TypeError):
         logger.warning("stored password hash is unreadable; treating as a mismatch")
         return False

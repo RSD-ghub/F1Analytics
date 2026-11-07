@@ -13,10 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
-from app.dependencies import get_reconciler, get_store
+from app.dependencies import get_reconciler, get_store, get_watchdog
 from app.models.schemas import (
     RACE,
     SPRINT,
+    HeldPrediction,
     Market,
     PredictionScore,
     RaceOutcome,
@@ -25,6 +26,7 @@ from app.models.schemas import (
 from app.services.clients import UpstreamUnavailable
 from app.services.reconciler import Reconciler
 from app.services.storage import ScoringStore
+from app.services.watchdog import Watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,29 @@ class ReconcileResponse(BaseModel):
     reconciled: bool
     scored: int = 0
     message: str = ""
+    #: Forecasts left unscored because a driver is spelled differently in the
+    #: forecast and the results. Fix the names and reconcile again.
+    held: List[HeldPrediction] = []
+
+
+def _reconciled(season: int, round_number: int, outcome, scores) -> ReconcileResponse:
+    message = ""
+    if outcome.held:
+        pairs = sorted({
+            "{} / {}".format(m.forecast_name, m.result_name)
+            for held in outcome.held
+            for m in held.mismatches
+        })
+        message = (
+            "held {} forecast(s): the forecast and the results spell a driver "
+            "differently ({}). Fix the names, then reconcile again.".format(
+                len(outcome.held), "; ".join(pairs)
+            )
+        )
+    return ReconcileResponse(
+        season=season, round=round_number, reconciled=True, scored=len(scores),
+        message=message, held=outcome.held,
+    )
 
 
 def _guard(exc: Exception) -> HTTPException:
@@ -71,9 +96,7 @@ async def reconcile_race(
             reconciled=False,
             message="no classified winner ingested yet; nothing to score",
         )
-    return ReconcileResponse(
-        season=season, round=round_number, reconciled=True, scored=len(scores)
-    )
+    return _reconciled(season, round_number, outcome, scores)
 
 
 @router.post(
@@ -99,9 +122,7 @@ async def reconcile_sprint(
             reconciled=False,
             message="no classified sprint winner ingested yet; nothing to score",
         )
-    return ReconcileResponse(
-        season=season, round=round_number, reconciled=True, scored=len(scores)
-    )
+    return _reconciled(season, round_number, outcome, scores)
 
 
 @router.post("/reconcile/{season}", response_model=List[PredictionScore])
@@ -176,3 +197,34 @@ async def get_outcome(
             detail="{}-{} has not been reconciled".format(season, round_number),
         )
     return outcome
+
+
+# ── Watchdog ─────────────────────────────────────────────────────────────────
+
+
+class WatchdogAlert(BaseModel):
+    key: str
+    title: str
+    message: str
+
+
+@router.get("/watchdog", response_model=List[WatchdogAlert])
+async def watchdog_problems(watchdog: Watchdog = Depends(get_watchdog)):
+    """What the watchdog would alert about right now. Sends nothing."""
+    try:
+        found = await watchdog.check()
+    except Exception as exc:
+        raise _guard(exc)
+    return [WatchdogAlert(key=a.key, title=a.title, message=a.message) for a in found]
+
+
+@router.post("/watchdog/test")
+async def watchdog_test(watchdog: Watchdog = Depends(get_watchdog)):
+    """Send one test alert, to check the webhook reaches your phone or chat."""
+    delivered = await watchdog.send_test()
+    if not delivered:
+        raise HTTPException(
+            status_code=502,
+            detail="not delivered: set ALERT_WEBHOOK_URL, or see scoring-service's log",
+        )
+    return {"delivered": True}

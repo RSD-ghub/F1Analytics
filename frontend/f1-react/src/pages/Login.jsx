@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Link, useNavigate } from 'react-router-dom'
 import { login, register } from '../api/f1Api'
 import { useAuth } from '../context/useAuth'
@@ -17,6 +18,7 @@ import { Label } from '@/components/ui/label'
  */
 export default function Login({ mode = 'login' }) {
   const isRegister = mode === 'register'
+  usePageTitle(isRegister ? 'Create an account' : 'Sign in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)

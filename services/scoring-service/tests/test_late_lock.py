@@ -85,6 +85,9 @@ class _Store:
     async def list_scores(self, season=None):
         return list(self.saved)
 
+    async def list_outcomes(self, season=None):
+        return []
+
 
 class _Ingestion:
     def __init__(self, results):
@@ -92,6 +95,10 @@ class _Ingestion:
 
     async def race_results(self, season, round_number):
         return self._r
+
+    async def season_results(self, season):
+        # No history, so these races are scored without a grid baseline.
+        return []
 
 
 def _results():
