@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useNavigate } from 'react-router-dom'
 
 import { Link } from 'react-router-dom'
@@ -44,6 +45,7 @@ function daysUntil(iso) {
 }
 
 export default function Home() {
+  usePageTitle(null)
   const navigate = useNavigate()
   const state = useAsync(() => getGlobe(), [])
   // Only for the circuit's outline on the hero card. If it fails the card

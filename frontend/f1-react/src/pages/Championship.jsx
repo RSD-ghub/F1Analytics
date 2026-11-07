@@ -1,4 +1,5 @@
 import { getChampionship } from '../api/f1Api'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useAsync } from '../hooks/useAsync'
 import { Panel, Loading, Unavailable, Bar } from '../components/Panel'
 import { HundredRaces } from '../components/Odds'
@@ -15,6 +16,7 @@ import { Podium, RankList, RankRow, Segmented } from '../components/Pit'
  * imply more foresight than the method has.
  */
 export default function Championship() {
+  usePageTitle('Championship')
   const season = new Date().getUTCFullYear()
   const state = useAsync(() => getChampionship(season), [season])
 
