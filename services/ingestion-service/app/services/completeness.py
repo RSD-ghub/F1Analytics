@@ -61,6 +61,7 @@ def run_integrity_checks(
         checks.append(_check_laps_present(payload))
         checks.append(_check_every_driver_has_laps(payload))
         checks.append(_check_lap_numbering(payload))
+        checks.append(_check_full_distance(payload))
         checks.append(_check_stint_laps_reconcile(payload))
         checks.append(_check_pit_stops_within_stints(payload))
 
@@ -207,6 +208,42 @@ def _check_lap_numbering(payload: SessionPayload) -> IntegrityCheck:
             "{} drivers with contiguous lap numbering".format(len(laps_by_driver))
             if not offenders
             else "; ".join(offenders[:5])
+        ),
+    )
+
+
+def _check_full_distance(payload: SessionPayload) -> IntegrityCheck:
+    """Lap data must reach as far as the classification says the race went.
+
+    ``lap_numbering_contiguous`` only finds holes. A feed that stops early,
+    with every car's laps contiguous up to the same lap, passes it. Mexico
+    2026 did exactly that: official timing ended at the red flag on lap 56 of
+    71, and the round was recorded complete with the last 15 laps missing.
+
+    Judged on the winner, whose classified lap count is the race distance.
+    A classification without lap counts (older feeds) cannot be judged.
+    """
+    winner = next(
+        (row for row in payload.results if row.position == 1 and row.laps_completed > 0),
+        None,
+    )
+    if winner is None:
+        return IntegrityCheck(
+            name="laps_reach_distance",
+            passed=True,
+            detail="no classified lap count to judge",
+        )
+    held = max((row.lap for row in payload.laps if row.driver == winner.driver), default=0)
+    distance = winner.laps_completed
+    return IntegrityCheck(
+        name="laps_reach_distance",
+        passed=held >= distance,
+        detail=(
+            "laps reach the race distance of {}".format(distance)
+            if held >= distance
+            else "lap data stops at lap {} of {} for the winner, {}".format(
+                held, distance, winner.driver
+            )
         ),
     )
 

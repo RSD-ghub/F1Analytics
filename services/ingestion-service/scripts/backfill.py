@@ -11,6 +11,7 @@ guarantee — which is exactly what the ad-hoc pull scripts this replaces did no
     python scripts/backfill.py full 2018 2025
     python scripts/backfill.py full 2018 2025 --refresh   # re-read, after a schema change
     python scripts/backfill.py sprints 2021 2025
+    python scripts/backfill.py full 2026 2026 --round 19   # re-read one race
 
 ``full`` adds laps, stints, pit stops, weather and race control on top of
 ``results``. It is much slower — lap frames are the bulk of what FastF1 serves —
@@ -31,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.models.schemas import IngestDepth  # noqa: E402
 from app.services.fastf1_source import FastF1Source  # noqa: E402
+from app.services.openf1_source import OpenF1Client  # noqa: E402
 from app.services.ingest_runner import IngestRunner  # noqa: E402
 from app.services.storage import IngestionStore  # noqa: E402
 from f1_common import cache  # noqa: E402
@@ -44,6 +46,18 @@ logger = logging.getLogger("backfill")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATABASE = os.getenv("MONGO_DATABASE", "f1_ingestion")
 CACHE = os.getenv("FASTF1_CACHE", "fastf1-data/cache")
+OPENF1 = os.getenv("OPENF1_BASE_URL", "https://api.openf1.org/v1")
+
+
+def _round_arg(args):
+    """The value after ``--round``, or None."""
+    if "--round" not in args:
+        return None
+    at = args.index("--round")
+    try:
+        return int(args[at + 1])
+    except (IndexError, ValueError):
+        raise SystemExit("--round needs a round number")
 
 
 async def main() -> int:
@@ -61,6 +75,10 @@ async def main() -> int:
     # network; set BACKFILL_SESSIONS_PER_HOUR=0 to drop the quota pacing that
     # only exists to protect API calls that are not being made.
     refresh = "--refresh" in sys.argv[4:]
+    # ``--round N`` re-reads that one race of ``first`` and nothing else,
+    # always as a refresh. A full-season refresh to correct one round rewrites
+    # every other round with it.
+    only_round = _round_arg(sys.argv[4:])
     # Writes from here retire what core-api has cached, as the service's own
     # would. Without REDIS_URL they are not announced, and cached answers
     # catch up when their TTLs run out.
@@ -69,14 +87,31 @@ async def main() -> int:
     store = IngestionStore(get_database(client, DATABASE))
     await store.ensure_indexes()
     runner = IngestRunner(
-        source=FastF1Source(CACHE, load_telemetry=False),
+        # OpenF1 fills a race official timing has no laps for, and finishes
+        # one whose official laps stop early (a red-flag restart).
+        source=FastF1Source(CACHE, load_telemetry=False, openf1=OpenF1Client(OPENF1)),
         store=store, max_attempts=3, backoff_seconds=2.0,
         # Paced: an unthrottled full-depth run burns FastF1's hourly quota in
         # minutes and then stops, turning one pass into four across four hours.
         sessions_per_hour=int(os.getenv("BACKFILL_SESSIONS_PER_HOUR", "55")),
     )
 
-    if mode == "full":
+    if only_round is not None:
+        if mode != "full":
+            raise SystemExit("--round works with 'full' only")
+        await runner.refresh_manifest(first, first)
+        expected = [
+            session for session in await store.list_expected_sessions(first, first)
+            if session.round == only_round
+        ]
+        if not expected:
+            raise SystemExit("no round {} in {}".format(only_round, first))
+        state = await runner.ingest_session(expected[0], depth=IngestDepth.FULL)
+        logger.info("%s -> %s", expected[0].key, state.state.value)
+        for check in getattr(state.integrity, "checks", None) or []:
+            if not check.passed:
+                logger.warning("  %s: %s", check.name, check.detail)
+    elif mode == "full":
         # Everything results depth covers, plus the lap-level frames. Telemetry
         # stays off (see FastF1Source above): it is a derived per-lap summary,
         # it multiplies the cost several times over, and nothing scores on it.

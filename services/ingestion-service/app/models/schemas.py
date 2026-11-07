@@ -168,6 +168,9 @@ class ResultRow(RowBase):
     classified_position: str = ""
     # "Finished", "Lapped", "Retired", "Accident", "Engine", ...
     status: str = ""
+    #: Laps completed, from the classification. 0 means unknown. It is what
+    #: tells a race that ran short from lap data that stopped short.
+    laps_completed: int = 0
 
 
 class GridSource(str, Enum):
