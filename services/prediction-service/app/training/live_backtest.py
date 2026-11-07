@@ -54,12 +54,18 @@ def order_holds(state: RaceState) -> Tuple[np.ndarray, np.ndarray]:
 
 def score(positions: np.ndarray, retired: np.ndarray, actual: Sequence[int]) -> Dict[str, float]:
     """One forecast against one race. ``actual`` = classified place, 999 if not."""
+    win = ((positions == 1) & ~retired).mean(axis=0)
+    podium = ((positions <= PODIUM) & ~retired).mean(axis=0)
+    return score_probabilities(win, podium, positions.mean(axis=0), actual)
+
+
+def score_probabilities(win: np.ndarray, podium: np.ndarray, expected: np.ndarray,
+                        actual: Sequence[int]) -> Dict[str, float]:
+    """``score`` for a forecast given as per-driver chances and expected places."""
     actual = np.asarray(actual)
     n = len(actual)
     finished = (actual >= 1) & (actual <= n)
-    win = ((positions == 1) & ~retired).mean(axis=0)
-    podium = ((positions <= PODIUM) & ~retired).mean(axis=0)
-    expected = positions.mean(axis=0)
+    win, podium, expected = (np.asarray(v, float) for v in (win, podium, expected))
     winner = np.flatnonzero(actual == 1)
     out = {
         "podium_brier": float(((podium - ((actual <= PODIUM) & finished)) ** 2).sum()),

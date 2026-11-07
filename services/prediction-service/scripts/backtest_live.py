@@ -5,6 +5,7 @@ Usage:
     python scripts/backtest_live.py [--api-url http://localhost:8001]
         [--validation-seasons 2022,2023] [--test-seasons 2024,2025]
         [--runs 1000] [--drop-laps 0.0] [--report live_backtest.json]
+        [--network [--write-network [path]]]
 
 Read-only: it reads the ingestion API and, with ``--report``, writes one JSON
 file. Nothing is changed in the database or the model artifacts.
@@ -19,6 +20,14 @@ lap only (``live_state.race_state``).
 **What it fits.** ``prior_laps``, how many clean laps of a car's own running
 count as much as its pre-race pace, is chosen on the validation seasons. The
 test seasons are then scored once with it.
+
+**The live network** (``--network``, ``app/training/live_network.py``) is
+trained on replays of the validation seasons at every 5% of distance, its
+penalty chosen by holding out one validation season at a time, and scored on
+the test seasons as ``live_net`` beside the simulator alone. It is enabled only
+if, per race, it beats the simulator alone on winner log loss plus podium
+Brier with a 95% interval clear of zero. ``--write-network`` writes the
+artifact either way, with that verdict in ``enabled``.
 
 **What it prints**, per checkpoint (share of race distance): the live forecast
 against the pre-race forecast and against "the order holds", on winner log
@@ -35,6 +44,7 @@ import logging
 import os
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -47,6 +57,7 @@ from app.services.lap_simulation import LapSimulationParameters  # noqa: E402
 from app.services.live_state import WET_COMPOUNDS, race_state  # noqa: E402
 from app.services.model import LAP_SIMULATION_PATH, RaceModel, feature_names  # noqa: E402
 from app.training import corpus, dataset, lap_profiles, live_backtest, plackett_luce, retirements  # noqa: E402
+from app.training import live_network  # noqa: E402
 from train_model import TRAINING_FROM_SEASON, _load_practice  # noqa: E402
 from train_neural import calibration_races  # noqa: E402
 
@@ -55,6 +66,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("backtest_live")
 
 PRIOR_LAPS_CANDIDATES = (1.0, 3.0, 10.0, 30.0)
+#: Where the network is trained: every 5% of race distance.
+TRAIN_FRACTIONS = tuple(round(0.05 * i, 2) for i in range(1, 20))
+LIVE_NETWORK_PATH = os.path.join(os.path.dirname(LAP_SIMULATION_PATH), "live_network.json")
 
 
 class Race:
@@ -103,7 +117,46 @@ async def load_races(client, results, quali, practice, seasons):
     return out
 
 
-def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_cache):
+def live_sample(race, state, outcome, strengths, params, prior_laps, profile):
+    """The network's view of one race at one checkpoint, and what happened."""
+    positions, retired = outcome
+    pace, _ = live_forecast.posterior_pace(live_forecast.prior_pace(strengths, params),
+                                           state, params.race_day_sd, prior_laps)
+    sim_win = ((positions == 1) & ~retired).mean(axis=0)
+    sim_podium = ((positions <= live_backtest.PODIUM) & ~retired).mean(axis=0)
+    x = live_network.features(state, pace, positions.mean(axis=0), retired.mean(axis=0), profile)
+    actual = np.asarray(race.actual)
+    finished = (actual >= 1) & (actual <= len(actual))
+    winner = int(np.flatnonzero(actual == 1)[0]) if (actual == 1).any() else -1
+    return live_network.Sample(x, sim_win, sim_podium, ~state.retired, winner,
+                               (finished & (actual <= live_backtest.PODIUM)).astype(float),
+                               group=race.key[0])
+
+
+def network_samples(races, model, profiles, params, prior_laps, runs):
+    """Replays at every 5% of distance, as training rows for the network."""
+    samples = []
+    for race in races:
+        profile = lap_profiles.profile_for(profiles, race.circuit)
+        strengths = model.strengths(race.drivers)
+        names = [d.driver for d in race.drivers]
+        for lap in live_backtest.checkpoint_laps(race.total_laps, TRAIN_FRACTIONS):
+            if lap < 1:
+                continue
+            state = race_state(names, race.laps, race.stops, race.messages, race.results,
+                               upto=lap, total_laps=race.total_laps, profile=profile)
+            outcome = live_forecast.forecast(
+                race.drivers, strengths, profile, params, state, seed=race.seed + lap,
+                runs=runs, prior_laps=prior_laps,
+                retirement_race_k=model.retirement_race_k,
+                retirement_team_k=model.retirement_team_k)
+            samples.append(live_sample(race, state, outcome, strengths, params,
+                                       prior_laps, profile))
+    return samples
+
+
+def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_cache,
+           network=None):
     """Score rows for one race at every checkpoint."""
     profile = lap_profiles.profile_for(profiles, race.circuit)
     strengths = model.strengths(race.drivers)
@@ -132,17 +185,47 @@ def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_
         state = race_state(names, laps, race.stops, race.messages, race.results,
                            upto=lap, total_laps=race.total_laps, profile=profile)
         add("order_holds", live_backtest.order_holds(state))
-        add("live", live_forecast.forecast(
+        outcome = live_forecast.forecast(
             race.drivers, strengths, profile, params, state,
-            seed=race.seed + lap, runs=runs, prior_laps=prior_laps, **kwargs))
+            seed=race.seed + lap, runs=runs, prior_laps=prior_laps, **kwargs)
+        add("live", outcome)
+        if network is not None:
+            sample = live_sample(race, state, outcome, strengths, params, prior_laps, profile)
+            win, podium = network.predict(sample.x, sample.sim_win, sample.sim_podium,
+                                          sample.running)
+            row = live_backtest.score_probabilities(win, podium, outcome[0].mean(axis=0),
+                                                    race.actual)
+            row.update(race=race.key, method="live_net", checkpoint=fraction, wet=race.wet)
+            rows.append(row)
     return rows
 
 
-def run_all(races, model, profiles, params, prior_laps, runs, drop_rate):
+def run_all(races, model, profiles, params, prior_laps, runs, drop_rate, network=None):
     cache, rows = {}, []
     for race in races:
-        rows.extend(replay(race, model, profiles, params, prior_laps, runs, drop_rate, cache))
+        rows.extend(replay(race, model, profiles, params, prior_laps, runs, drop_rate, cache,
+                           network))
     return rows
+
+
+def network_gate(rows, resamples=2000, seed=0):
+    """Live with the network minus live alone, on winner log loss plus podium
+    Brier averaged over the checkpoints after the start, per race; with a 95%
+    bootstrap interval over races. The network is enabled only if the whole
+    interval is below zero."""
+    per_race = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        if row["checkpoint"] > 0 and row["method"] in ("live", "live_net") and not row["wet"]:
+            per_race[row["race"]][row["method"]].append(
+                row["winner_log_loss"] + row["podium_brier"])
+    diffs = np.array([np.mean(v["live_net"]) - np.mean(v["live"])
+                      for v in per_race.values() if v["live"] and v["live_net"]])
+    if not diffs.size:
+        return float("nan"), (float("nan"), float("nan")), False
+    rng = np.random.default_rng(seed)
+    means = diffs[rng.integers(0, diffs.size, size=(resamples, diffs.size))].mean(axis=1)
+    low, high = np.percentile(means, [2.5, 97.5])
+    return float(diffs.mean()), (float(low), float(high)), bool(high < 0)
 
 
 def report(rows, title):
@@ -155,16 +238,20 @@ def report(rows, title):
         logger.info("%-9s %-12s %6d %10.3f %8.2f %8.3f %9.2f", "{:.0%}".format(checkpoint),
                     method, m["races"], m["winner_log_loss"], m["winner_hit"],
                     m["podium_brier"], m["position_error"])
-    logger.info("\nlive minus baseline (negative = live better), 95% interval over races:")
+    logger.info("\nmethod minus baseline (negative = method better), 95% interval over races:")
     for checkpoint in live_backtest.CHECKPOINTS[1:]:
-        for baseline in ("pre_race", "order_holds"):
+        methods = {r["method"] for r in rows}
+        pairs = [("live", b) for b in ("pre_race", "order_holds")]
+        if "live_net" in methods:
+            pairs += [("live_net", "live"), ("live_net", "order_holds")]
+        for method, baseline in pairs:
             parts = []
             for measure in ("winner_log_loss", "podium_brier"):
                 mean, (low, high), count = live_backtest.paired_difference(
-                    rows, "live", baseline, checkpoint, measure)
+                    rows, method, baseline, checkpoint, measure)
                 parts.append("{} {:+.3f} [{:+.3f}, {:+.3f}]".format(measure, mean, low, high))
-            logger.info("  %-4s vs %-12s %s", "{:.0%}".format(checkpoint), baseline,
-                        "   ".join(parts))
+            logger.info("  %-4s %-8s vs %-12s %s", "{:.0%}".format(checkpoint), method,
+                        baseline, "   ".join(parts))
     return {"{}@{}".format(m, c): v for (m, c), v in summary.items()}
 
 
@@ -189,6 +276,10 @@ def main() -> int:
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--artifact", default=LAP_SIMULATION_PATH)
     parser.add_argument("--report", default=None, help="write a JSON report here")
+    parser.add_argument("--network", action="store_true",
+                        help="train the live network on the validation seasons and score it")
+    parser.add_argument("--write-network", default=None, nargs="?", const=LIVE_NETWORK_PATH,
+                        help="with --network, write the network artifact (default %(const)s)")
     args = parser.parse_args()
     validation_seasons = [int(s) for s in args.validation_seasons.split(",") if s]
     test_seasons = [int(s) for s in args.test_seasons.split(",") if s]
@@ -221,8 +312,10 @@ def main() -> int:
     output = {"runs": args.runs, "drop_laps": args.drop_laps,
               "validation_seasons": validation_seasons, "test_seasons": test_seasons}
     prior_laps = args.prior_laps
-    if prior_laps is None and validation_seasons:
+    validation = None
+    if (prior_laps is None or args.network) and validation_seasons:
         validation = asyncio.run(load_races(client, results, quali, practice, validation_seasons))
+    if prior_laps is None and validation:
         logger.info("\nchoosing prior_laps on %s (%s races):", validation_seasons, len(validation))
         search = {}
         for candidate in PRIOR_LAPS_CANDIDATES:
@@ -235,8 +328,25 @@ def main() -> int:
     output["prior_laps"] = prior_laps
     logger.info("prior_laps: %.1f", prior_laps)
 
+    network = None
+    if args.network:
+        if not validation:
+            logger.error("--network needs validation seasons to train on")
+            return 2
+        samples = network_samples(validation, model, profiles, params, prior_laps, args.runs)
+        l2, search, simulator_loss = live_network.choose_l2(samples)
+        logger.info("\nlive network on %s samples from %s races; held-out loss by season "
+                    "(simulator alone %.4f):", len(samples), len(validation), simulator_loss)
+        for value, loss in search.items():
+            logger.info("  l2 %6.1f   %.4f", value, loss)
+        network = live_network.LiveNetwork(l2=l2).fit(samples)
+        output["network_search"] = {str(k): v for k, v in search.items()}
+        output["network_simulator_loss"] = simulator_loss
+        output["network_l2"] = l2
+
     test = asyncio.run(load_races(client, results, quali, practice, test_seasons))
-    rows = run_all(test, model, profiles, params, prior_laps, args.runs, args.drop_laps)
+    rows = run_all(test, model, profiles, params, prior_laps, args.runs, args.drop_laps,
+                   network)
     dry = [r for r in rows if not r["wet"]]
     wet = [r for r in rows if r["wet"]]
     output["dry"] = report(dry, "held-out {} dry races ({} races)".format(
@@ -244,6 +354,26 @@ def main() -> int:
     if wet:
         output["wet"] = report(wet, "held-out {} wet races ({} races)".format(
             test_seasons, len({r["race"] for r in wet})))
+    if network is not None:
+        mean, (low, high), enabled = network_gate(rows)
+        logger.info("\nnetwork gate (dry, live_net minus live, winner log loss + podium Brier "
+                    "per race): %+.4f [%+.4f, %+.4f] -> %s", mean, low, high,
+                    "ENABLE" if enabled else "keep the simulator alone")
+        output["network_gate"] = {"mean": mean, "low": low, "high": high, "enabled": enabled}
+        if args.write_network:
+            artifact = {
+                "version": live_network.LIVE_NETWORK_VERSION,
+                "fitted_at": datetime.now(timezone.utc).isoformat(),
+                "training_seasons": validation_seasons,
+                "test_seasons": test_seasons,
+                "prior_laps": prior_laps,
+                "enabled": enabled,
+                "gate": output["network_gate"],
+                "network": network.to_dict(),
+            }
+            with open(args.write_network, "w") as handle:
+                json.dump(artifact, handle, sort_keys=True)
+            logger.info("wrote %s", os.path.abspath(args.write_network))
     if args.report:
         with open(args.report, "w") as handle:
             json.dump(output, handle, indent=2, sort_keys=True)
