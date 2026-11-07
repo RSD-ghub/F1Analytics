@@ -87,6 +87,37 @@ def _stint_for(stints: List[Dict[str, Any]], lap_number: int) -> Optional[Dict[s
     return best
 
 
+def _align_stints_to_pits(frame: pd.DataFrame, stint_of: Dict[int, List[Dict[str, Any]]],
+                          numbers: Dict[str, int]) -> None:
+    """Move each tyre change onto the lap the car actually pitted.
+
+    OpenF1's pit records are reliable; its stint ranges are not always. At
+    Singapore 2026 it had Stroll on softs for 1 lap and mediums for 35,
+    while official timing (and OpenF1's own pit record) put his only stop
+    on lap 26. A tyre change can only happen in the pits, so when a driver
+    has exactly one more stint than stops, the stops decide where each
+    stint ends and OpenF1 only supplies the compounds, in order. Any other
+    shape (a stop with no tyre change, a missing record) is left as it was.
+    """
+    for code, number in numbers.items():
+        stints = sorted(stint_of.get(number, []), key=lambda s: int(s.get("stint_number") or 0))
+        mine = frame["Driver"] == code
+        in_laps = sorted(int(n) for n in frame.loc[mine & frame["PitInTime"].notna(), "LapNumber"])
+        if not stints or len(stints) != len(in_laps) + 1:
+            continue
+        starts = [1] + [lap + 1 for lap in in_laps]
+        for i, row in frame[mine].iterrows():
+            lap = int(row["LapNumber"])
+            k = max(j for j, first in enumerate(starts) if first <= lap) if lap >= 1 else 0
+            stint = stints[k]
+            frame.at[i, "Stint"] = int(stint.get("stint_number") or k + 1)
+            frame.at[i, "Compound"] = (stint.get("compound") or UNKNOWN_COMPOUND).upper()
+            age = stint.get("tyre_age_at_start")
+            frame.at[i, "TyreLife"] = (
+                float(age) + (lap - starts[k]) + 1 if age is not None else float("nan")
+            )
+
+
 class OpenF1Unavailable(RuntimeError):
     """OpenF1 could not answer, or has no such session."""
 
@@ -334,6 +365,7 @@ class OpenF1Client:
                     continue
                 frame.at[in_row, "PitInTime"] = pd.Timestamp(entered)
                 frame.at[out_row, "PitOutTime"] = pd.Timestamp(entered) + duration
+            _align_stints_to_pits(frame, stint_of, numbers)
         else:
             for i, row in frame[frame["IsPitOutLap"]].iterrows():
                 marker = row["LapStartDate"]

@@ -204,3 +204,24 @@ def test_a_lap_no_stint_covers_joins_the_nearest_stint():
     last = laps[(laps["Driver"] == "NOR") & (laps["LapNumber"] == 6)].iloc[0]
     assert (last["Compound"], last["Stint"]) == ("HARD", 2)
     assert "Unknown" not in set(laps["Compound"])
+
+
+def test_a_tyre_change_is_moved_onto_the_lap_the_car_pitted():
+    """Singapore 2026: OpenF1 had Stroll's change on lap 1; he pitted on 26."""
+    routes = dict(ROUTES)
+    routes["stints"] = [
+        {"driver_number": 4, "stint_number": 1, "lap_start": 1, "lap_end": 1,
+         "compound": "SOFT", "tyre_age_at_start": 0},
+        {"driver_number": 4, "stint_number": 2, "lap_start": 2, "lap_end": 6,
+         "compound": "MEDIUM", "tyre_age_at_start": 0},
+        {"driver_number": 12, "stint_number": 1, "lap_start": 1, "lap_end": 6,
+         "compound": "HARD", "tyre_age_at_start": 2},
+    ]
+    client, _ = _client(routes)
+    laps, _, _ = client.laps_frame(11404, with_pits=True)
+
+    stints = transforms.extract_stints(MEXICO, laps, {})
+    assert sorted((s.driver, s.stint, s.compound, s.laps) for s in stints) == [
+        ("ANT", 1, "HARD", 6), ("NOR", 1, "SOFT", 3), ("NOR", 2, "MEDIUM", 3)]
+    lap4 = laps[(laps["Driver"] == "NOR") & (laps["LapNumber"] == 4)].iloc[0]
+    assert lap4["TyreLife"] == 1
