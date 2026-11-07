@@ -179,7 +179,10 @@ def test_the_search_route_does_not_live_under_the_dataset_routes():
     the catch-all from ever shadowing it."""
     from app.main import app
 
-    paths = {route.path for route in app.routes}
+    # The OpenAPI schema lists every mounted path. Reading `app.routes`
+    # directly breaks on newer FastAPI, where an included router appears as a
+    # wrapper with no `.path` of its own.
+    paths = set(app.openapi()["paths"])
 
     assert "/regulations/search" in paths
     assert not any(p.startswith("/data/regulations") for p in paths)
