@@ -182,6 +182,7 @@ def _observation_for(
         season=season,
         round_number=round_number,
         weight=eras.sample_weight(season, target_season, decay=decay),
+        drivers=[driver.driver for driver in snapshot.drivers],
     )
 
 

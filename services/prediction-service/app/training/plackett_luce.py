@@ -54,7 +54,7 @@ class RaceObservation:
     being ranked.
     """
 
-    __slots__ = ("features", "order", "season", "round", "weight")
+    __slots__ = ("features", "order", "season", "round", "weight", "drivers")
 
     def __init__(
         self,
@@ -63,8 +63,12 @@ class RaceObservation:
         season: int = 0,
         round_number: int = 0,
         weight: float = 1.0,
+        drivers: Optional[Sequence[str]] = None,
     ) -> None:
         self.features = features
+        #: Row labels, for analyses that join per-driver data onto the matrix.
+        #: Not used by the fit.
+        self.drivers = list(drivers) if drivers is not None else None
         self.order = list(order)
         self.season = season
         self.round = round_number

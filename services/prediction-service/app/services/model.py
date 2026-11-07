@@ -164,6 +164,24 @@ BASE_FEATURES = (
 #:     car rating      +0.003 points mean, better in 4 of 9 seasons
 #:
 #: Better in 57% of races at best; the interval does not clear zero. Withheld.
+#:
+#: Race weather (``training/weather.py``, ``scripts/backtest_weather.py``,
+#: measured 2026-10-31). Rain cannot enter on its own — the same shift for
+#: every driver changes nobody's odds — so three interactions, zero in a dry
+#: race, were tried: rain x grid, rain x recent form, rain x the driver's own
+#: shrunk wet record. Wetness is the share of laps on intermediates or wets
+#: (16 wet races 2019-2025), and the backtest was fed the rain that actually
+#: fell, the best case any forecast could reach. Rolling folds 2019-2025, 145
+#: races, log-likelihood per race against the current model:
+#:
+#:     rain x grid    all -0.85 [-2.48, +0.00]   wet races -8.27  [-23.6, -0.11]
+#:     rain x form    all -1.37 [-4.01, +0.00]   wet races -13.25 [-38.3, -0.10]
+#:     wet record     all -0.01 [-0.08, +0.04]   wet races -0.12  [-0.83, +0.38]
+#:     all three      all -1.39 [-4.07, +0.03]   wet races -13.46 [-38.9, +0.08]
+#:
+#: The first two are clearly worse on the wet races themselves: with a
+#: handful of wet races per training fold their weights overreact. The wet
+#: record is a true null. None enter; weather stays display-only.
 WITHHELD_FEATURES = (
     "driver_archetype_delta",
     "team_archetype_delta",
