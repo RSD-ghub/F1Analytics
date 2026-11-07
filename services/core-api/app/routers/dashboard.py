@@ -215,6 +215,26 @@ async def race_simulation(
     )
 
 
+@router.get("/live-replay/{season}/{round_number}")
+async def live_replay(
+    season: int,
+    round_number: int,
+    circuit: str = Query(""),
+    runs: int = Query(300, ge=50, le=2000),
+    step: int = Query(1, ge=1, le=10),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """A finished race forecast again lap by lap (the Live page's replay).
+    Passes through with a longer timeout: the first request builds it."""
+    client = ServiceClient("prediction", settings.prediction_service_url,
+                           settings.live_replay_timeout_seconds)
+    params: Dict[str, Any] = {"runs": runs, "step": step}
+    if circuit:
+        params["circuit"] = circuit
+    return await client.get(
+        "/live/{}/{}/replay".format(season, round_number), params)
+
+
 class LastRaceView(BaseModel):
     """The race that just happened, and how the forecast held up.
 

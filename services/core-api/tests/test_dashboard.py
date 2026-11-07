@@ -77,3 +77,31 @@ def test_downstream_failure_names_the_service():
     assert exc.service == "scoring"
     assert "scoring" in str(exc)
     assert "timed out" in str(exc)
+
+
+# ── live replay pass-through ─────────────────────────────────────────────────
+
+
+async def test_live_replay_passes_through_with_its_own_timeout(monkeypatch):
+    from app.config import Settings
+    from app.routers import dashboard
+
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, name, url, timeout):
+            seen["timeout"] = timeout
+
+        async def get(self, path, params=None):
+            seen["path"], seen["params"] = path, params
+            return {"frames": []}
+
+    monkeypatch.setattr(dashboard, "ServiceClient", FakeClient)
+    settings = Settings(jwt_secret="x" * 32, live_replay_timeout_seconds=99.0)
+    out = await dashboard.live_replay(2025, 7, circuit="", runs=300, step=2,
+                                      settings=settings)
+
+    assert out == {"frames": []}
+    assert seen["timeout"] == 99.0
+    assert seen["path"] == "/live/2025/7/replay"
+    assert seen["params"] == {"runs": 300, "step": 2}

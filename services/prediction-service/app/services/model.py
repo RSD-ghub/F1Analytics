@@ -256,6 +256,11 @@ LAP_SIMULATION_PATH = os.path.join(MODEL_STATE_DIR, LAP_SIMULATION_FILE)
 PACE_NETWORK_FILE = "pace_network.json"
 PACE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, PACE_NETWORK_FILE)
 
+#: The network that corrects the live forecast (``training/live_network.py``,
+#: ``scripts/backtest_live.py --network --write-network``).
+LIVE_NETWORK_FILE = "live_network.json"
+LIVE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, LIVE_NETWORK_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:

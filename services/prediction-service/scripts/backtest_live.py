@@ -55,7 +55,7 @@ from app.services import live_forecast  # noqa: E402
 from app.services.ingestion_client import IngestionClient  # noqa: E402
 from app.services.lap_simulation import LapSimulationParameters  # noqa: E402
 from app.services.live_state import WET_COMPOUNDS, race_state  # noqa: E402
-from app.services.model import LAP_SIMULATION_PATH, RaceModel, feature_names  # noqa: E402
+from app.services.model import LAP_SIMULATION_PATH, LIVE_NETWORK_PATH, RaceModel, feature_names  # noqa: E402
 from app.training import corpus, dataset, lap_profiles, live_backtest, plackett_luce, retirements  # noqa: E402
 from app.training import live_network  # noqa: E402
 from train_model import TRAINING_FROM_SEASON, _load_practice  # noqa: E402
@@ -68,7 +68,6 @@ logger = logging.getLogger("backtest_live")
 PRIOR_LAPS_CANDIDATES = (1.0, 3.0, 10.0, 30.0)
 #: Where the network is trained: every 5% of race distance.
 TRAIN_FRACTIONS = tuple(round(0.05 * i, 2) for i in range(1, 20))
-LIVE_NETWORK_PATH = os.path.join(os.path.dirname(LAP_SIMULATION_PATH), "live_network.json")
 
 
 class Race:
