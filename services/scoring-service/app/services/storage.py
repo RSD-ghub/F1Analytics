@@ -24,6 +24,8 @@ OUTCOMES = "outcomes"
 #: (season, round), and a sprint shares its round with a Grand Prix.
 SPRINT_OUTCOMES = "sprint_outcomes"
 SCORES = "scores"
+#: One document per alert already delivered, so each problem is sent once.
+ALERTS = "alerts_sent"
 
 
 class ScoringStore:
@@ -75,6 +77,16 @@ class ScoringStore:
     # ── Scores ───────────────────────────────────────────────────────────────
 
     @invalidates("scoring")
+    async def alert_sent(self, key: str) -> bool:
+        return await self._db[ALERTS].find_one({"key": key}) is not None
+
+    async def mark_alert_sent(self, key: str, message: str, sent_at) -> None:
+        await self._db[ALERTS].replace_one(
+            {"key": key},
+            {"key": key, "message": message, "sent_at": sent_at},
+            upsert=True,
+        )
+
     async def save_score(self, score: PredictionScore) -> None:
         await self._db[SCORES].replace_one(
             {"prediction_id": score.prediction_id},

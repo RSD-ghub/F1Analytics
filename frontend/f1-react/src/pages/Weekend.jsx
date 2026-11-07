@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useParams } from 'react-router-dom'
 import { getWeekend, getCircuit } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
@@ -31,6 +32,7 @@ const KIND_LABEL = {
 
 export default function Weekend() {
   const { season, round } = useParams()
+  usePageTitle(`${season} round ${round}`)
   /*
    * Two requests, not one, because they cost three orders of magnitude apart.
    *

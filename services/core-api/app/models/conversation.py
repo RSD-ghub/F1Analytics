@@ -59,14 +59,20 @@ class ThreadSummary(BaseModel):
     opening_question: str = ""
 
 
+#: Bernie questions are sent to the model with every later turn of the thread,
+#: so an unbounded one costs on every message. 2,000 characters is a long
+#: paragraph, far more than any real question needs.
+MAX_QUESTION_CHARS = 2000
+
+
 class AskRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
 
 
 class StartThreadRequest(BaseModel):
     season: int
     round: int
-    question: str
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
 
 
 class BernieTurnResponse(BaseModel):

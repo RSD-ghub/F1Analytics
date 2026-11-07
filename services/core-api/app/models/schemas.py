@@ -13,6 +13,11 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 #: Short enough to be typed, long enough that an offline crack is not trivial.
 MIN_PASSWORD_LENGTH = 10
 
+#: bcrypt only reads the first 72 bytes of a password, and bcrypt 5 refuses
+#: anything longer instead of quietly truncating it. Counted in UTF-8 bytes, not
+#: characters: 40 accented letters are already 80 bytes.
+MAX_PASSWORD_BYTES = 72
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -30,6 +35,11 @@ class RegisterRequest(BaseModel):
         if len(value) < MIN_PASSWORD_LENGTH:
             raise ValueError(
                 "password must be at least {} characters".format(MIN_PASSWORD_LENGTH)
+            )
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError(
+                "password must be at most {} bytes (plain letters count 1, "
+                "accented letters 2)".format(MAX_PASSWORD_BYTES)
             )
         return value
 

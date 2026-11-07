@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom'
 import { getNextRace, getLastRace } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { Panel, Loading, Unavailable, Probability, Caveats } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import VenuePhotos from '../components/VenuePhotos'
 import { OddsBar, HundredRaces, InPlainWords } from '../components/Odds'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
+import RaceHero from '../components/RaceHero'
+import { Podium, RankList, RankRow } from '../components/Pit'
 import LastRace from '../components/LastRace'
 import RaceSimulation from '../components/RaceSimulation'
+import RaceWeather from '../components/RaceWeather'
+import { refreshInterval } from '../lib/raceWeekend'
 
 /**
  * The upcoming weekend and whatever forecasts are locked for it.
@@ -22,7 +24,8 @@ import RaceSimulation from '../components/RaceSimulation'
  * reader is entitled to it.
  */
 export default function NextRace() {
-  const state = useAsync(() => getNextRace(), [])
+  const state = useAsync(() => getNextRace(), [], { refreshMs: refreshInterval })
+  usePageTitle(state.data?.weekend?.race_name || 'Next race')
   // Fetched separately so a scoring outage costs this panel and not the
   // forecast the page exists for.
   const last = useAsync(() => getLastRace(), [])
@@ -33,25 +36,29 @@ export default function NextRace() {
 
   const {
     weekend, predictions = [], sprint_predictions: sprintPredictions = [],
-    qualifying_freshness: freshness, circuit, simulation, unavailable,
+    qualifying_freshness: freshness, circuit, simulation, weather, unavailable,
   } = state.data
+  const live = refreshInterval(state.data) > 0
   if (!weekend)
     return <Unavailable what="The next race" reason="No upcoming race is on the calendar." />
 
-  const start = weekend.race_start_utc ? new Date(weekend.race_start_utc) : null
-
   return (
     <div className="stack">
-      <header className="page-head">
-        <p className="eyebrow">Round {weekend.round} · {weekend.season}</p>
-        <h1>{weekend.race_name}</h1>
-        {start && (
-          <p className="muted">
-            {start.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}
-            {weekend.is_sprint_weekend && ' · sprint weekend'}
-          </p>
-        )}
-      </header>
+      <RaceHero
+        headingLevel={1}
+        season={weekend.season} round={weekend.round} raceName={weekend.race_name}
+        circuit={circuit?.circuit} country={circuit?.country}
+        start={weekend.race_start_utc} sprint={weekend.is_sprint_weekend}
+        outline={circuit?.map?.outline}
+      />
+      {live && state.updatedAt && (
+        <p className="muted small" aria-live="polite">
+          Race weekend: this page updates itself every minute. Last checked{' '}
+          {state.updatedAt.toLocaleTimeString(undefined, { timeStyle: 'short' })}.
+        </p>
+      )}
+
+      <RaceWeather weather={weather} />
 
       {circuit && (
         <Panel
@@ -174,36 +181,43 @@ function Forecast({ prediction, sprint = false }) {
         )}
       </div>
 
-      <Table className="datatable">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Driver</TableHead>
-            <TableHead className="viz">Chances</TableHead>
-            <TableHead className="num">Win</TableHead>
-            <TableHead className="num">Podium</TableHead>
-            <TableHead className="num">Points</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.driver}>
-              <TableCell>
-                <span className="driver">{row.driver}</span>
-                <span className="team">{row.team}</span>
-              </TableCell>
-              <TableCell className="viz">
+      {/* The three most likely to stand on the podium, on the podium. Ranked
+          by the market the forecast leads with, so the steps, the sentence
+          above and the list below all agree on who is first. */}
+      <Podium
+        entries={[...rows]
+          .sort((a, b) => ((callsWinner ? b.p_win : b.p_podium) ?? 0) - ((callsWinner ? a.p_win : a.p_podium) ?? 0))
+          .slice(0, 3)
+          .map((r) => ({
+            name: r.driver, team: r.team,
+            value: `${Math.round(((callsWinner ? r.p_win : r.p_podium) ?? 0) * 100)}% ${callsWinner ? 'win' : 'podium'}`,
+          }))}
+      />
+
+      <div className="forecast-list">
+        <div className="forecast-list-head" aria-hidden="true">
+          <span>Driver</span>
+          <span className="viz">Chances</span>
+          <span className="num">Win</span>
+          <span className="num">Podium</span>
+          <span className="num">Points</span>
+        </div>
+        <RankList label={`${race} forecast, most likely podium first`}>
+          {rows.map((row, i) => (
+            <RankRow key={row.driver} pos={i + 1} name={row.driver} team={row.team}>
+              <span className="viz">
                 <OddsBar win={row.p_win} podium={row.p_podium} points={row.p_points} />
-              </TableCell>
+              </span>
               {/* The numbers stay. The bar is for reading the shape of the
                   field at a glance; anyone checking a specific claim against
                   the scored record still needs the figure. */}
-              <TableCell className="num"><Probability value={row.p_win} /></TableCell>
-              <TableCell className="num"><Probability value={row.p_podium} /></TableCell>
-              <TableCell className="num"><Probability value={row.p_points} /></TableCell>
-            </TableRow>
+              <span className="num"><Probability value={row.p_win} /></span>
+              <span className="num"><Probability value={row.p_podium} /></span>
+              <span className="num"><Probability value={row.p_points} /></span>
+            </RankRow>
           ))}
-        </TableBody>
-      </Table>
+        </RankList>
+      </div>
     </Panel>
   )
 }

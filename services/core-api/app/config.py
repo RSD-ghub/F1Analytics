@@ -68,6 +68,11 @@ class Settings(ServiceSettings):
     smtp_sender: str = ""
     smtp_starttls: bool = True
 
+    # Race-day weather, shown on Next Race and given to Bernie. Open-Meteo needs
+    # no key. Empty URL turns the panel off (for a host with no egress).
+    weather_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_timeout_seconds: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:

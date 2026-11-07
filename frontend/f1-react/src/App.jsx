@@ -1,5 +1,6 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import Layout from './components/Layout'
+import ErrorBoundary from './components/ErrorBoundary'
 import Bernie from './pages/Bernie'
 import Strategy from './pages/Strategy'
 import Championship from './pages/Championship'
@@ -11,6 +12,10 @@ import Weekend from './pages/Weekend'
 import Blog from './pages/Blog'
 import Home from './pages/Home'
 import PasswordReset from './pages/PasswordReset'
+import DataHealth from './pages/DataHealth'
+import Drivers from './pages/Drivers'
+import Driver from './pages/Driver'
+import RaceReview from './pages/RaceReview'
 
 /**
  * Routing.
@@ -21,8 +26,11 @@ import PasswordReset from './pages/PasswordReset'
  * conversations are private and are the only thing that spends model calls.
  */
 export default function App() {
+  const { pathname } = useLocation()
   return (
     <Layout>
+      {/* Keyed on the path, so a crash on one page clears on navigating away. */}
+      <ErrorBoundary key={pathname}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/next-race" element={<NextRace />} />
@@ -33,6 +41,10 @@ export default function App() {
         {/* The entries moved under /blog when One Blog got a front door.
             Old links stay working. */}
         <Route path="/weekend/:season/:round" element={<WeekendRedirect />} />
+        <Route path="/data-health" element={<DataHealth />} />
+        <Route path="/drivers" element={<Drivers />} />
+        <Route path="/drivers/:season/:driver" element={<Driver />} />
+        <Route path="/race-review/:season/:round" element={<RaceReview />} />
         <Route path="/news" element={<News />} />
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/bernie" element={<Bernie />} />
@@ -41,6 +53,7 @@ export default function App() {
         <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </Layout>
   )
 }
