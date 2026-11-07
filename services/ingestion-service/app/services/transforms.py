@@ -135,6 +135,7 @@ def extract_results(
                 grid_position=max(safe_int(res.get("GridPosition"), 0), 0),
                 classified_position=safe_text(res.get("ClassifiedPosition")),
                 status=safe_text(res.get("Status")),
+                laps_completed=max(safe_int(res.get("Laps"), 0), 0),
             )
         )
     return rows
