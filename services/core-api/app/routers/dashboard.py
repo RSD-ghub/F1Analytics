@@ -300,8 +300,10 @@ class GlobeStop(BaseModel):
     race_name: str = ""
     circuit: str = ""
     country: str = ""
-    lat: float
-    lon: float
+    #: None when the circuit has not been geocoded yet. The round is still
+    #: listed, so counts of the season are right; it just has no marker.
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     race_start_utc: Optional[str] = None
     #: "raced" — it has happened and been written up; "next" — the upcoming
     #: weekend; "scheduled" — later in the season. The frontend routes on this
@@ -312,11 +314,13 @@ class GlobeStop(BaseModel):
 
 @router.get("/globe", response_model=List[GlobeStop])
 async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
-    """Every race of the season that we can place on a map.
+    """Every race of the season, with coordinates where we have them.
 
-    A circuit with no coordinates is left off rather than dropped at (0, 0),
-    which is in the Atlantic. Geocoding is a separate job on its own schedule
-    and a new venue may not have run yet.
+    A circuit with no coordinates comes back with ``lat``/``lon`` of None
+    rather than (0, 0), which is in the Atlantic. Geocoding is a separate job
+    on its own schedule and a new venue may not have run yet. The round stays
+    in the list so "how many rounds have been run" counts the whole season,
+    not just the part of it the map can draw.
     """
     clients = _clients(settings)
     season = datetime.now(timezone.utc).year
@@ -337,8 +341,7 @@ async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
             )
         )
         place = ((found.get("circuit") or {}).get("location")) or {}
-        if not place.get("lat"):
-            continue
+        placed = place.get("lat") is not None and place.get("lon") is not None
 
         start = weekend.get("race_start_utc")
         has_run = False
@@ -363,8 +366,8 @@ async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
             race_name=weekend.get("race_name", ""),
             circuit=weekend.get("circuit", ""),
             country=weekend.get("country", ""),
-            lat=place["lat"],
-            lon=place["lon"],
+            lat=place["lat"] if placed else None,
+            lon=place["lon"] if placed else None,
             race_start_utc=start,
             status=status,
         ))

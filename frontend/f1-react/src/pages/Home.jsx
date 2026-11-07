@@ -58,6 +58,8 @@ export default function Home() {
     return <Unavailable what="The season map" reason={state.error.message} />
 
   const stops = state.data || []
+  // Every round counts; only the ones with coordinates can be drawn.
+  const placed = stops.filter((s) => s.lat != null && s.lon != null)
   const raced = stops.filter((s) => s.status === 'raced').length
   const next = stops.find((s) => s.status === 'next')
   const upcoming = stops.filter((s) => s.status !== 'raced').slice(next ? 1 : 0, 9)
@@ -73,13 +75,13 @@ export default function Home() {
     <div className="stack">
       <header className="page-head">
         <p className="eyebrow">The {next?.season || ''} season</p>
-        {/* Not a hardcoded count. The globe leaves off a circuit it cannot
-            place rather than dropping it in the Atlantic, so a number written
-            into the copy would be wrong in a way nobody would think to check. */}
+        {/* Not a hardcoded count, and counted over the whole calendar, not
+            just the circuits the globe can place: a venue that has not been
+            geocoded yet has no marker but has still been raced. */}
         <h1>Where the season goes</h1>
         <p className="lede">
-          {raced} of these {stops.length} rounds have been run and written up;
-          the rest are still to come.
+          {raced} of {stops.length} rounds have been run; the rest are still
+          to come.
         </p>
       </header>
 
@@ -112,7 +114,7 @@ export default function Home() {
         <SectionTitle to="/blog" action="All weekends">The season on a globe</SectionTitle>
         <div className="atlas">
           <div className="atlas-globe">
-            <Globe stops={stops} selected={selected} onSelect={choose} />
+            <Globe stops={placed} selected={selected} onSelect={choose} />
             <ul className="atlas-key">
               <li><span className="key-dot key-raced" /> Raced</li>
               <li><span className="key-dot key-next" /> Next</li>
