@@ -35,6 +35,7 @@ async def data_health(settings: Settings = Depends(get_settings)) -> Dict[str, A
         datasets=ingestion.get("/data/datasets"),
         latest=ingestion.get("/data/results", {"season": season, "limit": 1}),
         next_weekend=ingestion.get("/forward/next"),
+        f1tv=ingestion.get("/f1tv/status"),
     )
 
     gaps = fetched.get("gaps") or []
@@ -68,5 +69,12 @@ async def data_health(settings: Settings = Depends(get_settings)) -> Dict[str, A
             k: (fetched.get("next_weekend") or {}).get(k)
             for k in ("season", "round", "race_name", "race_start_utc")
         } if fetched.get("next_weekend") else None,
+        # Whether official F1 timing is reachable. Without it, laps for new
+        # races come from OpenF1 instead. Only the state and expiry: never
+        # the token.
+        "f1tv": {
+            k: (fetched.get("f1tv") or {}).get(k)
+            for k in ("available", "connected", "expires_at", "hours_left", "detail")
+        } if fetched.get("f1tv") else None,
         "unavailable": fetched["_unavailable"],
     }

@@ -151,7 +151,10 @@ async def confirm_password_reset(
 
 
 @router.get("/me", response_model=UserProfile)
-async def me(user=Depends(current_user)) -> UserProfile:
+async def me(
+    user=Depends(current_user), settings: Settings = Depends(get_settings)
+) -> UserProfile:
     return UserProfile(
-        user_id=user["_id"], email=user["email"], created_at=user["created_at"]
+        user_id=user["_id"], email=user["email"], created_at=user["created_at"],
+        is_admin=settings.is_admin(user["email"]),
     )

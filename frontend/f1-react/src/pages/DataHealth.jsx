@@ -2,6 +2,7 @@ import { getDataHealth } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { Panel, Loading, Unavailable } from '../components/Panel'
+import F1TVConnection from '../components/F1TVConnection'
 
 /**
  * Is the data behind the forecasts whole and fresh? An operator's page, kept
@@ -15,7 +16,7 @@ export default function DataHealth() {
   if (state.status === 'error') return <Unavailable what="Data health" reason={state.error.message} />
 
   const { services, completeness, gaps, gaps_total: gapsTotal, datasets, latest_result: latest,
-          next_race: next, unavailable, checked_at: checkedAt } = state.data
+          next_race: next, unavailable, checked_at: checkedAt, f1tv } = state.data
 
   return (
     <div className="stack">
@@ -36,6 +37,8 @@ export default function DataHealth() {
           ))}
         </div>
       )}
+
+      <F1TVConnection status={f1tv} />
 
       <Panel title="Completeness" subtitle="Sessions expected against sessions held">
         <table className="datatable compact">

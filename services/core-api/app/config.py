@@ -58,6 +58,15 @@ class Settings(ServiceSettings):
     # when core-api is reachable directly, or callers can pick their own key.
     trust_forwarded_for: bool = False
 
+    # Accounts allowed to run the site's own controls (today: connecting the
+    # F1TV account that FastF1 signs in with). Comma-separated emails, case
+    # ignored. Empty means nobody, so a fresh deployment exposes nothing.
+    admin_emails: str = ""
+
+    def is_admin(self, email: str) -> bool:
+        wanted = {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+        return bool(email) and email.strip().lower() in wanted
+
     # Password reset email. Without SMTP_HOST the link is logged instead,
     # which is fine on a laptop and wrong on a public deployment.
     public_base_url: str = "http://localhost:5173"

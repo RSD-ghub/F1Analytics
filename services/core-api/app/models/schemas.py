@@ -76,6 +76,8 @@ class UserProfile(BaseModel):
     user_id: str
     email: str
     created_at: datetime
+    #: Shows the owner-only controls. The server checks again on every call.
+    is_admin: bool = False
 
 
 class HealthSummary(BaseModel):
