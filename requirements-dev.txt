@@ -1,0 +1,6 @@
+-c constraints.txt
+
+# Test tools for every service's suite. Install alongside a service's own
+# requirements: pip install -c constraints.txt -r requirements-dev.txt
+pytest>=8
+pytest-asyncio>=0.23

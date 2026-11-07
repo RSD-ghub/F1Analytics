@@ -14,18 +14,22 @@ count is what makes that visible.
 """
 
 import logging
+import re
+import unicodedata
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from app.models.schemas import (
     RACE,
     DriverOutcome,
     Market,
+    NameMismatch,
     PredictionScore,
     RaceOutcome,
 )
 from app.services.clients import LockedPrediction, RaceResultRow
+from app.services.grid_baseline import GridRates
 from app.services.scoring import outcome_for, score_market
 
 logger = logging.getLogger(__name__)
@@ -55,6 +59,7 @@ def build_outcome(
             won=row.classified and row.position == 1,
             podium=row.classified and 1 <= row.position <= PODIUM_POSITIONS,
             points=row.classified and 1 <= row.position <= points_positions,
+            grid=row.grid_position,
         )
         for row in results
     ]
@@ -69,15 +74,60 @@ def build_outcome(
     )
 
 
+def _name_tokens(name: str) -> List[str]:
+    """Lowercase words with accents and punctuation removed: "Sergio Pérez"
+    and "Sergio Perez" both become ["sergio", "perez"]."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.findall(r"[a-z]+", plain.lower())
+
+
+def likely_same_driver(a: str, b: str) -> bool:
+    """Two spellings of one driver, as the data sources actually differ.
+
+    Same words once accents are gone ("Nico Hülkenberg" / "Nico Hulkenberg"),
+    or one name's words all inside the other's with at least two of them
+    ("Kimi Antonelli" / "Andrea Kimi Antonelli"). A shared surname alone is not
+    enough: two Schumachers are two drivers.
+    """
+    left, right = _name_tokens(a), _name_tokens(b)
+    if not left or not right:
+        return False
+    if sorted(left) == sorted(right):
+        return True
+    small, large = sorted((set(left), set(right)), key=len)
+    return len(small) >= 2 and small <= large
+
+
+def name_mismatches(
+    predicted_not_raced: Sequence[str], raced_not_predicted: Sequence[str]
+) -> List[NameMismatch]:
+    return [
+        NameMismatch(forecast_name=forecast, result_name=result)
+        for forecast in predicted_not_raced
+        for result in raced_not_predicted
+        if likely_same_driver(forecast, result)
+    ]
+
+
 def sprint_points_positions(season: int) -> int:
     """Three places scored in a 2021 sprint, eight since."""
     return 3 if season <= 2021 else 8
 
 
+#: Windows placed before the grid was known. Scoring them against a forecast
+#: that saw the grid would compare unlike things, so they get no grid baseline.
+WINDOWS_WITHOUT_GRID = ("pre_quali",)
+
+
 def score_prediction(
-    prediction: LockedPrediction, outcome: RaceOutcome
+    prediction: LockedPrediction,
+    outcome: RaceOutcome,
+    grid_rates: Optional[GridRates] = None,
 ) -> PredictionScore:
-    """Score one locked forecast against what happened."""
+    """Score one locked forecast against what happened.
+
+    ``grid_rates`` adds the grid-order baseline for windows that knew the grid.
+    """
     by_driver: Dict[str, DriverOutcome] = {d.driver: d for d in outcome.drivers}
 
     predicted_names = [p.driver for p in prediction.driver_probabilities]
@@ -100,6 +150,7 @@ def score_prediction(
 
         probabilities: List[float] = []
         outcomes: List[bool] = []
+        grids: List[int] = []
         for row in prediction.driver_probabilities:
             probability = _probability_for(market, row)
             if probability is None:
@@ -109,11 +160,14 @@ def score_prediction(
             # Scoring them as a miss is what stops a bad call from vanishing.
             found = by_driver.get(row.driver)
             outcomes.append(outcome_for(market, found) if found else False)
+            grids.append(found.grid if found else 0)
+        winners = outcome.points_positions if market is Market.POINTS else None
         markets.append(
             score_market(
                 market, probabilities, outcomes,
-                winners=(
-                    outcome.points_positions if market is Market.POINTS else None
+                winners=winners,
+                grid_probabilities=_grid_probabilities(
+                    prediction, grid_rates, market, grids, winners
                 ),
             )
         )
@@ -138,6 +192,22 @@ def score_prediction(
             else None
         ),
     )
+
+
+def _grid_probabilities(
+    prediction: LockedPrediction,
+    grid_rates: Optional[GridRates],
+    market: Market,
+    grids: Sequence[int],
+    winners: Optional[int],
+) -> Optional[List[float]]:
+    if grid_rates is None or prediction.window in WINDOWS_WITHOUT_GRID:
+        return None
+    # No recorded grid at all means the results predate the field, not that
+    # everyone started from the pit lane.
+    if not any(g > 0 for g in grids):
+        return None
+    return grid_rates.probabilities(market, grids, winners)
 
 
 def _probability_for(market: Market, row):
