@@ -110,7 +110,7 @@ def test_the_grid_path_is_unchanged_by_the_new_argument():
 
 def scripted_race(laps=30, pace=None, missing=(), retire=None, lapped=None):
     """Lap rows for a dry race: car i is pace[i] s a lap off 90 s, starts 2i s
-    back, and makes one stop, on lap 15 (a 20 s in-lap)."""
+    back, and makes one 22 s stop at the end of lap 15."""
     pace = np.zeros(N) if pace is None else np.asarray(pace)
     rows = []
     for i, driver in enumerate(DRIVERS):
@@ -122,8 +122,8 @@ def scripted_race(laps=30, pace=None, missing=(), retire=None, lapped=None):
         for lap in range(1, last + 1):
             stint = 1 if lap <= 15 else 2
             seconds = 90.0 + pace[i] + (2.0 * i if lap == 1 else 0.0)
-            if lap == 15:
-                seconds += 20.0
+            if lap in (15, 16):
+                seconds += 11.0  # the stop, split over in-lap and out-lap
             if (driver, lap) in missing:
                 seconds = 0.0
             rows.append(RaceLap(season=2025, round=1, driver=driver, lap=lap,
@@ -295,3 +295,12 @@ def test_dropping_laps_blanks_times_only():
     assert len(dropped) == len(laps)
     blank = sum(1 for lap in dropped if lap.lap_time_seconds == 0)
     assert 0.4 * len(laps) < blank < 0.6 * len(laps)
+
+
+def test_a_missing_in_lap_still_costs_the_stop():
+    # D1 runs 0.1 s a lap behind D0. Lose D1's in-lap time: it must not jump
+    # D0, which is still being charged its own stop.
+    laps = scripted_race(pace=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5], missing={("D1", 15)})
+    state = state_at(20, laps)
+    assert state.running_order() == DRIVERS
+    assert state.gaps[1] > state.gaps[0]

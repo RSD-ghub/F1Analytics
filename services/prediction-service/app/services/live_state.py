@@ -160,17 +160,20 @@ def race_state(
             by_driver[row.driver][row.lap] = row
     status = {r.driver: r for r in results}
 
-    # The field's median lap, per lap: the stand-in for a missing time.
+    # The field's median lap, per lap, from cars not in or out of the pits:
+    # the stand-in for a missing time.
+    pit_laps = _pit_laps(by_driver, pit_stops, upto)
     times: Dict[int, List[float]] = defaultdict(list)
-    for rows in by_driver.values():
+    for driver, rows in by_driver.items():
         for number, row in rows.items():
-            if row.lap_time_seconds > 0:
+            if row.lap_time_seconds > 0 and (driver, number) not in pit_laps:
                 times[number].append(row.lap_time_seconds)
     medians = {number: float(np.median(v)) for number, v in times.items()}
     typical = (float(np.median(list(medians.values()))) if medians
                else float(profile["typical_lap"]))
 
     # Elapsed time at the end of each lap, per car.
+    half_stop = float(profile.get("pit_loss", 0.0)) / 2.0
     elapsed: Dict[str, Dict[int, float]] = {}
     completed: Dict[str, int] = {}
     for driver in drivers:
@@ -181,7 +184,14 @@ def race_state(
         for number in range(1, done + 1):
             row = rows.get(number)
             seconds = row.lap_time_seconds if row is not None else 0.0
-            total += seconds if seconds > 0 else medians.get(number, typical)
+            if seconds <= 0:
+                # A missing time: the field's lap, plus half a stop if the car
+                # came in or went out on it, so a lost in-lap does not hand a
+                # car the time it spent in the pit lane.
+                seconds = medians.get(number, typical)
+                if (driver, number) in pit_laps:
+                    seconds += half_stop
+            total += seconds
             series[number] = total
         elapsed[driver] = series
 
@@ -226,6 +236,23 @@ def race_state(
     neutral |= {n for n, m in medians.items() if m > NEUTRALISED_FACTOR * typical}
     _observe_pace(state, by_driver, neutral, typical, profile)
     return state
+
+
+def _pit_laps(by_driver, pit_stops: Sequence[PitStop], upto: int) -> set:
+    """(driver, lap) for every in-lap and out-lap up to ``upto``: from the
+    stint numbers on the lap rows, and from the pit lane's own records."""
+    out = set()
+    for driver, rows in by_driver.items():
+        for number, row in rows.items():
+            after = rows.get(number + 1)
+            if after is not None and row.stint and after.stint and after.stint != row.stint:
+                out.add((driver, number))
+                out.add((driver, number + 1))
+    for stop in pit_stops:
+        if 0 < stop.lap <= upto:
+            out.add((stop.driver, stop.lap))
+            out.add((stop.driver, stop.lap + 1))
+    return out
 
 
 def _observe_pace(state: RaceState, by_driver, neutral: set, typical: float,

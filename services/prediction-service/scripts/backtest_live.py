@@ -54,7 +54,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("backtest_live")
 
-PRIOR_LAPS_CANDIDATES = (3.0, 10.0, 30.0)
+PRIOR_LAPS_CANDIDATES = (1.0, 3.0, 10.0, 30.0)
 
 
 class Race:
@@ -155,7 +155,7 @@ def report(rows, title):
         logger.info("%-9s %-12s %6d %10.3f %8.2f %8.3f %9.2f", "{:.0%}".format(checkpoint),
                     method, m["races"], m["winner_log_loss"], m["winner_hit"],
                     m["podium_brier"], m["position_error"])
-    logger.info("\nlive minus baseline (negative = live better), 95%% interval over races:")
+    logger.info("\nlive minus baseline (negative = live better), 95% interval over races:")
     for checkpoint in live_backtest.CHECKPOINTS[1:]:
         for baseline in ("pre_race", "order_holds"):
             parts = []
