@@ -42,6 +42,10 @@ class Settings(ServiceSettings):
 
     # Upstream schedule/results API used alongside FastF1 for forward-looking data.
     ergast_base_url: str = "https://api.jolpi.ca/ergast"
+    # Laps, stints, pit stops, weather and race control for sessions F1's live
+    # timing will not serve without an F1TV login (from October 2026). Free,
+    # no key, 2023 onwards. Empty turns the fallback off.
+    openf1_base_url: str = "https://api.openf1.org/v1"
 
     # LLM signal extraction. Enrichment only — with no key configured, ingestion
     # runs unchanged and simply produces rule-based signals alone.

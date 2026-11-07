@@ -17,6 +17,7 @@ from app.news.store import NewsStore
 from app.regulations.store import RegulationStore
 from app.services.fastf1_source import FastF1Source
 from app.services.ingest_runner import IngestRunner
+from app.services.openf1_source import OpenF1Client
 from app.services.storage import IngestionStore
 from f1_common.llm import LLMClient, build_client
 
@@ -25,7 +26,10 @@ from f1_common.llm import LLMClient, build_client
 def get_source() -> FastF1Source:
     """One source per process — the FastF1 cache is enabled once on first use."""
     settings: Settings = get_settings()
-    return FastF1Source(cache_dir="{}/cache".format(settings.dataset_root))
+    return FastF1Source(
+        cache_dir="{}/cache".format(settings.dataset_root),
+        openf1=OpenF1Client(settings.openf1_base_url),
+    )
 
 
 def get_store() -> IngestionStore:

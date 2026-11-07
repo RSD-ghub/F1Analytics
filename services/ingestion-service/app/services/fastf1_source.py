@@ -29,6 +29,7 @@ from app.models.schemas import (
     sprint_session_names,
 )
 from app.services import practice_pace, transforms
+from app.services.openf1_source import OpenF1Client, OpenF1Unavailable
 from app.services.transforms import (
     build_driver_name_map,
     build_telemetry_row,
@@ -175,6 +176,14 @@ def _named_session(
     return None
 
 
+def _safe_results(source: "FastF1Source", session: Any, season: int) -> pd.DataFrame:
+    """The session's results frame, or an empty one if FastF1 has none."""
+    try:
+        return source._results_frame(session, season)
+    except Exception:
+        return pd.DataFrame()
+
+
 def canonical_driver_names(
     frame: pd.DataFrame, names: Optional[Dict[int, str]]
 ) -> pd.DataFrame:
@@ -205,10 +214,14 @@ def canonical_driver_names(
 class FastF1Source:
     """Fetches schedules and race sessions from FastF1."""
 
-    def __init__(self, cache_dir: str, load_telemetry: bool = True) -> None:
+    def __init__(self, cache_dir: str, load_telemetry: bool = True,
+                 openf1: Optional[OpenF1Client] = None) -> None:
         self._cache_dir = cache_dir
         self._load_telemetry = load_telemetry
         self._cache_enabled = False
+        #: Where laps come from when F1's live timing returns none. Since
+        #: October 2026 that archive needs an F1TV login; see openf1_source.
+        self._openf1 = openf1
         #: season -> {car number: driver}, the spellings already in our data.
         self._driver_names: Dict[int, Dict[int, str]] = {}
 
@@ -220,6 +233,74 @@ class FastF1Source:
         return canonical_driver_names(
             _session_frame(session, "results"), self._driver_names.get(season)
         )
+
+    # ── OpenF1 fallback ──────────────────────────────────────────────────────
+
+    def _named_laps(self, season: int, laps: pd.DataFrame, results: pd.DataFrame,
+                    openf1_names: Dict[str, str], numbers: Dict[str, int]) -> pd.DataFrame:
+        """Put our own spelling of each driver in the ``Driver`` column.
+
+        The car-number registry decides first (as in PR #12), then the results
+        frame, and OpenF1's own name only for a driver neither knows. A full
+        name in ``Driver`` passes through ``build_driver_name_map`` untouched.
+        """
+        registry = self._driver_names.get(season) or {}
+        from_results: Dict[int, str] = {}
+        if results is not None and not results.empty and "DriverNumber" in results:
+            for _, row in results.iterrows():
+                number = safe_int(row.get("DriverNumber"), 0)
+                name = row.get("FullName")
+                if number and isinstance(name, str) and name:
+                    from_results[number] = name
+        spelled = {
+            code: registry.get(number) or from_results.get(number)
+            or openf1_names.get(code, code)
+            for code, number in numbers.items()
+        }
+        laps = laps.copy()
+        laps["Driver"] = laps["Driver"].map(lambda code: spelled.get(code, code))
+        return laps
+
+    def _fill_from_openf1(self, expected: ExpectedSession, frames: SessionFrames) -> None:
+        """Laps, weather and race control for a race live timing left empty."""
+        if self._openf1 is None or not self._openf1.enabled:
+            return
+        try:
+            race = self._openf1.find_session(expected, "R")
+            key = race["session_key"]
+            laps, names, numbers = self._openf1.laps_frame(key, with_pits=True)
+            if laps.empty:
+                return
+            frames.laps = self._named_laps(
+                expected.season, laps, frames.results, names, numbers
+            )
+            if frames.weather.empty:
+                frames.weather = self._openf1.weather_frame(key)
+            if frames.race_control.empty:
+                frames.race_control = self._openf1.race_control_frame(key)
+        except OpenF1Unavailable as exc:
+            logger.info("OpenF1 has no laps for %s: %s", expected.key, exc)
+            return
+        logger.info(
+            "laps for %s from OpenF1 (session %s): %s laps",
+            expected.key, key, len(frames.laps),
+        )
+
+    def _openf1_practice_laps(self, expected: ExpectedSession, code: str,
+                              results: pd.DataFrame) -> pd.DataFrame:
+        if self._openf1 is None or not self._openf1.enabled:
+            return pd.DataFrame()
+        try:
+            session = self._openf1.find_session(expected, code)
+            laps, names, numbers = self._openf1.laps_frame(
+                session["session_key"], with_pits=False
+            )
+        except OpenF1Unavailable as exc:
+            logger.info("OpenF1 has no %s laps for %s: %s", code, expected.key, exc)
+            return pd.DataFrame()
+        if laps.empty:
+            return laps
+        return self._named_laps(expected.season, laps, results, names, numbers)
 
     # ── Library plumbing ─────────────────────────────────────────────────────
 
@@ -383,6 +464,8 @@ class FastF1Source:
             weather=_session_frame(session, "weather_data"),
             race_control=_session_frame(session, "race_control_messages"),
         )
+        if frames.laps.empty:
+            self._fill_from_openf1(expected, frames)
         if self._load_telemetry:
             frames.telemetry = self._extract_telemetry(frames.session, session, results)
         return frames
@@ -559,22 +642,30 @@ class FastF1Source:
             session.load(laps=True, telemetry=False, weather=False, messages=False)
             laps = _as_frame(session.laps)
         except Exception as exc:
-            # Retryable. Deliberately *not* swallowed into an empty frame:
-            # doing that turns a transient API failure into "this session has
-            # no data", which is indistinguishable from a genuinely
-            # practice-free weekend and silently thins the corpus.
-            raise SessionFetchError(
-                "{} load failed for {}: {}".format(
-                    session_code, expected.key, str(exc)[:120]
-                )
-            ) from exc
+            # Live timing now needs a login, and FastF1 then raises here
+            # rather than returning nothing. OpenF1 is tried before giving up.
+            results = _safe_results(self, session, expected.season)
+            laps = self._openf1_practice_laps(expected, session_code, results)
+            if laps.empty:
+                # Retryable. Deliberately *not* swallowed into an empty frame:
+                # doing that turns a transient API failure into "this session
+                # has no data", which is indistinguishable from a genuinely
+                # practice-free weekend and silently thins the corpus.
+                raise SessionFetchError(
+                    "{} load failed for {}: {}".format(
+                        session_code, expected.key, str(exc)[:120]
+                    )
+                ) from exc
 
+        results = _safe_results(self, session, expected.season)
+        if laps.empty:
+            laps = self._openf1_practice_laps(expected, session_code, results)
         if laps.empty:
             raise SessionUnavailableError(
                 "{} for {} has no laps".format(session_code, expected.key)
             )
 
-        names = build_driver_name_map(self._results_frame(session, expected.season))
+        names = build_driver_name_map(results)
         return practice_pace.extract_practice_pace(
             expected, session_code, laps, names
         )
