@@ -11,6 +11,7 @@ import TrackRecord from './pages/TrackRecord'
 import Weekend from './pages/Weekend'
 import Blog from './pages/Blog'
 import Home from './pages/Home'
+import PasswordReset from './pages/PasswordReset'
 import DataHealth from './pages/DataHealth'
 import Drivers from './pages/Drivers'
 import Driver from './pages/Driver'
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/bernie" element={<Bernie />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login mode="register" />} />
+        <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </ErrorBoundary>

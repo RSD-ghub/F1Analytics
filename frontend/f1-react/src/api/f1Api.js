@@ -77,6 +77,9 @@ const post = (path, body, opts = {}) =>
 
 export const register = (email, password) => post('/auth/register', { email, password })
 export const login = (email, password) => post('/auth/login', { email, password })
+export const requestPasswordReset = (email) => post('/auth/password-reset/request', { email })
+export const confirmPasswordReset = (token, password) =>
+  post('/auth/password-reset/confirm', { token, password })
 export const me = () => request('/auth/me', { auth: true })
 
 // ── Public: forecasts, record, championship ──────────────────────────────────

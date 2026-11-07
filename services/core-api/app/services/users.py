@@ -62,6 +62,15 @@ class UserStore:
     async def by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         return await self._db[USERS].find_one({"_id": user_id})
 
+    async def set_password(self, user_id: str, password: str) -> None:
+        """Replace the hash and stamp the change, which retires older tokens."""
+        hashed = await asyncio.to_thread(hash_password, password)
+        await self._db[USERS].update_one(
+            {"_id": user_id},
+            {"$set": {"password_hash": hashed,
+                      "password_changed_at": datetime.now(timezone.utc)}},
+        )
+
     async def authenticate(self, email: str, password: str) -> Optional[Dict[str, Any]]:
         """Verify credentials.
 

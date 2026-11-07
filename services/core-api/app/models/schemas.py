@@ -44,6 +44,21 @@ class RegisterRequest(BaseModel):
         return value
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def long_enough(cls, value: str) -> str:
+        # The same rule as registration, by calling it rather than copying it.
+        return RegisterRequest.long_enough(value)
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
