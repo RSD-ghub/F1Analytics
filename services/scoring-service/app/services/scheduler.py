@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _scheduler: Optional[AsyncIOScheduler] = None
 JOB_ID = "reconcile-current-season"
+WATCHDOG_JOB_ID = "watchdog"
 
 
 #: Waits before each re-attempt when the upstream cannot be reached, in seconds.
@@ -105,14 +106,46 @@ async def reconcile_current_season(
         )
 
 
-def start(reconciler: Reconciler, interval_minutes: int) -> Optional[AsyncIOScheduler]:
-    """Begin the sweep. ``interval_minutes <= 0`` disables it."""
+async def run_watchdog(watchdog) -> None:
+    """One watchdog pass. Never raises: a crashing check must not stop the job."""
+    try:
+        sent = await watchdog.run()
+    except Exception:
+        logger.exception("watchdog check failed")
+        return
+    if sent:
+        logger.info("watchdog sent %d alert(s): %s", len(sent), [a.key for a in sent])
+
+
+def start(
+    reconciler: Reconciler,
+    interval_minutes: int,
+    watchdog=None,
+    watchdog_minutes: int = 0,
+) -> Optional[AsyncIOScheduler]:
+    """Begin the sweep. ``interval_minutes <= 0`` disables it.
+
+    The watchdog runs on the same scheduler when given and
+    ``watchdog_minutes > 0``. It starts one interval after startup, so a
+    restart does not alert about a race the reconcile sweep is about to score.
+    """
     global _scheduler
     if interval_minutes <= 0:
         logger.info("automatic reconciliation disabled (interval=%s)", interval_minutes)
         return None
 
     _scheduler = AsyncIOScheduler(timezone="UTC")
+    if watchdog is not None and watchdog_minutes > 0:
+        _scheduler.add_job(
+            run_watchdog,
+            trigger=IntervalTrigger(minutes=watchdog_minutes),
+            args=[watchdog],
+            id=WATCHDOG_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=None,
+        )
+        logger.info("watchdog every %s minutes", watchdog_minutes)
     _scheduler.add_job(
         reconcile_current_season,
         trigger=IntervalTrigger(minutes=interval_minutes),

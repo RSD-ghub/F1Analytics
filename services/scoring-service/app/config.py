@@ -23,6 +23,17 @@ class Settings(ServiceSettings):
     # locked but unscored looks exactly like one being quietly withheld.
     reconcile_check_minutes: int = 30
 
+    # Watchdog: alerts when a lock window passes with no forecast, or a race
+    # goes unscored. See app/services/watchdog.py. 0 disables it.
+    watchdog_check_minutes: int = 60
+    # Where alerts go. Empty means they are only logged (as ERROR lines).
+    # An ntfy.sh topic URL (https://ntfy.sh/<your-topic>) pushes to a phone
+    # with no account; "json" format suits Slack and Discord webhooks.
+    alert_webhook_url: str = ""
+    alert_webhook_format: str = "text"
+    # Grand Prix windows that should lock every weekend. Comma-separated.
+    watchdog_expected_windows: str = "pre_quali,post_quali,final_grid"
+
 
 @lru_cache
 def get_settings() -> Settings:

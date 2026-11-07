@@ -3,8 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { getNews } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { Loading, Panel, Unavailable } from '../components/Panel'
-import NewsCards from '../components/NewsCards'
-import { Button } from '@/components/ui/button'
+import { NewsCarousel, NewsList } from '../components/NewsCards'
+import { SectionTitle } from '../components/Pit'
 
 /**
  * Paddock news: the outlets' latest headlines, linked to the originals.
@@ -39,32 +39,40 @@ export default function News() {
         <p className="lede">{state.data.attribution}</p>
       </header>
 
+      {/* Outlets as round chips, the first letter in the circle and the
+          name beneath. No logos: they are the outlets' marks, not ours. */}
       {outlets.length > 1 && (
-        <div className="news-filter" role="group" aria-label="Filter by outlet">
-          <Button
-            size="sm"
-            variant={outlet ? 'outline' : 'default'}
-            aria-pressed={!outlet}
-            onClick={() => setParams({})}
-          >
-            All
-          </Button>
+        <div className="outlet-chips" role="group" aria-label="Filter by outlet">
+          <button type="button" className={`outlet-chip${outlet ? '' : ' is-on'}`}
+                  aria-pressed={!outlet} onClick={() => setParams({})}>
+            <span className="outlet-chip-mark">All</span>
+            <span className="outlet-chip-name">Every outlet</span>
+          </button>
           {outlets.map((name) => (
-            <Button
-              key={name}
-              size="sm"
-              variant={outlet === name ? 'default' : 'outline'}
-              aria-pressed={outlet === name}
-              onClick={() => setParams({ outlet: name })}
-            >
-              {name}
-            </Button>
+            <button key={name} type="button" className={`outlet-chip${outlet === name ? ' is-on' : ''}`}
+                    aria-pressed={outlet === name} onClick={() => setParams({ outlet: name })}>
+              <span className="outlet-chip-mark">{name.replace(/^The\s+/i, '')[0]}</span>
+              <span className="outlet-chip-name">{name}</span>
+            </button>
           ))}
         </div>
       )}
 
       {shown.length > 0 ? (
-        <NewsCards items={shown} featureFirst />
+        <>
+          {/* Newest first throughout: "top" here means latest, not most
+              read. We hold no readership figures and will not invent them. */}
+          <section>
+            <SectionTitle>Latest headlines</SectionTitle>
+            <NewsCarousel items={shown.slice(0, 6)} />
+          </section>
+          {shown.length > 6 && (
+            <section>
+              <SectionTitle>Earlier</SectionTitle>
+              <NewsList items={shown.slice(6)} />
+            </section>
+          )}
+        </>
       ) : (
         <Panel title="No headlines yet">
           <p className="muted">

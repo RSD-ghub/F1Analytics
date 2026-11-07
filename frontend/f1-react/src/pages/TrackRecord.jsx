@@ -43,6 +43,7 @@ export default function TrackRecord() {
   return (
     <div className="stack">
       <header className="page-head">
+        <p className="eyebrow">Scored, never edited</p>
         <h1>Track record</h1>
         <p className="muted">
           Every forecast we have ever locked, scored against what happened.
@@ -62,6 +63,13 @@ export default function TrackRecord() {
             label="Refused — locked too late"
             value={record.predictions_refused_late}
             note="Locked at or after the race started, so not scored. A call made after the race is not a forecast."
+          />
+        )}
+        {record.predictions_held_name_mismatch > 0 && (
+          <Tile
+            label="Held — driver names disagree"
+            value={record.predictions_held_name_mismatch}
+            note="The forecast and the results spell a driver differently. Held rather than scored as a miss until the names are fixed."
           />
         )}
         <Tile
@@ -109,6 +117,24 @@ const CURVE_WINDOW = { pre_quali: 'before qualifying', sprint: 'sprint' }
 
 const MARKET_LABEL = { win: 'Winner', podium: 'Podium', points: 'Points finish' }
 
+/**
+ * Skill against a forecast that knew only the starting grid. Beating a random
+ * pick is easy once the grid is set, since pole wins far more often than one
+ * race in twenty, so this is the number that says whether the model added
+ * anything beyond the grid. Absent for windows placed before qualifying.
+ */
+function GridSkill({ skill }) {
+  if (skill === null || skill === undefined) return null
+  return (
+    <span className="market-note">
+      <span className={`skill ${skill >= 0 ? 'good' : 'bad'}`}>
+        {skill >= 0 ? '+' : ''}{(skill * 100).toFixed(1)}%
+      </span>{' '}
+      {skill >= 0 ? 'better than the grid order' : 'worse than the grid order'}
+    </span>
+  )
+}
+
 function WindowRecord({ window }) {
   // Three windows now, and two of them know a grid. Collapsing both into
   // "With the grid set" made the confirmed-grid forecast indistinguishable from
@@ -133,6 +159,7 @@ function WindowRecord({ window }) {
             <span className="market-note">
               {skill >= 0 ? 'better than guessing' : 'worse than guessing'}
             </span>
+            <GridSkill skill={window.skill_vs_grid_by_market?.[market]} />
           </div>
         ))}
       </div>
@@ -193,6 +220,7 @@ function Calibration({ curves }) {
                 <th>Band</th><th className="num">Forecasts</th>
                 <th className="num">We said</th><th className="num">It happened</th>
                 <th className="num">Gap</th>
+                <th className="viz"><span className="sr-only">Said against happened</span></th>
               </tr>
             </thead>
             <tbody>
@@ -217,6 +245,15 @@ function Calibration({ curves }) {
                         `${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}%`
                       )}
                     </td>
+                    {/* Said and happened drawn as two bars on one scale, so
+                        a gap reads as a difference in length. A thin band
+                        draws only what we said: it has no rate to compare. */}
+                    <td className="viz">
+                      <span className="cal-bars" aria-hidden="true">
+                        <span className="cal-said" style={{ width: `${bucket.predicted_mean * 100}%` }} />
+                        {!thin && <span className="cal-happened" style={{ width: `${bucket.observed_rate * 100}%` }} />}
+                      </span>
+                    </td>
                   </tr>
                 )
               })}
@@ -225,7 +262,8 @@ function Calibration({ curves }) {
         </div>
       ))}
       <p className="muted small">
-        A positive gap means we were overconfident in that band. Bands with
+        In each row the red bar is what we said and the teal bar what
+        happened. A positive gap means we were overconfident in that band. Bands with
         fewer than {MIN_BAND_SAMPLES} forecasts show no observed rate: with a
         handful of samples the outcome can only be 0% or 100%, so any gap would
         describe the sample size rather than the model. Bands with no forecasts
