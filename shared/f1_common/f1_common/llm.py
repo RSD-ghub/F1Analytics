@@ -42,7 +42,7 @@ absent API key must reduce the product, not break it.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Dict, List, Optional, Protocol, runtime_checkable
 
 import httpx
 
@@ -204,6 +204,67 @@ class TinkerClient:
                 )
             response.raise_for_status()
             return self._parse_completion(response.json())
+
+    async def stream(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.2,
+        history: Optional[List[Dict[str, str]]] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """The answer as it is generated, one text fragment at a time.
+
+        Server-sent events from the OpenAI-compatible endpoint: each
+        ``data:`` line carries ``choices[0].delta.content``; ``[DONE]`` ends it.
+        Reasoning deltas are not yielded. A leaked trace (see
+        ``_split_leaked_reasoning``) can only be told apart once the whole text
+        is in, so callers should run the joined text through it at the end.
+        """
+        if not self.available:
+            raise LLMUnavailable("no Tinker API key configured")
+
+        payload = self._build_request(
+            prompt, system, max_tokens, temperature, history, reasoning_effort
+        )
+        payload["stream"] = True
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with client.stream(
+                "POST",
+                "{}{}".format(self._base_url, self._path),
+                json=payload,
+                headers={
+                    "Authorization": "Bearer {}".format(self._api_key),
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                },
+            ) as response:
+                if response.status_code == 402:
+                    raise LLMBillingRequired(
+                        "Tinker returned 402 Payment Required. The key and "
+                        "endpoint are correct — the account needs credit."
+                    )
+                if response.status_code >= 400:
+                    await response.aread()
+                    response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        event = json.loads(data)
+                    except ValueError:
+                        logger.debug("skipping unparseable stream line: %r", data[:80])
+                        continue
+                    choices = event.get("choices") or []
+                    if not choices:
+                        continue
+                    text = (choices[0].get("delta") or {}).get("content")
+                    if text:
+                        yield text
 
     async def complete_json(
         self, prompt: str, system: Optional[str] = None, max_tokens: int = 1024

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/useAuth'
 import { Link } from 'react-router-dom'
-import { continueThread, getNextRace, listThreads, readThread, startThread } from '../api/f1Api'
+import { getNextRace, listThreads, readThread, streamTurn } from '../api/f1Api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, Loading, Unavailable } from '../components/Panel'
@@ -26,6 +26,8 @@ export default function Bernie() {
   const [race, setRace] = useState(null)
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
+  // The question being answered and Bernie's answer so far, while it streams.
+  const [pending, setPending] = useState(null)
   const [error, setError] = useState(null)
   const endRef = useRef(null)
 
@@ -37,7 +39,7 @@ export default function Bernie() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [active?.turns?.length])
+  }, [active?.turns?.length, pending?.answer])
 
   if (!auth?.token) {
     /*
@@ -92,25 +94,27 @@ export default function Bernie() {
     // Show the question immediately. The server records it before calling the
     // model for the same reason: a slow or failed turn must not make the user's
     // own message disappear.
-    const optimistic = { role: 'user', content: text, created_at: new Date().toISOString() }
-    setActive((prev) => prev && { ...prev, turns: [...prev.turns, optimistic] })
+    setPending({ question: text, answer: '' })
     setQuestion('')
 
     try {
-      const response = active
-        ? await continueThread(active.thread_id, text)
-        : await startThread(race.season, race.round, text)
+      const response = await streamTurn(
+        active
+          ? { threadId: active.thread_id, question: text }
+          : { season: race.season, round: race.round, question: text },
+        (soFar) => setPending({ question: text, answer: soFar }),
+      )
       const thread = await readThread(response.thread_id)
       setActive(thread)
       setThreads(await listThreads())
     } catch (err) {
       setError(err)
-      // Roll back the optimistic turn — it was never recorded.
-      setActive((prev) =>
-        prev && { ...prev, turns: prev.turns.filter((t) => t !== optimistic) },
-      )
+      // The server keeps the question when the model fails mid-answer, so
+      // reload the thread rather than guess; a new thread may not exist yet.
+      if (active) readThread(active.thread_id).then(setActive).catch(() => {})
       setQuestion(text)
     } finally {
+      setPending(null)
       setBusy(false)
     }
   }
@@ -149,7 +153,18 @@ export default function Bernie() {
             {turn.content.split('\n\n').map((para, j) => <p key={j}>{para}</p>)}
           </div>
         ))}
-        {busy && <Loading what="Bernie is thinking" />}
+        {pending && (
+          <>
+            <div className="turn user"><p>{pending.question}</p></div>
+            {pending.answer ? (
+              <div className="turn assistant" aria-live="polite">
+                {pending.answer.split('\n\n').map((para, j) => <p key={j}>{para}</p>)}
+              </div>
+            ) : (
+              <Loading what="Bernie is thinking" />
+            )}
+          </>
+        )}
         <div ref={endRef} />
 
         {error && <BernieError error={error} />}

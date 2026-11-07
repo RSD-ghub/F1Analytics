@@ -6,10 +6,13 @@ persona as a person, and that must not depend on client-side discipline.
 """
 
 import asyncio
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from f1_common.llm import _split_leaked_reasoning as split_leaked_reasoning
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
@@ -510,8 +513,13 @@ async def start_thread(
     store: ConversationStore = Depends(get_conversations),
     usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
+    stream: bool = Query(False, description="Stream the answer as server-sent events"),
 ) -> BernieTurnResponse:
-    """Open a conversation about a race weekend."""
+    """Open a conversation about a race weekend.
+
+    With ``?stream=true`` the answer arrives as server-sent events; see
+    ``_turn_stream`` for the event shapes.
+    """
     bernie = Bernie(llm)
     if not bernie.available:
         raise HTTPException(
@@ -530,6 +538,8 @@ async def start_thread(
         settings, request.season, request.round, request.question
     ))
     thread = await store.create(user["_id"], request.season, request.round)
+    if stream:
+        return _turn_stream(bernie, store, thread, request.question, facts)
     return await _turn(bernie, store, thread, request.question, facts)
 
 
@@ -542,6 +552,7 @@ async def continue_thread(
     store: ConversationStore = Depends(get_conversations),
     usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
+    stream: bool = Query(False, description="Stream the answer as server-sent events"),
 ) -> BernieTurnResponse:
     """Ask a follow-up. History gives continuity; facts are re-derived fresh."""
     bernie = Bernie(llm)
@@ -565,6 +576,8 @@ async def continue_thread(
     facts.update(await _strategy_facts(
         settings, thread.season, thread.round, request.question
     ))
+    if stream:
+        return _turn_stream(bernie, store, thread, request.question, facts)
     return await _turn(bernie, store, thread, request.question, facts)
 
 
@@ -630,4 +643,69 @@ async def _turn(
         disclaimer=DISCLAIMER,
         grounded_on=facts,
         turn_count=len(thread.turns),
+    )
+
+
+def _sse(event: str, data: Dict[str, Any]) -> str:
+    return "event: {}\ndata: {}\n\n".format(event, json.dumps(data, default=str))
+
+
+def _turn_stream(
+    bernie: Bernie,
+    store: ConversationStore,
+    thread: Thread,
+    question: str,
+    facts: Dict[str, Any],
+) -> StreamingResponse:
+    """``_turn``, with the answer sent as it is written.
+
+    Server-sent events, in order:
+
+    * ``delta`` ``{"text": ...}`` — a fragment of the answer, zero or more;
+    * then exactly one of ``done`` (the full ``BernieTurnResponse``, whose
+      ``answer`` is the saved text and replaces the fragments shown so far) or
+      ``error`` ``{"reason", "message"}`` (the same reasons as the 503 detail).
+
+    Checks that can fail before the model is called (auth, budget, an unknown
+    thread, an empty question) still fail as ordinary HTTP errors, because
+    they run before this response starts.
+    """
+    question = clamp_question(question)
+    if not question:
+        raise HTTPException(status_code=422, detail="question is empty")
+
+    async def events() -> AsyncIterator[str]:
+        history = history_for_prompt(thread)
+        await store.append(thread, Role.USER, question)
+        fragments: List[str] = []
+        try:
+            async for fragment in bernie.converse_stream(question, facts, history=history):
+                fragments.append(fragment)
+                yield _sse("delta", {"text": fragment})
+        except BernieUnavailable as exc:
+            yield _sse("error", {
+                "reason": getattr(exc, "reason", "unavailable"), "message": str(exc),
+            })
+            return
+
+        # A leaked reasoning trace can only be recognised in the whole text.
+        answer, reasoning = split_leaked_reasoning("".join(fragments).strip())
+        answer = answer.strip()
+        if not answer:
+            yield _sse("error", {"reason": "empty", "message": "empty response"})
+            return
+        await store.append(thread, Role.ASSISTANT, answer, reasoning=reasoning or None)
+        yield _sse("done", BernieTurnResponse(
+            thread_id=thread.thread_id,
+            answer=answer,
+            disclaimer=DISCLAIMER,
+            grounded_on=facts,
+            turn_count=len(thread.turns),
+        ).model_dump(mode="json"))
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Proxies (Caddy, nginx) must pass fragments on, not hold them.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
