@@ -28,3 +28,22 @@ def test_rows_share_fastf1_ids_and_unmapped_drivers_are_dropped():
         2015, 4, "Bahrain Grand Prix", [("vettel", 7, 99.0), ("nobody", 7, 99.5)], [], NAMES)
     assert len(laps) == 1
     assert laps[0].id == stable_id(2015, 4, "Sebastian Vettel", 7)
+
+
+def test_the_place_at_the_end_of_each_lap_is_kept():
+    laps, _ = historical_laps.build_rows(
+        2015, 4, "Bahrain Grand Prix", [("vettel", 7, 99.0, 3), ("alonso", 7, 99.5, 0)], [], NAMES)
+    assert {lap.driver: lap.position for lap in laps} == {
+        "Sebastian Vettel": 3, "Fernando Alonso": 0}
+
+
+def test_jolpica_positions_are_read(monkeypatch):
+    import asyncio
+
+    class Client:
+        async def get(self, path, **params):
+            return {"total": 1, "RaceTable": {"Races": [{"raceName": "Bahrain Grand Prix", "Laps": [
+                {"number": "1", "Timings": [{"driverId": "vettel", "position": "2", "time": "1:39.000"}]}]}]}}
+
+    name, rows = asyncio.run(historical_laps.race_timings(Client(), 2015, 4))
+    assert rows == [("vettel", 1, 99.0, 2)]

@@ -89,10 +89,18 @@ async def driver_names(client: JolpicaClient, season: int) -> Dict[str, str]:
     }
 
 
+def _position(value) -> int:
+    """Ergast's place at the end of the lap; 0 when absent."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def race_timings(client: JolpicaClient, season: int, round_number: int
-                       ) -> Tuple[str, List[Tuple[str, int, float]]]:
+                       ) -> Tuple[str, List[Tuple[str, int, float, int]]]:
     """(race name, [(driverId, lap, seconds)]) for one race, every page."""
-    rows: List[Tuple[str, int, float]] = []
+    rows: List[Tuple[str, int, float, int]] = []
     name = ""
     offset, total = 0, None
     while total is None or offset < total:
@@ -104,7 +112,8 @@ async def race_timings(client: JolpicaClient, season: int, round_number: int
             for lap in race.get("Laps", []):
                 number = int(lap["number"])
                 for timing in lap.get("Timings", []):
-                    rows.append((timing["driverId"], number, _seconds(timing.get("time"))))
+                    rows.append((timing["driverId"], number, _seconds(timing.get("time")),
+                                 _position(timing.get("position"))))
         offset += PAGE
         if total == 0:
             break
@@ -130,7 +139,7 @@ async def race_pit_stops(client: JolpicaClient, season: int, round_number: int
 
 
 def build_rows(season: int, round_number: int, race_name: str,
-               timings: Sequence[Tuple[str, int, float]],
+               timings: Sequence[Tuple],
                stops: Sequence[Tuple[str, int, int, float]],
                names: Dict[str, str]) -> Tuple[List[LapRow], List[PitStopRow]]:
     """Lap and pit-stop rows in ingestion's shape. Stints from the stops."""
@@ -139,7 +148,9 @@ def build_rows(season: int, round_number: int, race_name: str,
         stop_laps.setdefault(driver_id, []).append(lap)
     has_stops = season >= FIRST_PIT_STOP_SEASON
     laps, pits = [], []
-    for driver_id, number, seconds in timings:
+    for timing in timings:
+        driver_id, number, seconds = timing[:3]
+        position = timing[3] if len(timing) > 3 else 0
         driver = names.get(driver_id)
         if not driver:
             continue
@@ -149,7 +160,7 @@ def build_rows(season: int, round_number: int, race_name: str,
             id=stable_id(season, round_number, driver, number),
             season=season, round=round_number, race_name=race_name,
             driver=driver, lap=number, lap_time_seconds=seconds,
-            compound="Unknown", stint=stint,
+            compound="Unknown", stint=stint, position=position,
         ))
     for driver_id, stop, lap, seconds in stops:
         driver = names.get(driver_id)

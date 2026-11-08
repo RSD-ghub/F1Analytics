@@ -297,6 +297,11 @@ class LapRow(RowBase):
     lap_time_seconds: float = 0.0
     compound: str = "Unknown"
     stint: int = 0
+    #: Place on the road at the end of the lap, from the timing feed; 0 when
+    #: unknown. Summed lap times give the order only while every lap is timed:
+    #: a deleted lap (Piastri, Australia 2025 lap 44) or a lapped car catching
+    #: the queue behind a safety car moves a car past others it never passed.
+    position: int = 0
     #: Speed trap, on the longest straight. The one that separates a power
     #: circuit from a high-downforce circuit with a straight attached.
     speed_trap_kph: float = 0.0

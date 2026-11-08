@@ -122,6 +122,37 @@ class OpenF1Unavailable(RuntimeError):
     """OpenF1 could not answer, or has no such session."""
 
 
+def _lap_positions(frame: pd.DataFrame, positions: List[Dict[str, Any]]) -> List[float]:
+    """Each lap's place at its end, from OpenF1's position changes: the last
+    change at or before the lap ended (the next lap's start, else this lap's
+    start plus its time). NaN when there is no position data to go on.
+    """
+    changes: Dict[str, List[Tuple[datetime, int]]] = {}
+    for row in positions:
+        when = _parse_time(row.get("date"))
+        if when is None or row.get("position") is None:
+            continue
+        changes.setdefault(str(row.get("driver_number")), []).append((when, int(row["position"])))
+    for rows in changes.values():
+        rows.sort()
+    starts = {(r.DriverNumber, r.LapNumber): r.LapStartDate for r in frame.itertuples()}
+    out: List[float] = []
+    for r in frame.itertuples():
+        history = changes.get(str(r.DriverNumber))
+        end = starts.get((r.DriverNumber, r.LapNumber + 1))
+        if end is None or pd.isna(end):
+            start = r.LapStartDate
+            end = (start + r.LapTime
+                   if not pd.isna(start) and not pd.isna(r.LapTime) else None)
+        if not history or end is None:
+            out.append(float("nan"))
+            continue
+        cutoff = end.to_pydatetime() if hasattr(end, "to_pydatetime") else end
+        place = [p for when, p in history if when <= cutoff]
+        out.append(float(place[-1]) if place else float("nan"))
+    return out
+
+
 def _parse_time(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -375,6 +406,10 @@ class OpenF1Client:
                 before = index.get((row["Driver"], row["LapNumber"] - 1))
                 if before is not None:
                     frame.at[before, "PitInTime"] = marker
+
+        frame["Position"] = (
+            _lap_positions(frame, self.get("position", session_key=session_key))
+            if with_pits else float("nan"))
 
         # LapStartDate stays: it is what puts these laps on FastF1's session clock
         # when a red-flagged race is finished from here (t0_from_matched_laps).

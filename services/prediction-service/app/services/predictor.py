@@ -65,6 +65,10 @@ class ConfirmedGridRequired(RuntimeError):
     """
 
 
+class ReplayUnavailable(RuntimeError):
+    """A race that cannot be replayed: no lap timing, no result, no simulator."""
+
+
 class GridRequired(RuntimeError):
     """A post-quali forecast was requested but no grid has been ingested."""
 
@@ -226,6 +230,65 @@ class Predictor:
             ),
             **base,
         )
+
+    async def replay(
+        self,
+        season: int,
+        round_number: int,
+        circuit: str = "",
+        runs: int = 0,
+        step: int = 1,
+    ) -> dict:
+        """A finished Grand Prix replayed lap by lap with the live forecast.
+
+        The field and its pre-race strengths are the final-grid forecast's
+        (the post-quali grid when the confirmed one was never ingested). The
+        heavy part runs in a worker thread. Never persisted.
+        """
+        import asyncio
+
+        from app.services import live_replay
+
+        engine = self._lap_engine
+        if engine is None:
+            raise ReplayUnavailable("the lap simulator has not been fitted")
+        window = LockWindow.FINAL_GRID
+        try:
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        except ConfirmedGridRequired:
+            window = LockWindow.POST_QUALI
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        laps = await self._client.race_laps(season, round_number)
+        if not laps:
+            raise ReplayUnavailable(
+                "no lap timing ingested for {}-{}".format(season, round_number))
+        results = [r for r in await self._client.season_results(season)
+                   if r.round == round_number]
+        if not results:
+            raise ReplayUnavailable(
+                "{}-{} has no result yet; only finished races can be replayed".format(
+                    season, round_number))
+        stops = [r for r in await self._client.season_pit_stops(season)
+                 if r.round == round_number]
+        messages = [r for r in await self._client.season_race_control(season)
+                    if r.round == round_number]
+        network, _ = live_replay.cached_live_network()
+        model = self._model
+        drivers = snapshot.drivers
+        replay = await asyncio.to_thread(
+            live_replay.build_replay,
+            drivers, model.strengths(drivers), engine.profile(circuit), engine.params,
+            laps, stops, messages, results,
+            seed=derive_seed(season, round_number, window),
+            runs=runs or live_replay.REPLAY_RUNS, step=step, network=network,
+            retirement_race_k=getattr(model, "retirement_race_k", None),
+            retirement_team_k=getattr(model, "retirement_team_k", None),
+        )
+        replay.update(season=season, round=round_number, circuit=circuit,
+                      race_name=next((r.race_name for r in results if r.race_name), ""),
+                      grid=window.value, model_version=model.version,
+                      engine=engine.version)
+        return replay
 
     async def _prepare(
         self,

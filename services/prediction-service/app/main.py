@@ -13,6 +13,7 @@ from app import db
 from app.config import get_settings
 from app.dependencies import get_client, get_predictor
 from app.routers import circuits as circuits_router
+from app.routers import live as live_router
 from app.routers import predictions
 from app.services import scheduler as lock_scheduler
 from app.services.model import MODEL_STATE_DIR, ensure_state_dir
@@ -90,3 +91,4 @@ app.include_router(
 app.include_router(predictions.router)
 app.include_router(predictions.championship_router)
 app.include_router(circuits_router.router)
+app.include_router(live_router.router)

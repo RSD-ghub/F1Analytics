@@ -248,3 +248,28 @@ def test_race_laps_can_be_placed_on_the_fastf1_session_clock():
         ],
     }).dropna()
     assert t0_from_matched_laps(official, laps) == t0.to_pydatetime()
+
+
+def test_race_laps_carry_the_place_at_the_end_of_each_lap():
+    routes = dict(ROUTES, position=[
+        {"driver_number": 4, "position": 1, "date": "2026-11-01T19:58:00+00:00"},
+        {"driver_number": 12, "position": 2, "date": "2026-11-01T19:58:00+00:00"},
+        # Antonelli passes on lap 3, which ends when lap 4 starts at 20:04.
+        {"driver_number": 12, "position": 1, "date": "2026-11-01T20:03:30+00:00"},
+        {"driver_number": 4, "position": 2, "date": "2026-11-01T20:03:30+00:00"},
+    ])
+    client, _ = _client(routes)
+    laps, _, _ = client.laps_frame(11404, with_pits=True)
+    rows = transforms.extract_laps(MEXICO, laps, {})
+    place = {(r.driver, r.lap): r.position for r in rows}
+    assert place[("NOR", 2)] == 1 and place[("ANT", 2)] == 2
+    assert place[("NOR", 3)] == 2 and place[("ANT", 3)] == 1
+    assert place[("ANT", 6)] == 1
+
+
+def test_practice_laps_carry_no_place():
+    client, http = _client()
+    laps, _, _ = client.laps_frame(11398, with_pits=False)
+    rows = transforms.extract_laps(MEXICO, laps, {})
+    assert all(r.position == 0 for r in rows)
+    assert "position" not in [path for path, _ in http.calls]

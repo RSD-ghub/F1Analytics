@@ -195,3 +195,9 @@ def test_the_clock_driven_paths_stay_short():
     assert cache_policy.lookup("ingestion", "/forward/next").ttl_seconds <= 60
     freshness = cache_policy.lookup("ingestion", "/forward/qualifying-freshness/2026/18")
     assert freshness.ttl_seconds <= 60
+
+
+def test_a_race_replay_is_cached_for_a_day_and_retired_by_new_data():
+    policy = cache_policy.lookup("prediction", "/live/2025/1/replay")
+    assert policy.ttl_seconds == 24 * 3600
+    assert set(policy.domains) == {"prediction", "ingestion"}

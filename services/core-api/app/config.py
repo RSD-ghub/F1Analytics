@@ -20,6 +20,9 @@ class Settings(ServiceSettings):
     prediction_service_url: str = "http://prediction-service:8002"
     scoring_service_url: str = "http://scoring-service:8003"
     downstream_timeout_seconds: float = 10.0
+    #: A race replay simulates every lap of a Grand Prix the first time it is
+    #: asked for: tens of seconds, not the usual sub-second read.
+    live_replay_timeout_seconds: float = 180.0
 
     # Auth. jwt_secret has no usable default on purpose — a weak signing key is
     # worse than a missing one, so it must be supplied via the environment.

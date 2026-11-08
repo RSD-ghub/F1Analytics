@@ -123,6 +123,9 @@ class RaceLap(BaseModel):
     lap_time_seconds: float = 0.0
     compound: Optional[str] = ""
     stint: int = 1
+    #: Place on the road at the end of the lap; 0 when ingestion has none
+    #: (laps fetched before it stored positions).
+    position: int = 0
 
     @model_validator(mode="before")
     @classmethod
@@ -137,6 +140,8 @@ class RaceLap(BaseModel):
                 raw["stint"] = 1
             if raw.get("compound") is None:
                 raw["compound"] = ""
+            if raw.get("position") is None:
+                raw["position"] = 0
         return raw
 
 
