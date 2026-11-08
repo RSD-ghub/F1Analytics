@@ -17,6 +17,14 @@ retired, so every other car is passed as still running.
 
 It runs only while someone is looking: the loop starts on the first request
 and stops after ``IDLE_STOP`` seconds without one.
+
+**Redis Streams** (when ``REDIS_URL`` is set; see ``f1_common.streams``).
+Instead of sleeping between polls the tracker blocks on ``f1:live:laps``, so
+a lap is forecast the moment ingestion has it. Each frame is added to the
+race's frames stream, which core-api's event stream reads, and which a
+restarted tracker reads back so the laps already forecast survive. Frames are
+tagged with the feed's ``started_at``, so a race recorded or replayed again
+starts clean. Without Redis it polls every ``POLL_SECONDS``.
 """
 
 import asyncio
@@ -25,6 +33,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services import live_replay
+from f1_common import streams
 from app.services.ingestion_client import (
     IngestionClient, IngestionUnavailable, PitStop, RaceControlMessage, RaceLap, RaceResult,
 )
@@ -36,6 +45,8 @@ logger = logging.getLogger(__name__)
 POLL_SECONDS = 3.0
 #: Simulated races per lap. As the replay.
 RUNS = live_replay.REPLAY_RUNS
+#: Longest one blocking read of the laps stream, seconds.
+WAIT_SECONDS = 15.0
 #: Stop polling this long after the last viewer asked, seconds.
 IDLE_STOP = 15 * 60
 #: A status the finished-race code reads as "took the flag": here, still running.
@@ -74,6 +85,9 @@ class LiveTracker:
         self._wet_so_far = False
         self._task: Optional[asyncio.Task] = None
         self._asked = time.monotonic()
+        #: The live feed run these frames belong to (its ``started_at``).
+        self.run = ""
+        self._laps_after: Optional[str] = None
 
     # ── the loop ────────────────────────────────────────────────────────
 
@@ -100,7 +114,24 @@ class LiveTracker:
             except Exception as exc:  # one bad lap must not end the race
                 logger.exception("live tracker step failed")
                 self.error = str(exc)
-            await asyncio.sleep(POLL_SECONDS)
+            await self._wait()
+
+    async def _wait(self) -> None:
+        """Until the next lap is announced, or ``POLL_SECONDS`` without Redis."""
+        if streams.enabled():
+            try:
+                if self._laps_after is None:
+                    self._laps_after = await streams.last_id(streams.LAPS)
+                entries = await streams.read_after(
+                    streams.LAPS, self._laps_after, block_ms=int(WAIT_SECONDS * 1000))
+                if entries:
+                    self._laps_after = entries[-1][0]
+                    return
+                if WAIT_SECONDS > 0:
+                    return  # a full block passed: poll the status anyway
+            except streams.StreamsUnavailable as exc:
+                logger.debug("laps stream unavailable, polling: %s", exc)
+        await asyncio.sleep(POLL_SECONDS)
 
     async def step(self) -> None:
         """One poll: read the feed's status, and forecast any new laps."""
@@ -113,8 +144,9 @@ class LiveTracker:
         season, round_number = int(status.get("season") or 0), int(status.get("round") or 0)
         if not season or not round_number:
             return
-        if self.race != (season, round_number):
-            await self._new_race(season, round_number)
+        run = str(status.get("started_at") or "")
+        if self.race != (season, round_number) or (self.inputs is not None and run != self.run):
+            await self._new_race(season, round_number, run)
         if self.inputs is None:
             return
         lap = int(status.get("lap") or 0)
@@ -133,10 +165,13 @@ class LiveTracker:
             frame, self._wet_so_far = await asyncio.to_thread(
                 self._frame, laps, stops, messages, results, number)
             self.frames.append(frame)
+            await streams.publish(streams.frames_stream(season, round_number),
+                                  dict(frame, run=self.run))
         self.error = ""
 
-    async def _new_race(self, season: int, round_number: int) -> None:
+    async def _new_race(self, season: int, round_number: int, run: str = "") -> None:
         self.race = (season, round_number)
+        self.run = run
         self.frames, self.inputs, self.error = [], None, ""
         self.total_laps, self.wet, self._wet_so_far = 0, False, False
         self.race_name = ""
@@ -158,6 +193,33 @@ class LiveTracker:
             return
         self.total_laps = int(self.status.get("total_laps") or 0) or int(
             self.inputs["profile"].get("laps") or 0)
+        await self._restore(season, round_number)
+
+    async def _restore(self, season: int, round_number: int) -> None:
+        """Frames this feed run already has on its stream (a restart mid-race)."""
+        if not streams.enabled() or not self.run:
+            return
+        try:
+            entries = await streams.history(streams.frames_stream(season, round_number))
+        except streams.StreamsUnavailable:
+            return
+        by_lap = {}
+        for _, frame in entries:
+            if frame.get("run") == self.run and isinstance(frame.get("lap"), int):
+                by_lap[frame["lap"]] = {k: v for k, v in frame.items() if k != "run"}
+        laps = sorted(by_lap)
+        # Only an unbroken run from the grid: a gap would leave laps unforecast.
+        kept = []
+        for expected, lap in enumerate(laps):
+            if lap != expected:
+                break
+            kept.append(by_lap[lap])
+        self.frames = kept
+        self._wet_so_far = any((c.get("compound") or "").upper() in WET_COMPOUNDS
+                               for f in kept for c in f.get("cars", []))
+        if kept:
+            logger.info("live tracker: restored %s laps of %s-%s from Redis", len(kept),
+                        season, round_number)
 
     def _frame(self, laps, stops, messages, results, lap: int):
         i = self.inputs

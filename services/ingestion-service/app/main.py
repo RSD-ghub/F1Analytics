@@ -25,7 +25,7 @@ from app.routers import f1tv as f1tv_router
 from app.routers import live as live_router
 from app.services import f1tv_auth, scheduler
 from app.services.storage import IngestionStore
-from f1_common import cache
+from f1_common import cache, streams
 from f1_common.health import build_health_router
 from f1_common.observability import RequestIdMiddleware, configure_logging
 
@@ -41,6 +41,7 @@ async def lifespan(_: FastAPI):
     # for an F1TV password on a terminal nobody is watching.
     f1tv_auth.install_no_prompt()
     cache.configure(settings.redis_url)
+    streams.configure(settings.redis_url)
 
     # Index creation is best-effort: Mongo being briefly unreachable at boot
     # should degrade query speed, not prevent the service from starting and
@@ -66,6 +67,7 @@ async def lifespan(_: FastAPI):
     scheduler.shutdown()
     await live_router.shutdown()
     await cache.close()
+    await streams.close()
     db.close()
 
 

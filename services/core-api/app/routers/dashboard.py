@@ -23,6 +23,7 @@ from app.models.schemas import HealthSummary, SystemStatus
 from app.routers.blog import WINDOW_PREFERENCE, race_scores
 from app.services import weather
 from app.services.downstream import DownstreamUnavailable, ServiceClient, gather_optional
+from f1_common import streams
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,10 @@ async def live_replay(
 LIVE_STREAM_POLL = 3.0
 #: A stream sends a comment this often so proxies keep it open, seconds.
 LIVE_STREAM_HEARTBEAT = 15.0
+#: With Redis: longest one wait on the frames stream, and how often the race's
+#: state is fetched again regardless, seconds.
+LIVE_STREAM_BLOCK = 10.0
+LIVE_STREAM_REFRESH = 15.0
 #: Longest one stream stays open, seconds; EventSource reconnects by itself.
 LIVE_STREAM_MAX = 4 * 60 * 60
 
@@ -271,6 +276,12 @@ async def live_stream(
     * ``unavailable`` ``{"message"}`` — prediction-service did not answer;
       the stream keeps trying.
 
+    With ``REDIS_URL`` set, frames come from the race's Redis stream the
+    moment the tracker adds them, and prediction-service is asked only every
+    ``LIVE_STREAM_REFRESH`` seconds for the race's state. Without Redis, or
+    when it fails, the stream polls prediction-service every
+    ``LIVE_STREAM_POLL`` seconds.
+
     A reconnecting browser sends ``Last-Event-ID`` (the last lap it got), so
     it resumes where it was instead of receiving the race again.
     """
@@ -283,29 +294,60 @@ async def live_stream(
         nonlocal since
         loop = asyncio.get_running_loop()
         opened = beat = loop.time()
+        refreshed = -float("inf")
         race = None
+        stream_key, after = None, None
         while loop.time() - opened < LIVE_STREAM_MAX:
             if await request.is_disconnected():
                 return
-            try:
-                now = await clients["prediction"].get("/live/now", {"since": since})
-            except DownstreamUnavailable as exc:
-                yield _sse_event("unavailable", {"message": str(exc)})
-                now = None
-            if now is not None:
-                frames = now.pop("frames", [])
-                if now != race:
-                    race = now
-                    yield _sse_event("race", now)
-                for frame in frames:
-                    since = max(since, int(frame.get("lap", since)))
-                    yield _sse_event("frame", frame, event_id=since)
-                if frames:
-                    beat = loop.time()
+            # The race's state, and any frames the stream did not carry.
+            if (not streams.enabled() or stream_key is None
+                    or loop.time() - refreshed >= LIVE_STREAM_REFRESH):
+                refreshed = loop.time()
+                try:
+                    now = await clients["prediction"].get("/live/now", {"since": since})
+                except DownstreamUnavailable as exc:
+                    yield _sse_event("unavailable", {"message": str(exc)})
+                    now = None
+                if now is not None:
+                    frames = now.pop("frames", [])
+                    if now != race:
+                        race = now
+                        yield _sse_event("race", now)
+                        key = (streams.frames_stream(now["season"], now["round"])
+                               if now.get("season") and now.get("round") else None)
+                        if key != stream_key:
+                            stream_key, after = key, None
+                    for frame in frames:
+                        since = max(since, int(frame.get("lap", since)))
+                        yield _sse_event("frame", frame, event_id=since)
+                    if frames:
+                        beat = loop.time()
+            # With Redis: wait on the race's frames stream and pass frames on
+            # the moment the tracker adds them.
+            waited = False
+            if streams.enabled() and stream_key:
+                try:
+                    if after is None:
+                        after = await streams.last_id(stream_key)
+                    entries = await streams.read_after(
+                        stream_key, after, block_ms=int(LIVE_STREAM_BLOCK * 1000))
+                    waited = True
+                    for entry_id, frame in entries:
+                        after = entry_id
+                        lap = int(frame.get("lap", -1))
+                        if lap > since:
+                            since = lap
+                            frame.pop("run", None)
+                            yield _sse_event("frame", frame, event_id=since)
+                            beat = loop.time()
+                except streams.StreamsUnavailable:
+                    waited = False
             if loop.time() - beat > LIVE_STREAM_HEARTBEAT:
                 beat = loop.time()
                 yield ": keep-alive\n\n"
-            await asyncio.sleep(LIVE_STREAM_POLL)
+            if not waited:
+                await asyncio.sleep(LIVE_STREAM_POLL)
 
     return StreamingResponse(
         events(), media_type="text/event-stream",

@@ -19,6 +19,11 @@ FastF1 does the same when its sign-in fails. So ``start`` refuses, with a
 reason, when F1TV is not connected. The child reads the stored token; its
 stdin is closed, so FastF1 can never stop to ask for a password.
 
+**Redis Streams.** When ``REDIS_URL`` is set, each lap the leader completes
+(and each change of session status) is also added to ``f1:live:laps``, so the
+prediction service forecasts it at once instead of on its next poll. Without
+Redis nothing changes: the prediction service polls ``/live/status``.
+
 One race at a time: starting another stops the first.
 """
 
@@ -32,6 +37,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional
 
 from app.services import f1tv_auth
+from f1_common import streams
 from app.services.live_timing import LiveTiming, parse_line
 
 logger = logging.getLogger(__name__)
@@ -76,6 +82,7 @@ class LiveFeed:
         self._process: Optional[subprocess.Popen] = None
         self._task: Optional[asyncio.Task] = None
         self._finished_at: Optional[float] = None
+        self._announced: Optional[tuple] = None
 
     @property
     def running(self) -> bool:
@@ -93,6 +100,7 @@ class LiveFeed:
         self.timing = LiveTiming(season, round_number, names)
         self.error = ""
         self._finished_at = None
+        self._announced = None
         self.started_at = datetime.now(timezone.utc).isoformat()
         if path:
             self.mode = "replay"
@@ -134,6 +142,7 @@ class LiveFeed:
                         lines = (partial + chunk).split("\n")
                         partial = lines.pop()  # a line still being written
                         self.timing.feed_lines(lines)
+                        await self._announce()
                 if self._process is not None and self._process.poll() is not None:
                     self.error = "the recorder exited (code {}); see {}.log".format(
                         self._process.returncode, os.path.basename(path))
@@ -166,6 +175,8 @@ class LiveFeed:
                             await asyncio.sleep(min((when - previous) / speed, 30.0))
                         previous = when
                     self.timing.apply(*parsed)
+                    if parsed[0] in ("TimingData", "SessionStatus"):
+                        await self._announce()
                     if speed <= 0 and self.timing.messages % 2000 == 0:
                         await asyncio.sleep(0)
         except asyncio.CancelledError:
@@ -173,6 +184,18 @@ class LiveFeed:
         except Exception as exc:
             logger.exception("live replay failed")
             self.error = str(exc)
+
+    async def _announce(self) -> None:
+        """Add the lap to ``f1:live:laps`` when it or the session status moved."""
+        if self.timing is None or not streams.enabled():
+            return
+        now = (self.timing.season, self.timing.round, self.timing.lap(), self.timing.status())
+        if now == self._announced:
+            return
+        self._announced = now
+        await streams.publish(streams.LAPS, {
+            "season": now[0], "round": now[1], "lap": now[2], "status": now[3],
+            "started_at": self.started_at, "mode": self.mode})
 
     def _past_finish(self) -> bool:
         if self.timing is None or not self.timing.finished():

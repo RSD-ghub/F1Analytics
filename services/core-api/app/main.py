@@ -22,7 +22,7 @@ from app.services.conversation import ConversationStore
 from app.services.usage import UsageStore
 from app.services.users import UserStore
 from app.services.password_reset import ResetStore
-from f1_common import cache
+from f1_common import cache, streams
 from f1_common.health import build_health_router
 from f1_common.observability import RequestIdMiddleware, configure_logging
 
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
     cache.configure(settings.redis_url)
+    streams.configure(settings.redis_url)
 
     try:
         await UserStore(db.db()).ensure_indexes()
@@ -54,6 +55,7 @@ async def lifespan(_: FastAPI):
 
     yield
     await cache.close()
+    await streams.close()
     db.close()
 
 

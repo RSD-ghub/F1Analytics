@@ -99,3 +99,37 @@ def test_the_owner_starts_a_replay(monkeypatch):
         "season": 2026, "round": 21, "recording": "2026-21-x.txt", "speed": 20}).json()
     assert started["running"] and started["recording"] == "2026-21-x.txt"
     assert [r.url.path for r in sent] == ["/live/status", "/live/recordings", "/live/start"]
+
+
+def test_with_redis_frames_come_from_the_stream(monkeypatch):
+    import asyncio
+
+    from f1_common import streams
+
+    memory = streams.MemoryStreams()
+    streams.use_client(memory)
+    key = streams.frames_stream(2026, 22)
+    try:
+        # The tracker already added laps 0-1; lap 2 arrives while streaming.
+        asyncio.run(streams.publish(key, {"lap": 0, "cars": [], "run": "r"}))
+        client, calls = _stream_app(monkeypatch, [_now([{"lap": 0, "cars": []}], 0)])
+        monkeypatch.setattr(dashboard, "LIVE_STREAM_REFRESH", 60)
+        real_read = streams.read_after
+        sent = {"done": False}
+
+        async def read_after(stream, after="$", block_ms=0, count=200):
+            if not sent["done"]:
+                sent["done"] = True
+                await streams.publish(key, {"lap": 1, "cars": [], "run": "r"})
+                await streams.publish(key, {"lap": 2, "cars": [], "run": "r"})
+            return await real_read(stream, after, block_ms, count)
+
+        monkeypatch.setattr(streams, "read_after", read_after)
+        events = _events(client.get("/live/stream").text)
+    finally:
+        streams.use_client(None)
+    frames = [(i, d) for e, i, d in events if e == "frame"]
+    assert [i for i, _ in frames] == ["0", "1", "2"]
+    assert all("run" not in d for _, d in frames)
+    # Prediction-service asked once for the race; the laps came from Redis.
+    assert calls == [-1]

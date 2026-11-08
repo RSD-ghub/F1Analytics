@@ -170,3 +170,27 @@ def test_recording_live_needs_f1tv(tmp_path, monkeypatch):
     with pytest.raises(live_feed.LiveFeedError, match="connect F1TV"):
         asyncio.run(feed.start(2026, 21, {}))
     assert feed._process is None
+
+
+def test_each_new_lap_is_announced_on_the_laps_stream(tmp_path):
+    from f1_common import streams
+
+    (tmp_path / "2026-22-test.txt").write_text("\n".join(recording()) + "\n")
+    memory = streams.MemoryStreams()
+    streams.use_client(memory)
+    try:
+        feed = live_feed.LiveFeed(str(tmp_path))
+
+        async def run():
+            await feed.start(2026, 22, {}, recording="2026-22-test.txt")
+            await asyncio.wait_for(feed._task, 5)
+            return await streams.history(streams.LAPS)
+
+        entries = asyncio.run(run())
+    finally:
+        streams.use_client(None)
+    laps = [data["lap"] for _, data in entries]
+    assert laps == sorted(laps) and laps[-1] == 5
+    assert set(range(1, 6)) <= set(laps)
+    assert entries[-1][1]["status"] == "Finished"
+    assert entries[0][1]["mode"] == "replay" and entries[0][1]["started_at"]

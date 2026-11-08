@@ -119,3 +119,62 @@ def test_the_now_endpoint(monkeypatch):
         app.dependency_overrides.clear()
     assert [f["lap"] for f in body["frames"]] == [2, 3]
     assert sorted(c["driver"] for c in body["frames"][0]["cars"]) == sorted(DRIVERS)
+
+
+class RunFeed(Feed):
+    run = "2026-11-22T05:00:00+00:00"
+
+    async def live_status(self):
+        return dict(await super().live_status(), started_at=self.run)
+
+
+def test_frames_go_on_the_stream_and_survive_a_restart():
+    from f1_common import streams
+
+    memory = streams.MemoryStreams()
+    streams.use_client(memory)
+    try:
+        feed = RunFeed()
+        tracker = live_tracker.LiveTracker(feed, Predictor(), runs=100)
+        run(tracker, feed, [0, 3])
+        stored = memory.streams[streams.frames_stream(2025, 1)]
+        assert len(stored) == 4
+        # A new tracker (the service restarted) picks the race up where it was.
+        again = live_tracker.LiveTracker(feed, Predictor(), runs=100)
+        snapshots = feed.snapshots
+        run(again, feed, [3])
+        assert [f["lap"] for f in again.frames] == [0, 1, 2, 3]
+        assert feed.snapshots == snapshots          # nothing recomputed
+        assert again.frames[3]["cars"] == tracker.frames[3]["cars"]
+        # The same race recorded again starts clean.
+        feed.run = "2026-11-22T06:00:00+00:00"
+        run(again, feed, [1])
+        assert [f["lap"] for f in again.frames] == [0, 1]
+    finally:
+        streams.use_client(None)
+
+
+def test_the_tracker_wakes_on_the_laps_stream():
+    from f1_common import streams
+
+    memory = streams.MemoryStreams()
+    streams.use_client(memory)
+    try:
+        tracker = live_tracker.LiveTracker(Feed(), Predictor())
+
+        async def go():
+            tracker._laps_after = await streams.last_id(streams.LAPS)
+            await streams.publish(streams.LAPS, {"lap": 7})
+            await asyncio.wait_for(tracker._wait(), 1)
+            return tracker._laps_after
+
+        assert asyncio.run(go()) == "1-0"
+        memory.down = True
+        # Redis down: falls back to the poll sleep instead of raising.
+        live_tracker.POLL_SECONDS, saved = 0.01, live_tracker.POLL_SECONDS
+        try:
+            asyncio.run(asyncio.wait_for(tracker._wait(), 1))
+        finally:
+            live_tracker.POLL_SECONDS = saved
+    finally:
+        streams.use_client(None)
