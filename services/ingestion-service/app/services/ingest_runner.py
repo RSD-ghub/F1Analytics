@@ -826,7 +826,10 @@ class IngestRunner:
         else:
             payload = build_payload(frames)
             report = run_integrity_checks(payload, depth)
-            state.row_counts = await self._store.save_payload(payload, depth=depth)
+            not_fetched = () if getattr(self._source, "_load_telemetry", True) else ("telemetry",)
+            state.row_counts = await self._store.save_payload(
+                payload, depth=depth, not_fetched=not_fetched
+            )
             state.integrity = report
             await self._extract_signals(payload)
 

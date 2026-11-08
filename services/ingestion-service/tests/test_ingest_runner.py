@@ -117,7 +117,8 @@ class FakeStore:
             if from_season <= state.season <= to_season
         ]
 
-    async def save_payload(self, payload, depth=None) -> Dict[str, int]:
+    async def save_payload(self, payload, depth=None, not_fetched=()) -> Dict[str, int]:
+        self.not_fetched = tuple(not_fetched)
         counts = payload.row_counts()
         self.payloads[payload.session.key] = counts
         return counts
@@ -296,3 +297,21 @@ async def test_row_counts_are_recorded_on_success(setup):
 
     assert state.row_counts["results"] == 20
     assert state.completed_at is not None
+
+
+async def test_a_source_without_telemetry_does_not_clear_stored_telemetry(setup):
+    """backfill.py loads no telemetry; its empty list must not wipe what's stored."""
+    source, store, sessions = setup
+    source._load_telemetry = False
+
+    await _runner(source, store).ingest_session(sessions[0])
+
+    assert store.not_fetched == ("telemetry",)
+
+
+async def test_a_source_with_telemetry_replaces_it(setup):
+    source, store, sessions = setup
+
+    await _runner(source, store).ingest_session(sessions[0])
+
+    assert store.not_fetched == ()
