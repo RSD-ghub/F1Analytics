@@ -243,6 +243,36 @@ def session_t0(session: Any, laps: pd.DataFrame) -> Optional[datetime]:
     return offsets.sort_values().iloc[len(offsets) // 2].to_pydatetime()
 
 
+def t0_from_matched_laps(official: pd.DataFrame, other: pd.DataFrame) -> Optional[datetime]:
+    """Session t0 from laps both feeds have: OpenF1's UTC start minus FastF1's
+    session-time start, by car and lap.
+
+    Needed because without telemetry FastF1 fills neither ``t0_date`` nor
+    ``LapStartDate``. On Mexico 2026 this lands 0.19 s from the telemetry t0,
+    with an interquartile spread under 0.1 s.
+    """
+    needed_official = {"DriverNumber", "LapNumber", "LapStartTime"}
+    needed_other = {"DriverNumber", "LapNumber", "LapStartDate"}
+    if (official is None or other is None or official.empty or other.empty
+            or not needed_official <= set(official) or not needed_other <= set(other)):
+        return None
+    left = pd.DataFrame({
+        "number": official["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(official["LapNumber"], errors="coerce"),
+        "session": pd.to_timedelta(official["LapStartTime"], errors="coerce"),
+    })
+    right = pd.DataFrame({
+        "number": other["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(other["LapNumber"], errors="coerce"),
+        "utc": [_naive_utc(v) for v in other["LapStartDate"]],
+    })
+    joined = left.merge(right, on=["number", "lap"]).dropna()
+    if joined.empty:
+        return None
+    offsets = (pd.to_datetime(joined["utc"]) - joined["session"]).sort_values()
+    return offsets.iloc[len(offsets) // 2].to_pydatetime()
+
+
 def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
                    t0: Optional[datetime]) -> pd.DataFrame:
     """OpenF1 laps past the point where official timing stopped, FastF1-shaped.
@@ -425,7 +455,7 @@ class FastF1Source:
         held = _held_distance(frames.laps)
         if not distance or held >= distance:
             return
-        if self._openf1 is None or not self._openf1.enabled or t0 is None:
+        if self._openf1 is None or not self._openf1.enabled:
             logger.warning(
                 "official laps for %s stop at %s of %s; no OpenF1 to finish them",
                 expected.key, held, distance,
@@ -434,6 +464,12 @@ class FastF1Source:
         try:
             key = self._openf1.find_session(expected, "R")["session_key"]
             theirs, _, _ = self._openf1.laps_frame(key, with_pits=True)
+            if t0 is None:
+                t0 = t0_from_matched_laps(frames.laps, theirs)
+            if t0 is None:
+                logger.warning("cannot place %s on the session clock; laps left short",
+                               expected.key)
+                return
             extra = laps_after_cut(frames.laps, theirs, t0)
             if extra.empty:
                 return

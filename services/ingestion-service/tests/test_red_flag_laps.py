@@ -19,6 +19,7 @@ from app.services.fastf1_source import (
     classified_distance,
     laps_after_cut,
     session_t0,
+    t0_from_matched_laps,
 )
 from app.services.openf1_source import OpenF1Unavailable
 from app.services.transforms import extract_results
@@ -234,3 +235,24 @@ def test_t0_comes_from_the_laps_when_telemetry_was_not_loaded():
 
 def test_t0_is_none_when_nothing_can_place_it():
     assert session_t0(_NoTelemetrySession(), pd.DataFrame()) is None
+
+
+def _with_session_times(frame):
+    frame = frame.copy()
+    frame["LapStartTime"] = [pd.Timedelta(seconds=80 * int(n)) for n in frame["LapNumber"]]
+    frame["LapStartDate"] = pd.NaT  # FastF1 leaves it empty without telemetry
+    return frame
+
+
+def test_t0_from_laps_both_feeds_have():
+    assert t0_from_matched_laps(_with_session_times(_official()), _openf1()) == T0
+
+
+def test_a_short_race_is_finished_even_without_telemetry_t0():
+    source = FastF1Source("unused", load_telemetry=False, openf1=_FakeOpenF1())
+    frames = _frames()
+    frames.laps = _with_session_times(frames.laps)
+
+    source._extend_from_openf1(RACE, frames, None)
+
+    assert int(frames.laps["LapNumber"].max()) == 71
