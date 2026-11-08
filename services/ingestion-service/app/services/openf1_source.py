@@ -376,7 +376,9 @@ class OpenF1Client:
                 if before is not None:
                     frame.at[before, "PitInTime"] = marker
 
-        return frame.drop(columns=["IsPitOutLap", "LapStartDate"]), names, numbers
+        # LapStartDate stays: it is what puts these laps on FastF1's session clock
+        # when a red-flagged race is finished from here (t0_from_matched_laps).
+        return frame.drop(columns=["IsPitOutLap"]), names, numbers
 
     def weather_frame(self, session_key: int) -> pd.DataFrame:
         rows = [

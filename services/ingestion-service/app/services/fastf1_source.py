@@ -184,6 +184,187 @@ def _safe_results(source: "FastF1Source", session: Any, season: int) -> pd.DataF
         return pd.DataFrame()
 
 
+def classified_distance(results: pd.DataFrame) -> int:
+    """Laps the winner completed, from the classification; 0 when unknown."""
+    if results is None or results.empty or "Laps" not in results:
+        return 0
+    laps = pd.to_numeric(results["Laps"], errors="coerce").dropna()
+    return int(laps.max()) if not laps.empty else 0
+
+
+def _held_distance(laps: pd.DataFrame) -> int:
+    if laps is None or laps.empty or "LapNumber" not in laps:
+        return 0
+    numbers = pd.to_numeric(laps["LapNumber"], errors="coerce").dropna()
+    return int(numbers.max()) if not numbers.empty else 0
+
+
+def _session_time(value: Any, t0: Optional[datetime]) -> Any:
+    """An OpenF1 UTC instant as FastF1 session time (offset from ``t0``)."""
+    if value is None or t0 is None:
+        return pd.NaT
+    stamp = pd.Timestamp(value)
+    if pd.isna(stamp):
+        return pd.NaT
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return stamp - pd.Timestamp(t0)
+
+
+def _naive_utc(value: Any) -> Any:
+    stamp = pd.Timestamp(value) if value is not None and value != "" else pd.NaT
+    if pd.isna(stamp):
+        return pd.NaT
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return stamp
+
+
+def session_t0(session: Any, laps: pd.DataFrame) -> Optional[datetime]:
+    """The UTC instant FastF1's session times count from, or None.
+
+    ``session.t0_date`` raises ``DataNotLoadedError`` (not ``AttributeError``)
+    unless car telemetry was loaded, which the backfill script never does. A
+    lap carries both clocks, so ``LapStartDate - LapStartTime`` gives the same
+    instant without telemetry; the median shrugs off a lap with a bad stamp.
+    """
+    try:
+        t0 = session.t0_date
+        if t0 is not None and not pd.isna(t0):
+            return pd.Timestamp(t0).to_pydatetime()
+    except Exception:  # noqa: BLE001 - DataNotLoadedError and friends
+        pass
+    if laps is None or laps.empty or not {"LapStartDate", "LapStartTime"} <= set(laps):
+        return None
+    offsets = (pd.to_datetime(laps["LapStartDate"], errors="coerce")
+               - pd.to_timedelta(laps["LapStartTime"], errors="coerce")).dropna()
+    if offsets.empty:
+        return None
+    return offsets.sort_values().iloc[len(offsets) // 2].to_pydatetime()
+
+
+def t0_from_matched_laps(official: pd.DataFrame, other: pd.DataFrame) -> Optional[datetime]:
+    """Session t0 from laps both feeds have: OpenF1's UTC start minus FastF1's
+    session-time start, by car and lap.
+
+    Needed because without telemetry FastF1 fills neither ``t0_date`` nor
+    ``LapStartDate``. On Mexico 2026 this lands 0.19 s from the telemetry t0,
+    with an interquartile spread under 0.1 s.
+    """
+    needed_official = {"DriverNumber", "LapNumber", "LapStartTime"}
+    needed_other = {"DriverNumber", "LapNumber", "LapStartDate"}
+    if (official is None or other is None or official.empty or other.empty
+            or not needed_official <= set(official) or not needed_other <= set(other)):
+        return None
+    left = pd.DataFrame({
+        "number": official["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(official["LapNumber"], errors="coerce"),
+        "session": pd.to_timedelta(official["LapStartTime"], errors="coerce"),
+    })
+    right = pd.DataFrame({
+        "number": other["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(other["LapNumber"], errors="coerce"),
+        "utc": [_naive_utc(v) for v in other["LapStartDate"]],
+    })
+    joined = left.merge(right, on=["number", "lap"]).dropna()
+    if joined.empty:
+        return None
+    offsets = (pd.to_datetime(joined["utc"]) - joined["session"]).sort_values()
+    return offsets.iloc[len(offsets) // 2].to_pydatetime()
+
+
+#: How far before official timing's last lap start an OpenF1 lap may begin
+#: and still count as "after the cut": one slow lap, so a car a lap down at
+#: the red flag keeps its lap in progress.
+CUT_MARGIN = pd.Timedelta(minutes=3)
+
+
+def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
+                   t0: Optional[datetime]) -> pd.DataFrame:
+    """OpenF1 laps past the point where official timing stopped, FastF1-shaped.
+
+    Mexico 2026 is why: the official archive ends at the red flag on lap 56
+    and has nothing after the restart, while OpenF1 has all 71 laps. Only laps
+    beyond each car's last official lap are taken, so every lap official
+    timing does have stays official. The rows are converted to FastF1's own
+    conventions (driver code, session-time pit timestamps, stint numbering)
+    so that pit stops and stints derive across the join as if from one feed.
+    """
+    if official is None or official.empty or other is None or other.empty:
+        return pd.DataFrame()
+    official_numbers = official["DriverNumber"].astype(str)
+    other = other.copy()
+    other["DriverNumber"] = other["DriverNumber"].astype(str)
+    other["LapNumber"] = pd.to_numeric(other["LapNumber"], errors="coerce")
+
+    # Only laps that start after official timing stopped. Without this a car
+    # that retired long before the cut picks up its untimed retirement lap
+    # from OpenF1 (Stroll, Mexico 2026: a phantom lap 6 on UNKNOWN tyres).
+    shared = other  # every lap, for lining up stint numbers below
+    if "LapStartTime" in official and "LapStartDate" in other and t0 is not None:
+        last_start = pd.to_timedelta(official["LapStartTime"], errors="coerce").max()
+        if pd.notna(last_start):
+            cut = pd.Timestamp(t0) + last_start - CUT_MARGIN
+            starts = pd.Series([_naive_utc(v) for v in other["LapStartDate"]],
+                               index=other.index)
+            other = other[starts.notna() & (starts >= cut)]
+
+    pieces = []
+    for number, theirs in other.groupby("DriverNumber"):
+        ours = official[official_numbers == number]
+        if ours.empty:
+            continue
+        last = int(pd.to_numeric(ours["LapNumber"], errors="coerce").max())
+        extra = theirs[theirs["LapNumber"] > last].copy()
+        if extra.empty:
+            continue
+        # OpenF1 may count stints differently; continue the official count
+        # from the lap both feeds share.
+        offset = 0
+        ours_last = ours[pd.to_numeric(ours["LapNumber"], errors="coerce") == last]
+        theirs_last = shared[(shared["DriverNumber"] == number)
+                             & (shared["LapNumber"] == last)]
+        if not ours_last.empty and not theirs_last.empty and "Stint" in ours:
+            mine = pd.to_numeric(ours_last["Stint"].iloc[0:1], errors="coerce").iloc[0]
+            yours = pd.to_numeric(theirs_last["Stint"].iloc[0:1], errors="coerce").iloc[0]
+            if pd.notna(mine) and pd.notna(yours):
+                offset = int(mine) - int(yours)
+        if "Stint" in extra:
+            extra["Stint"] = pd.to_numeric(extra["Stint"], errors="coerce") + offset
+        extra["Driver"] = ours["Driver"].iloc[0]
+        pieces.append(extra)
+    if not pieces:
+        return pd.DataFrame()
+
+    extra = pd.concat(pieces, ignore_index=True)
+    for column in ("PitInTime", "PitOutTime"):
+        if column in extra:
+            extra[column] = pd.Series(
+                [_session_time(v, t0) for v in extra[column]],
+                index=extra.index, dtype="timedelta64[ns]",
+            )
+    if "LapStartDate" in extra:
+        extra["LapStartDate"] = pd.Series(
+            [_naive_utc(v) for v in extra["LapStartDate"]],
+            index=extra.index, dtype="datetime64[ns]",
+        )
+    return extra
+
+
+def rows_after(official: pd.DataFrame, other: pd.DataFrame, convert) -> pd.DataFrame:
+    """Rows of ``other`` later than the last official row, in official time."""
+    if other is None or other.empty or "Time" not in other:
+        return pd.DataFrame()
+    other = other.copy()
+    other["Time"] = [convert(v) for v in other["Time"]]
+    other = other[other["Time"].notna()]
+    if official is not None and not official.empty and "Time" in official:
+        cut = official["Time"].dropna().max()
+        if pd.notna(cut):
+            other = other[other["Time"] > cut]
+    return other.reset_index(drop=True)
+
+
 def canonical_driver_names(
     frame: pd.DataFrame, names: Optional[Dict[int, str]]
 ) -> pd.DataFrame:
@@ -284,6 +465,53 @@ class FastF1Source:
         logger.info(
             "laps for %s from OpenF1 (session %s): %s laps",
             expected.key, key, len(frames.laps),
+        )
+
+    def _extend_from_openf1(self, expected: ExpectedSession, frames: SessionFrames,
+                            t0: Optional[datetime]) -> None:
+        """Finish a race whose official laps stop short of the classified distance."""
+        distance = classified_distance(frames.results)
+        held = _held_distance(frames.laps)
+        if not distance or held >= distance:
+            return
+        if self._openf1 is None or not self._openf1.enabled:
+            logger.warning(
+                "official laps for %s stop at %s of %s; no OpenF1 to finish them",
+                expected.key, held, distance,
+            )
+            return
+        try:
+            key = self._openf1.find_session(expected, "R")["session_key"]
+            theirs, _, _ = self._openf1.laps_frame(key, with_pits=True)
+            if t0 is None:
+                t0 = t0_from_matched_laps(frames.laps, theirs)
+            if t0 is None:
+                logger.warning("cannot place %s on the session clock; laps left short",
+                               expected.key)
+                return
+            extra = laps_after_cut(frames.laps, theirs, t0)
+            if extra.empty:
+                return
+            frames.laps = pd.concat([frames.laps, extra], ignore_index=True)
+            weather = rows_after(
+                frames.weather, self._openf1.weather_frame(key),
+                lambda v: _session_time(v, t0),
+            )
+            if not weather.empty:
+                frames.weather = pd.concat([frames.weather, weather], ignore_index=True)
+            control = rows_after(
+                frames.race_control, self._openf1.race_control_frame(key), _naive_utc,
+            )
+            if not control.empty:
+                frames.race_control = pd.concat(
+                    [frames.race_control, control], ignore_index=True
+                )
+        except OpenF1Unavailable as exc:
+            logger.warning("OpenF1 cannot finish %s: %s", expected.key, exc)
+            return
+        logger.info(
+            "official laps for %s stop at %s of %s; laps %s-%s from OpenF1 (%s rows)",
+            expected.key, held, distance, held + 1, _held_distance(frames.laps), len(extra),
         )
 
     def _openf1_practice_laps(self, expected: ExpectedSession, code: str,
@@ -466,6 +694,8 @@ class FastF1Source:
         )
         if frames.laps.empty:
             self._fill_from_openf1(expected, frames)
+        else:
+            self._extend_from_openf1(expected, frames, session_t0(session, frames.laps))
         if self._load_telemetry:
             frames.telemetry = self._extract_telemetry(frames.session, session, results)
         return frames

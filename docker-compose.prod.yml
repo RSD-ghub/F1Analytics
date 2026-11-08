@@ -176,6 +176,8 @@ services:
       TINKER_API_KEY: "${TINKER_API_KEY:-}"
       # Caddy is the only caller, so its X-Forwarded-For is the real client.
       TRUST_FORWARDED_FOR: "true"
+      # Who may connect the F1TV account on the Data health page.
+      ADMIN_EMAILS: "${ADMIN_EMAILS:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"

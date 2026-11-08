@@ -225,3 +225,26 @@ def test_a_tyre_change_is_moved_onto_the_lap_the_car_pitted():
         ("ANT", 1, "HARD", 6), ("NOR", 1, "SOFT", 3), ("NOR", 2, "MEDIUM", 3)]
     lap4 = laps[(laps["Driver"] == "NOR") & (laps["LapNumber"] == 4)].iloc[0]
     assert lap4["TyreLife"] == 1
+
+
+def test_race_laps_can_be_placed_on_the_fastf1_session_clock():
+    """The real laps_frame output must carry what t0_from_matched_laps joins on.
+
+    It once dropped LapStartDate, so finishing a red-flagged race silently
+    found no t0 and left the race short.
+    """
+    from app.services.fastf1_source import t0_from_matched_laps
+
+    client, _ = _client()
+    laps, _, _ = client.laps_frame(11404, with_pits=True)
+    assert "LapStartDate" in laps
+
+    t0 = pd.Timestamp("2026-10-25 19:50:03")
+    official = pd.DataFrame({
+        "DriverNumber": laps["DriverNumber"],
+        "LapNumber": laps["LapNumber"],
+        "LapStartTime": [
+            pd.Timestamp(v).tz_convert(None) - t0 for v in laps["LapStartDate"]
+        ],
+    }).dropna()
+    assert t0_from_matched_laps(official, laps) == t0.to_pydatetime()

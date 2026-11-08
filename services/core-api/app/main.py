@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app import db
 from app.config import get_settings
-from app.routers import auth, bernie, blog, dashboard, drivers, health_page, news, strategy
+from app.routers import admin, auth, bernie, blog, dashboard, drivers, health_page, news, strategy
 from app.services.downstream import DownstreamUnavailable
 from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
@@ -91,6 +91,7 @@ app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)
 )
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(blog.router)
 app.include_router(bernie.router)
 app.include_router(dashboard.router)

@@ -21,7 +21,8 @@ from app.regulations import RegulationStore
 from app.regulations import router as regulations_router
 from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
-from app.services import scheduler
+from app.routers import f1tv as f1tv_router
+from app.services import f1tv_auth, scheduler
 from app.services.storage import IngestionStore
 from f1_common import cache
 from f1_common.health import build_health_router
@@ -35,6 +36,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    # Before anything can load a session: a service must never stop to ask
+    # for an F1TV password on a terminal nobody is watching.
+    f1tv_auth.install_no_prompt()
     cache.configure(settings.redis_url)
 
     # Index creation is best-effort: Mongo being briefly unreachable at boot
@@ -81,3 +85,4 @@ app.include_router(regulations_router.router)
 app.include_router(circuits_router.router)
 app.include_router(news_router.router)
 app.include_router(guide_router.router)
+app.include_router(f1tv_router.router)

@@ -197,6 +197,12 @@ export const getBlogFeed = (limit = 24) =>
 export const getGlobe = () => request('/globe')
 
 export const getDataHealth = () => request('/data-health')
+// Owner-only: the F1TV account FastF1 signs in with. The server checks the
+// caller on every call; the password goes to ingestion and is not stored.
+export const getF1tv = () => request('/admin/f1tv', { auth: true })
+export const connectF1tv = (username, password) =>
+  post('/admin/f1tv/connect', { username, password }, { auth: true })
+export const disconnectF1tv = () => post('/admin/f1tv/disconnect', {}, { auth: true })
 export const getDrivers = (season) => request(`/drivers/${season}`)
 export const getDriver = (season, driver) =>
   request(`/drivers/${season}/${encodeURIComponent(driver)}`)
