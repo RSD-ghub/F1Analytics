@@ -273,6 +273,12 @@ def t0_from_matched_laps(official: pd.DataFrame, other: pd.DataFrame) -> Optiona
     return offsets.iloc[len(offsets) // 2].to_pydatetime()
 
 
+#: How far before official timing's last lap start an OpenF1 lap may begin
+#: and still count as "after the cut": one slow lap, so a car a lap down at
+#: the red flag keeps its lap in progress.
+CUT_MARGIN = pd.Timedelta(minutes=3)
+
+
 def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
                    t0: Optional[datetime]) -> pd.DataFrame:
     """OpenF1 laps past the point where official timing stopped, FastF1-shaped.
@@ -291,6 +297,18 @@ def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
     other["DriverNumber"] = other["DriverNumber"].astype(str)
     other["LapNumber"] = pd.to_numeric(other["LapNumber"], errors="coerce")
 
+    # Only laps that start after official timing stopped. Without this a car
+    # that retired long before the cut picks up its untimed retirement lap
+    # from OpenF1 (Stroll, Mexico 2026: a phantom lap 6 on UNKNOWN tyres).
+    shared = other  # every lap, for lining up stint numbers below
+    if "LapStartTime" in official and "LapStartDate" in other and t0 is not None:
+        last_start = pd.to_timedelta(official["LapStartTime"], errors="coerce").max()
+        if pd.notna(last_start):
+            cut = pd.Timestamp(t0) + last_start - CUT_MARGIN
+            starts = pd.Series([_naive_utc(v) for v in other["LapStartDate"]],
+                               index=other.index)
+            other = other[starts.notna() & (starts >= cut)]
+
     pieces = []
     for number, theirs in other.groupby("DriverNumber"):
         ours = official[official_numbers == number]
@@ -304,7 +322,8 @@ def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
         # from the lap both feeds share.
         offset = 0
         ours_last = ours[pd.to_numeric(ours["LapNumber"], errors="coerce") == last]
-        theirs_last = theirs[theirs["LapNumber"] == last]
+        theirs_last = shared[(shared["DriverNumber"] == number)
+                             & (shared["LapNumber"] == last)]
         if not ours_last.empty and not theirs_last.empty and "Stint" in ours:
             mine = pd.to_numeric(ours_last["Stint"].iloc[0:1], errors="coerce").iloc[0]
             yours = pd.to_numeric(theirs_last["Stint"].iloc[0:1], errors="coerce").iloc[0]

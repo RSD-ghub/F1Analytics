@@ -256,3 +256,17 @@ def test_a_short_race_is_finished_even_without_telemetry_t0():
     source._extend_from_openf1(RACE, frames, None)
 
     assert int(frames.laps["LapNumber"].max()) == 71
+
+
+def test_a_car_that_retired_long_before_the_cut_gets_no_phantom_lap():
+    # Stroll, Mexico 2026: official laps 1-5, OpenF1 adds an untimed lap 6.
+    official = pd.concat([
+        _with_session_times(_official()),
+        _with_session_times(_official(number="18", code="STR", last=5)),
+    ], ignore_index=True)
+    theirs = pd.concat([_openf1(), _openf1(number="18", last=6)], ignore_index=True)
+
+    extra = laps_after_cut(official, theirs, T0)
+
+    assert set(extra["DriverNumber"]) == {"1"}
+    assert list(extra["LapNumber"]) == list(range(57, 72))
