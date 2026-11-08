@@ -43,7 +43,7 @@ from app.services import circuits, race_pace  # noqa: E402
 from app.services.ingestion_client import IngestionClient  # noqa: E402
 from app.services.live_replay import total_laps_of  # noqa: E402
 from app.services.model import PACE_NETWORK_PATH, feature_names, feature_vector  # noqa: E402
-from app.training import corpus, lap_profiles  # noqa: E402
+from app.training import corpus, lap_profiles, tum_timing  # noqa: E402
 from app.training.backtest import paired_bootstrap  # noqa: E402
 from app.training.lap_time_network import (  # noqa: E402
     LAP_FEATURES,
@@ -150,6 +150,9 @@ def main() -> int:
     parser.add_argument("--decay", type=float, default=0.85,
                         help="weight of a season relative to the one after it")
     parser.add_argument("--max-iter", type=int, default=600)
+    parser.add_argument("--tum", default=None,
+                        help="path to the TUM f1-timing-database SQLite file: tyre compound, "
+                             "tyre age and SC/VSC laps for 2014-2017")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--json", default=None)
     args = parser.parse_args()
@@ -158,6 +161,8 @@ def main() -> int:
 
     results, quali, practice, laps, contexts, weather = asyncio.run(load(args.api_url, last))
     archetypes = circuits.CircuitArchetypes.load()
+    overlays = tum_timing.load(args.tum) if args.tum else {}
+    tum_cover = defaultdict(list)
     circuit_of = {(r.season, r.round): r.circuit for r in results}
     by_race = defaultdict(list)
     for r in results:
@@ -178,10 +183,14 @@ def main() -> int:
             continue
         if season == last and round_number > args.test_last_round:
             continue
+        ages, neutral = {}, set()
+        if key in overlays:
+            race_laps, ages, neutral = tum_timing.apply(race_laps, overlays[key])
+            tum_cover[season].append(tum_timing.coverage(race_laps, ages))
         rows = race_rows(season, round_number, race_laps,
                          total_laps_of(race_laps, by_race[key]),
                          archetype=archetypes.archetype_of(circuit_of.get(key, "")),
-                         weather=weather.get(key))
+                         weather=weather.get(key), tyre_ages=ages, neutral=neutral)
         if rows is None:
             continue
         vectors = {d.driver: feature_vector(d, with_grid=True) for d in drivers_of[key]}
@@ -195,6 +204,9 @@ def main() -> int:
         table.add(rows, np.array([vectors[d] for d in rows.drivers]), season)
         race_rows_of[key] = rows
     table.done()
+    for season, shares in sorted(tum_cover.items()):
+        logger.info("TUM tyres %s: %s races, %.1f%% of laps matched", season, len(shares),
+                    100 * float(np.mean(shares)))
     names = list(LAP_FEATURES) + ["pre_" + n for n in feature_names(with_grid=True)]
     logger.info("%s clean laps from %s races, %s inputs", len(table.y), len(race_rows_of),
                 len(names))
@@ -269,6 +281,7 @@ def main() -> int:
     dry = test & ~table.wet
     report = {"candidates": candidates, "chosen": {"network": deep, "linear": linear},
               "test_seasons": tests, "tune_season": args.tune, "decay": args.decay,
+              "tum": bool(args.tum),
               "rmse": {}}
     logger.info("\nTest (%s, dry laps), centred RMSE in %% of a lap:", args.test)
     slices = {

@@ -37,7 +37,7 @@ first thing it has to beat. Plain numpy with a hand-written gradient, like the
 other networks here.
 """
 
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.optimize import minimize
@@ -144,15 +144,23 @@ def race_rows(
     total_laps: int,
     archetype: str = "",
     weather: Optional[Mapping[str, float]] = None,
+    tyre_ages: Optional[Mapping[Tuple[str, int], int]] = None,
+    neutral: Optional[Iterable[int]] = None,
 ) -> Optional[RaceRows]:
     """Rows for every clean lap of one race, each with only what was known at
-    the start of that lap. None for a race with no clean running."""
-    clean = race_pace._clean_laps(laps)
-    if not clean or total_laps < 2:
+    the start of that lap. None for a race with no clean running.
+
+    ``tyre_ages`` and ``neutral`` (safety car and VSC laps) come from an outside
+    record where the stored laps lack them (``tum_timing`` for 2014-2017): the
+    ages replace the ones counted from stint starts, and the laps join the ones
+    seen in the field's lap times.
+    """
+    seen_neutral, typical = neutralised_laps(laps)
+    neutral = seen_neutral | set(neutral or ())
+    clean = [lap for lap in race_pace._clean_laps(laps) if lap.lap not in neutral]
+    if not clean or total_laps < 2 or typical <= 0:
         return None
-    neutral, typical = neutralised_laps(laps)
-    if typical <= 0:
-        return None
+    tyre_ages = tyre_ages or {}
     unknown = all(lap.compound.upper() == "UNKNOWN" for lap in clean)
     # Stint starts from every lap where stints are recorded; from the clean
     # laps (stints inferred from pit spikes) where they are not.
@@ -175,6 +183,9 @@ def race_rows(
     stint_history: Dict[Tuple[str, int], List[Tuple[float, float]]] = {}
 
     def age_of(lap: RaceLap) -> int:
+        known = tyre_ages.get((lap.driver, lap.lap))
+        if known is not None:
+            return int(known)
         return lap.lap - starts.get((lap.driver, lap.stint), lap.lap) + 1
 
     rows_x, rows_y, drivers, numbers, compounds, ages = [], [], [], [], [], []

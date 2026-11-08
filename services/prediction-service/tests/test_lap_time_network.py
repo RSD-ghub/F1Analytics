@@ -163,3 +163,13 @@ def test_simulator_prediction_learns_pace_from_the_race_so_far():
     early_error = centred_rmse(prediction[early], rows.y[early], groups[early])
     late_error = centred_rmse(prediction[late], rows.y[late], groups[late])
     assert late_error < 0.3 * early_error
+
+
+def test_outside_tyre_ages_and_safety_car_laps_are_used():
+    laps = _race(compound="Unknown", season=2015)
+    ages = {(lap.driver, lap.lap): 7 for lap in laps}
+    rows = race_rows(2015, 1, laps, 30, tyre_ages=ages, neutral={20})
+    assert np.all(rows.x[:, COL["tyre_age"]] == 7)
+    assert 20 not in rows.laps
+    assert all(rows.x[i, COL["since_neutralised"]] == 2 for i in range(len(rows.y))
+               if rows.laps[i] == 22)
