@@ -18,6 +18,8 @@ from app.services.fastf1_source import (
     SessionFrames,
     classified_distance,
     laps_after_cut,
+    session_t0,
+    t0_from_matched_laps,
 )
 from app.services.openf1_source import OpenF1Unavailable
 from app.services.transforms import extract_results
@@ -214,3 +216,57 @@ def test_an_unknown_lap_count_cannot_fail_the_check():
     for row in payload.results:
         row.laps_completed = 0
     assert _check(run_integrity_checks(payload)).passed
+
+
+class _NoTelemetrySession:
+    """FastF1 3.9 raises on ``t0_date`` when car data was not loaded."""
+
+    @property
+    def t0_date(self):
+        raise RuntimeError("The data you are trying to access has not been loaded yet")
+
+
+def test_t0_comes_from_the_laps_when_telemetry_was_not_loaded():
+    laps = _official()
+    laps["LapStartTime"] = [pd.Timedelta(seconds=80 * lap) for lap in range(1, len(laps) + 1)]
+
+    assert session_t0(_NoTelemetrySession(), laps) == T0
+
+
+def test_t0_is_none_when_nothing_can_place_it():
+    assert session_t0(_NoTelemetrySession(), pd.DataFrame()) is None
+
+
+def _with_session_times(frame):
+    frame = frame.copy()
+    frame["LapStartTime"] = [pd.Timedelta(seconds=80 * int(n)) for n in frame["LapNumber"]]
+    frame["LapStartDate"] = pd.NaT  # FastF1 leaves it empty without telemetry
+    return frame
+
+
+def test_t0_from_laps_both_feeds_have():
+    assert t0_from_matched_laps(_with_session_times(_official()), _openf1()) == T0
+
+
+def test_a_short_race_is_finished_even_without_telemetry_t0():
+    source = FastF1Source("unused", load_telemetry=False, openf1=_FakeOpenF1())
+    frames = _frames()
+    frames.laps = _with_session_times(frames.laps)
+
+    source._extend_from_openf1(RACE, frames, None)
+
+    assert int(frames.laps["LapNumber"].max()) == 71
+
+
+def test_a_car_that_retired_long_before_the_cut_gets_no_phantom_lap():
+    # Stroll, Mexico 2026: official laps 1-5, OpenF1 adds an untimed lap 6.
+    official = pd.concat([
+        _with_session_times(_official()),
+        _with_session_times(_official(number="18", code="STR", last=5)),
+    ], ignore_index=True)
+    theirs = pd.concat([_openf1(), _openf1(number="18", last=6)], ignore_index=True)
+
+    extra = laps_after_cut(official, theirs, T0)
+
+    assert set(extra["DriverNumber"]) == {"1"}
+    assert list(extra["LapNumber"]) == list(range(57, 72))
