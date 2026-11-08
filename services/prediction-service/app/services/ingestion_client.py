@@ -272,6 +272,15 @@ class IngestionClient:
         except httpx.HTTPError as exc:
             raise IngestionUnavailable("GET {} failed: {}".format(path, exc)) from exc
 
+    async def live_status(self) -> Dict[str, Any]:
+        """The live feed's summary: race, leader's lap, session status."""
+        return await self._get("/live/status")
+
+    async def live_snapshot(self) -> Dict[str, Any]:
+        """The live race so far: ``laps``, ``pit_stops``, ``race_control``
+        (rows shaped as stored ones), ``retired`` and the summary fields."""
+        return await self._get("/live/snapshot")
+
     async def season_results(self, season: int) -> List[RaceResult]:
         """Every ingested race result for a season.
 

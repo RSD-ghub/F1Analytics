@@ -3,6 +3,7 @@ import { useAsync } from '../hooks/useAsync'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { Panel, Loading, Unavailable } from '../components/Panel'
 import F1TVConnection from '../components/F1TVConnection'
+import LiveFeedControl from '../components/LiveFeedControl'
 
 /**
  * Is the data behind the forecasts whole and fresh? An operator's page, kept
@@ -39,6 +40,8 @@ export default function DataHealth() {
       )}
 
       <F1TVConnection status={f1tv} />
+
+      <LiveFeedControl />
 
       <Panel title="Completeness" subtitle="Sessions expected against sessions held">
         <table className="datatable compact">

@@ -249,15 +249,7 @@ class Predictor:
 
         from app.services import live_replay
 
-        engine = self._lap_engine
-        if engine is None:
-            raise ReplayUnavailable("the lap simulator has not been fitted")
-        window = LockWindow.FINAL_GRID
-        try:
-            snapshot, _ = await self._prepare(season, round_number, window, circuit)
-        except ConfirmedGridRequired:
-            window = LockWindow.POST_QUALI
-            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        inputs = await self.live_inputs(season, round_number, circuit)
         laps = await self._client.race_laps(season, round_number)
         if not laps:
             raise ReplayUnavailable(
@@ -272,23 +264,51 @@ class Predictor:
                  if r.round == round_number]
         messages = [r for r in await self._client.season_race_control(season)
                     if r.round == round_number]
+        replay = await asyncio.to_thread(
+            live_replay.build_replay,
+            inputs["drivers"], inputs["strengths"], inputs["profile"], inputs["params"],
+            laps, stops, messages, results,
+            seed=inputs["seed"], runs=runs or live_replay.REPLAY_RUNS, step=step,
+            network=inputs["network"], **inputs["retirement"])
+        replay.update(season=season, round=round_number, circuit=circuit,
+                      race_name=next((r.race_name for r in results if r.race_name), ""),
+                      grid=inputs["grid"], model_version=inputs["model_version"],
+                      engine=inputs["engine"])
+        return replay
+
+    async def live_inputs(self, season: int, round_number: int, circuit: str = "") -> dict:
+        """What the live forecast needs before the first lap, for the replay and
+        the live feed alike: the field and its pre-race strengths from the
+        final-grid forecast (post-quali when the confirmed grid never came),
+        the circuit's lap profile, the simulator and the correcting network."""
+        from app.services import live_replay
+
+        engine = self._lap_engine
+        if engine is None:
+            raise ReplayUnavailable("the lap simulator has not been fitted")
+        window = LockWindow.FINAL_GRID
+        try:
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        except ConfirmedGridRequired:
+            window = LockWindow.POST_QUALI
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
         network, _ = live_replay.cached_live_network()
         model = self._model
         drivers = snapshot.drivers
-        replay = await asyncio.to_thread(
-            live_replay.build_replay,
-            drivers, model.strengths(drivers), engine.profile(circuit), engine.params,
-            laps, stops, messages, results,
-            seed=derive_seed(season, round_number, window),
-            runs=runs or live_replay.REPLAY_RUNS, step=step, network=network,
-            retirement_race_k=getattr(model, "retirement_race_k", None),
-            retirement_team_k=getattr(model, "retirement_team_k", None),
-        )
-        replay.update(season=season, round=round_number, circuit=circuit,
-                      race_name=next((r.race_name for r in results if r.race_name), ""),
-                      grid=window.value, model_version=model.version,
-                      engine=engine.version)
-        return replay
+        return {
+            "drivers": drivers,
+            "strengths": model.strengths(drivers),
+            "profile": engine.profile(circuit),
+            "params": engine.params,
+            "seed": derive_seed(season, round_number, window),
+            "network": network,
+            "retirement": dict(
+                retirement_race_k=getattr(model, "retirement_race_k", None),
+                retirement_team_k=getattr(model, "retirement_team_k", None)),
+            "grid": window.value,
+            "model_version": model.version,
+            "engine": engine.version,
+        }
 
     async def _prepare(
         self,

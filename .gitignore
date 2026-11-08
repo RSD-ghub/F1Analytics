@@ -81,3 +81,4 @@ nb-configuration.xml
 # Generated: Vite dependency cache and setuptools metadata from editable installs.
 .vite/
 *.egg-info/
+live-recordings/

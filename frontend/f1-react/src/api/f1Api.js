@@ -211,3 +211,9 @@ export const getRaceReview = (season, round) => request(`/race-review/${season}/
 // A finished race forecast again lap by lap: the Live page's replay. Slow the
 // first time (it simulates every lap), cached after.
 export const getLiveReplay = (season, round) => request(`/live-replay/${season}/${round}`)
+export const getLiveNow = (since = -1) => request(`/live/now?since=${since}`)
+/** Server-sent events: `race` (the race's state) and `frame` (one lap). */
+export const liveStreamUrl = () => `${BASE}/live/stream`
+export const getLiveFeed = () => request('/admin/live', { auth: true })
+export const startLiveFeed = (body) => post('/admin/live/start', body, { auth: true })
+export const stopLiveFeed = () => post('/admin/live/stop', {}, { auth: true })

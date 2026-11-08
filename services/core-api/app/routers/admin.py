@@ -94,3 +94,43 @@ async def f1tv_disconnect(
     _=Depends(admin_user), settings: Settings = Depends(get_settings)
 ) -> Dict[str, Any]:
     return await _ingestion(settings, "POST", "/f1tv/disconnect")
+
+
+# ── The live race feed ──────────────────────────────────────────────────────
+#
+# Starting the feed runs FastF1's live recorder on the machine ingestion runs
+# on, so it is the owner's call, like F1TV. Viewing the live forecast is not:
+# that is /live/now and /live/stream, open like the rest of the dashboard.
+
+
+class LiveStart(BaseModel):
+    season: int = Field(ge=2018, le=2100)
+    round: int = Field(ge=1, le=40)
+    #: Replay this recording instead of recording live (a name from GET).
+    recording: str = Field("", max_length=200)
+    speed: float = Field(0.0, ge=0.0, le=1000.0)
+
+
+@router.get("/live", response_model=Dict[str, Any])
+async def live_feed_status(
+    _=Depends(admin_user), settings: Settings = Depends(get_settings)
+) -> Dict[str, Any]:
+    status = await _ingestion(settings, "GET", "/live/status")
+    recordings = await _ingestion(settings, "GET", "/live/recordings")
+    return dict(status, recordings=recordings.get("recordings", []))
+
+
+@router.post("/live/start", response_model=Dict[str, Any])
+async def live_feed_start(
+    request: LiveStart,
+    _=Depends(admin_user),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    return await _ingestion(settings, "POST", "/live/start", request.model_dump())
+
+
+@router.post("/live/stop", response_model=Dict[str, Any])
+async def live_feed_stop(
+    _=Depends(admin_user), settings: Settings = Depends(get_settings)
+) -> Dict[str, Any]:
+    return await _ingestion(settings, "POST", "/live/stop")
