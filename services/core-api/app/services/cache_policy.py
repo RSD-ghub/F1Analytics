@@ -61,6 +61,9 @@ _POLICIES = {
         # A full Monte Carlo run on every request otherwise. Built from the
         # model and from ingested results, so either moving retires it.
         (r"/championship/\d+", Policy(15 * MINUTE, ("prediction", "ingestion"))),
+        # A finished race replayed lap by lap: tens of seconds to build, the
+        # same until the model or the race's data changes.
+        (r"/live/\d+/\d+/replay", Policy(24 * HOUR, ("prediction", "ingestion"))),
     ],
     "scoring": [
         (r"/scores", Policy(10 * MINUTE, ("scoring",))),

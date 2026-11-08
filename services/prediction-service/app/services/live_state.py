@@ -237,10 +237,51 @@ def race_state(
             state.stops[i] = len(stops)
             state.tyre_age[i] = max(min(done, upto) - (stops[-1] if stops else 0), 0)
 
+    _order_by_positions(state, by_driver, completed)
+
     neutral, state.safety_car_laps, state.vsc_laps = neutralisation(messages, upto)
     neutral |= {n for n, m in medians.items() if m > NEUTRALISED_FACTOR * typical}
     _observe_pace(state, by_driver, neutral, typical, profile)
     return state
+
+
+#: Least gap, seconds, between neighbours when the timing feed's positions
+#: overrule the order the summed lap times give.
+MIN_GAP = 0.3
+
+
+def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) -> None:
+    """Make the gaps agree with the timing feed's order on the road.
+
+    Summed lap times are the gaps, but they are only as good as every lap's
+    time: a deleted lap filled with the field's median, then a lapped car
+    catching the queue behind a safety car, can put a car a minute ahead of
+    cars it never passed (Piastri, Australia 2025). When the lap rows carry
+    positions, the running cars are ordered by laps done, then by their place
+    at the end of their last lap, and any gap that disagrees is raised to just
+    behind the car ahead. Without positions nothing changes.
+    """
+    running = [i for i, d in enumerate(state.drivers) if not state.retired[i]]
+    place = {}
+    for i in running:
+        driver = state.drivers[i]
+        row = by_driver.get(driver, {}).get(completed[driver])
+        if row is not None and row.position > 0:
+            place[i] = row.position
+    if len(place) < max(2, len(running) // 2):
+        return
+    order = sorted(running, key=lambda i: (-completed[state.drivers[i]],
+                                           place.get(i, 999), state.gaps[i]))
+    previous = None
+    for i in order:
+        if previous is None:
+            state.gaps[i] = max(state.gaps[i], 0.0)
+        else:
+            state.gaps[i] = max(state.gaps[i], previous + MIN_GAP)
+        previous = state.gaps[i]
+    leader = state.gaps[order[0]]
+    for i in running:
+        state.gaps[i] -= leader
 
 
 #: A change of stint number this early without a change of compound is a

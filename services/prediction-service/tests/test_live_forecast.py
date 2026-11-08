@@ -331,3 +331,27 @@ def test_early_stint_changes_on_the_same_tyre_are_not_stops():
     state = state_at(20, laps)
     assert (state.stops == 1).all()
     assert (state.tyre_age == 8).all()
+
+
+def test_timing_positions_overrule_a_deleted_lap():
+    # D5's lap 12 time was deleted: filled with the field's lap, it hides the
+    # 60 s it really lost, and summed times put it in the lead. The feed's
+    # positions say it is last; it goes there, just behind the car ahead.
+    laps = []
+    for i, driver in enumerate(DRIVERS):
+        for lap in range(1, 21):
+            seconds = 90.0 + i * 0.5
+            if driver == "D5" and lap == 12:
+                seconds = 0.0
+            if driver == "D5" and lap > 12:
+                seconds = 80.0  # catching a safety car queue
+            place = i + 1
+            laps.append(RaceLap(season=2025, round=1, driver=driver, lap=lap,
+                                lap_time_seconds=seconds, compound="MEDIUM", stint=1,
+                                position=place))
+    state = state_at(20, laps)
+    assert state.running_order() == DRIVERS
+    assert np.all(np.diff(state.gaps) > 0)
+
+    blind = [lap.model_copy(update={"position": 0}) for lap in laps]
+    assert state_at(20, blind).running_order()[0] == "D5"
