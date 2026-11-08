@@ -127,8 +127,8 @@ export default function LiveFeedControl() {
         </div>
       )}
       <p className="muted small">
-        Start any time before the race; it stops itself 15 minutes after the flag. The timing
-        it reads does not need the F1TV login.
+        Start any time before the race; it stops itself 15 minutes after the flag. It needs
+        F1TV connected (above) for the whole race.
       </p>
     </Panel>
   )

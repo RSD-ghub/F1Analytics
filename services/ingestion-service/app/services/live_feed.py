@@ -11,11 +11,13 @@ later (``start(..., recording="2026-21-....txt", speed=20)``): lines are fed
 at ``speed`` times the pace they were recorded at (0 = all at once). That is
 how the feed is tested between race weekends.
 
-**Signing in.** The timing topics read here (TimingData, TimingAppData,
-RaceControlMessages, TrackStatus, LapCount) arrive without an F1TV token;
-only car telemetry needs one. So the recorder signs in when F1TV is
-connected and runs with ``--no-auth`` otherwise. Its stdin is closed, so
-FastF1 can never stop to ask for a password.
+**Signing in.** The recorder needs the F1TV token from the Data health
+page. The timing topics themselves would arrive without one, but FastF1
+3.9.2's ``--no-auth`` hands signalrcore 1.0.2 a ``None`` token factory, which
+raises a TypeError before it connects (found recording São Paulo 2026), and
+FastF1 does the same when its sign-in fails. So ``start`` refuses, with a
+reason, when F1TV is not connected. The child reads the stored token; its
+stdin is closed, so FastF1 can never stop to ask for a password.
 
 One race at a time: starting another stops the first.
 """
@@ -43,6 +45,13 @@ AFTER_FINISH = 15 * 60
 
 class LiveFeedError(RuntimeError):
     pass
+
+
+def f1tv_connected() -> bool:
+    try:
+        return bool(f1tv_auth.status().get("connected"))
+    except Exception:
+        return False
 
 
 def safe_recording(directory: str, name: str) -> str:
@@ -77,6 +86,10 @@ class LiveFeed:
         await self.stop()
         os.makedirs(self.directory, exist_ok=True)
         path = safe_recording(self.directory, recording) if recording else ""
+        if not path and not f1tv_connected():
+            raise LiveFeedError(
+                "connect F1TV on the Data health page first: the live recorder "
+                "cannot connect without its token")
         self.timing = LiveTiming(season, round_number, names)
         self.error = ""
         self._finished_at = None
@@ -99,12 +112,6 @@ class LiveFeed:
     def _spawn(self, path: str) -> subprocess.Popen:
         command = [sys.executable, "-m", "fastf1.livetiming", "save", path,
                    "--timeout", "0"]
-        try:
-            connected = bool(f1tv_auth.status().get("connected"))
-        except Exception:
-            connected = False
-        if not connected:
-            command.append("--no-auth")
         log = open(path + ".log", "a")  # noqa: SIM115 - the child keeps its own copy
         try:
             return subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log,

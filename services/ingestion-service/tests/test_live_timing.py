@@ -160,3 +160,13 @@ def test_tailing_a_growing_recording(tmp_path, monkeypatch):
 def test_only_recordings_in_the_folder_can_be_replayed(tmp_path, name):
     with pytest.raises(live_feed.LiveFeedError):
         live_feed.safe_recording(str(tmp_path), name)
+
+
+def test_recording_live_needs_f1tv(tmp_path, monkeypatch):
+    # FastF1's --no-auth path crashes against signalrcore 1.0.2, so without
+    # the token the feed says why instead of starting a recorder that dies.
+    monkeypatch.setattr(live_feed, "f1tv_connected", lambda: False)
+    feed = live_feed.LiveFeed(str(tmp_path))
+    with pytest.raises(live_feed.LiveFeedError, match="connect F1TV"):
+        asyncio.run(feed.start(2026, 21, {}))
+    assert feed._process is None
