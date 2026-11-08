@@ -18,6 +18,7 @@ from app.services.fastf1_source import (
     SessionFrames,
     classified_distance,
     laps_after_cut,
+    session_t0,
 )
 from app.services.openf1_source import OpenF1Unavailable
 from app.services.transforms import extract_results
@@ -214,3 +215,22 @@ def test_an_unknown_lap_count_cannot_fail_the_check():
     for row in payload.results:
         row.laps_completed = 0
     assert _check(run_integrity_checks(payload)).passed
+
+
+class _NoTelemetrySession:
+    """FastF1 3.9 raises on ``t0_date`` when car data was not loaded."""
+
+    @property
+    def t0_date(self):
+        raise RuntimeError("The data you are trying to access has not been loaded yet")
+
+
+def test_t0_comes_from_the_laps_when_telemetry_was_not_loaded():
+    laps = _official()
+    laps["LapStartTime"] = [pd.Timedelta(seconds=80 * lap) for lap in range(1, len(laps) + 1)]
+
+    assert session_t0(_NoTelemetrySession(), laps) == T0
+
+
+def test_t0_is_none_when_nothing_can_place_it():
+    assert session_t0(_NoTelemetrySession(), pd.DataFrame()) is None

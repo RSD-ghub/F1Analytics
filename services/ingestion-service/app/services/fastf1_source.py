@@ -220,6 +220,29 @@ def _naive_utc(value: Any) -> Any:
     return stamp
 
 
+def session_t0(session: Any, laps: pd.DataFrame) -> Optional[datetime]:
+    """The UTC instant FastF1's session times count from, or None.
+
+    ``session.t0_date`` raises ``DataNotLoadedError`` (not ``AttributeError``)
+    unless car telemetry was loaded, which the backfill script never does. A
+    lap carries both clocks, so ``LapStartDate - LapStartTime`` gives the same
+    instant without telemetry; the median shrugs off a lap with a bad stamp.
+    """
+    try:
+        t0 = session.t0_date
+        if t0 is not None and not pd.isna(t0):
+            return pd.Timestamp(t0).to_pydatetime()
+    except Exception:  # noqa: BLE001 - DataNotLoadedError and friends
+        pass
+    if laps is None or laps.empty or not {"LapStartDate", "LapStartTime"} <= set(laps):
+        return None
+    offsets = (pd.to_datetime(laps["LapStartDate"], errors="coerce")
+               - pd.to_timedelta(laps["LapStartTime"], errors="coerce")).dropna()
+    if offsets.empty:
+        return None
+    return offsets.sort_values().iloc[len(offsets) // 2].to_pydatetime()
+
+
 def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
                    t0: Optional[datetime]) -> pd.DataFrame:
     """OpenF1 laps past the point where official timing stopped, FastF1-shaped.
@@ -617,7 +640,7 @@ class FastF1Source:
         if frames.laps.empty:
             self._fill_from_openf1(expected, frames)
         else:
-            self._extend_from_openf1(expected, frames, getattr(session, "t0_date", None))
+            self._extend_from_openf1(expected, frames, session_t0(session, frames.laps))
         if self._load_telemetry:
             frames.telemetry = self._extract_telemetry(frames.session, session, results)
         return frames
