@@ -7,19 +7,22 @@ costs the panel that depends on it rather than the whole page, and the response
 names what is missing instead of quietly omitting it.
 """
 
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.models.schemas import HealthSummary, SystemStatus
 from app.routers.blog import WINDOW_PREFERENCE, race_scores
 from app.services import weather
-from app.services.downstream import ServiceClient, gather_optional
+from app.services.downstream import DownstreamUnavailable, ServiceClient, gather_optional
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +236,85 @@ async def live_replay(
         params["circuit"] = circuit
     return await client.get(
         "/live/{}/{}/replay".format(season, round_number), params)
+
+
+#: Seconds between polls of prediction-service by one live stream. Its own
+#: tracker polls the feed every 3 s and a lap takes 70-110 s.
+LIVE_STREAM_POLL = 3.0
+#: A stream sends a comment this often so proxies keep it open, seconds.
+LIVE_STREAM_HEARTBEAT = 15.0
+#: Longest one stream stays open, seconds; EventSource reconnects by itself.
+LIVE_STREAM_MAX = 4 * 60 * 60
+
+
+@router.get("/live/now")
+async def live_now(
+    since: int = Query(-1, ge=-1, le=200),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """The race the live feed is following, as frames after lap ``since``."""
+    clients = _clients(settings)
+    return await clients["prediction"].get("/live/now", {"since": since})
+
+
+@router.get("/live/stream")
+async def live_stream(
+    request: Request,
+    since: int = Query(-1, ge=-1, le=200),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    """The live race as server-sent events.
+
+    * ``race`` — the race and its state (``live_now`` without frames), sent
+      first and whenever it changes;
+    * ``frame`` — one lap's forecast, in lap order, the moment it exists;
+    * ``unavailable`` ``{"message"}`` — prediction-service did not answer;
+      the stream keeps trying.
+
+    A reconnecting browser sends ``Last-Event-ID`` (the last lap it got), so
+    it resumes where it was instead of receiving the race again.
+    """
+    clients = _clients(settings)
+    last = request.headers.get("last-event-id")
+    if last is not None and last.lstrip("-").isdigit():
+        since = max(since, int(last))
+
+    async def events() -> AsyncIterator[str]:
+        nonlocal since
+        loop = asyncio.get_running_loop()
+        opened = beat = loop.time()
+        race = None
+        while loop.time() - opened < LIVE_STREAM_MAX:
+            if await request.is_disconnected():
+                return
+            try:
+                now = await clients["prediction"].get("/live/now", {"since": since})
+            except DownstreamUnavailable as exc:
+                yield _sse_event("unavailable", {"message": str(exc)})
+                now = None
+            if now is not None:
+                frames = now.pop("frames", [])
+                if now != race:
+                    race = now
+                    yield _sse_event("race", now)
+                for frame in frames:
+                    since = max(since, int(frame.get("lap", since)))
+                    yield _sse_event("frame", frame, event_id=since)
+                if frames:
+                    beat = loop.time()
+            if loop.time() - beat > LIVE_STREAM_HEARTBEAT:
+                beat = loop.time()
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(LIVE_STREAM_POLL)
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _sse_event(event: str, data: Dict[str, Any], event_id: Optional[int] = None) -> str:
+    head = "id: {}\n".format(event_id) if event_id is not None else ""
+    return "{}event: {}\ndata: {}\n\n".format(head, event, json.dumps(data, default=str))
 
 
 class LastRaceView(BaseModel):

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Pause, Play, RotateCcw } from 'lucide-react'
-import { getBlogIndex, getLiveReplay } from '../api/f1Api'
+import { getBlogIndex, getLiveNow, getLiveReplay, liveStreamUrl } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { Bar, Loading, Panel, Unavailable } from '../components/Panel'
@@ -22,10 +22,10 @@ const CHART_DRIVERS = 5
 const FLAG_LABEL = { SC: 'Safety car', VSC: 'Virtual safety car', RED: 'Red flag' }
 
 /**
- * Live forecasts. Until the live feed is connected this replays a finished
- * race: the forecast made at each lap from what was known at that lap only,
- * the same way the backtest scored it. The live feed will drive the same
- * view, one lap at a time.
+ * Live forecasts. While the live feed follows a race, that race comes first,
+ * one lap at a time over server-sent events. Below it, any finished race can
+ * be replayed: the forecast made at each lap from what was known at that lap
+ * only, the same way the backtest scored it, in the same frames.
  */
 export default function Live() {
   const { season, round } = useParams()
@@ -45,15 +45,17 @@ export default function Live() {
   return (
     <div className="stack">
       <header className="page-head">
-        <p className="eyebrow">Live forecast · race replay</p>
+        <p className="eyebrow">Live forecast</p>
         <h1>How the forecast moves during a race</h1>
         <p className="lede">
           A finished race, forecast again at every lap from what was known at
           that lap only: gaps, tyres, stops, safety cars and each car's pace so
-          far. Once the live feed is connected, this page will follow the race
-          as it happens.
+          far. During a race the live feed is following, that race is shown
+          first and updates as the leader completes each lap.
         </p>
       </header>
+
+      <LiveRace />
 
       <div className="live-pick">
         {(index.data?.seasons || []).length > 0 && (
@@ -165,45 +167,7 @@ function Replay({ season, round }) {
         </p>
       </Panel>
 
-      <Panel title={now.lap === 0 ? 'Before the start' : `After lap ${now.lap}`}
-             subtitle="In running order">
-        <div className="table-scroll">
-          <table className="datatable compact live-table">
-            <thead>
-              <tr>
-                <th className="num">Pos</th><th>Driver</th><th>Win</th>
-                <th className="num">Podium</th><th className="num">Gap</th>
-                <th>Tyre</th><th className="num">Stops</th><th className="num">Exp. place</th>
-              </tr>
-            </thead>
-            <tbody>
-              {now.cars.map((c) => (
-                <tr key={c.driver} className={c.retired ? 'is-out' : undefined}>
-                  <td className="num">{c.retired ? 'Out' : c.position}</td>
-                  <td>
-                    <span className="team-stripe" style={{ background: teamColour(c.team) }}
-                          aria-hidden="true" />
-                    <Link className="link" to={`/drivers/${season}/${encodeURIComponent(c.driver)}`}>
-                      {c.driver}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="live-win">
-                      <Bar value={c.win} />
-                      <span className="num">{pct(c.win)}</span>
-                    </span>
-                  </td>
-                  <td className="num">{pct(c.podium)}</td>
-                  <td className="num mono">{gap(c, now.lap)}</td>
-                  <td>{c.compound ? <Tyre compound={c.compound} age={c.tyre_age} /> : '—'}</td>
-                  <td className="num">{now.lap === 0 ? '—' : c.stops}</td>
-                  <td className="num">{c.retired ? '—' : c.expected_position.toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+      <CarsTable frame={now} season={season} />
 
       {atEnd && (
         <Panel title="How it finished" subtitle="The official result">
@@ -220,6 +184,117 @@ function Replay({ season, round }) {
           </p>
         </Panel>
       )}
+    </>
+  )
+}
+
+/** The field after one lap, in running order, with each car's chances. */
+function CarsTable({ frame, season }) {
+  return (
+    <Panel title={frame.lap === 0 ? 'Before the start' : `After lap ${frame.lap}`}
+           subtitle="In running order">
+      <div className="table-scroll">
+        <table className="datatable compact live-table">
+          <thead>
+            <tr>
+              <th className="num">Pos</th><th>Driver</th><th>Win</th>
+              <th className="num">Podium</th><th className="num">Gap</th>
+              <th>Tyre</th><th className="num">Stops</th><th className="num">Exp. place</th>
+            </tr>
+          </thead>
+          <tbody>
+            {frame.cars.map((c) => (
+              <tr key={c.driver} className={c.retired ? 'is-out' : undefined}>
+                <td className="num">{c.retired ? 'Out' : c.position}</td>
+                <td>
+                  <span className="team-stripe" style={{ background: teamColour(c.team) }}
+                        aria-hidden="true" />
+                  <Link className="link" to={`/drivers/${season}/${encodeURIComponent(c.driver)}`}>
+                    {c.driver}
+                  </Link>
+                </td>
+                <td>
+                  <span className="live-win">
+                    <Bar value={c.win} />
+                    <span className="num">{pct(c.win)}</span>
+                  </span>
+                </td>
+                <td className="num">{pct(c.podium)}</td>
+                <td className="num mono">{gap(c, frame.lap)}</td>
+                <td>{c.compound ? <Tyre compound={c.compound} age={c.tyre_age} /> : '—'}</td>
+                <td className="num">{frame.lap === 0 ? '—' : c.stops}</td>
+                <td className="num">{c.retired ? '—' : c.expected_position.toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  )
+}
+
+/**
+ * The race the live feed is following, as it happens. Frames arrive over a
+ * server-sent event stream, one per lap; a dropped connection reconnects by
+ * itself and resumes after the last lap it had. Renders nothing when no race
+ * is being followed.
+ */
+function LiveRace() {
+  const first = useAsync(() => getLiveNow(), [])
+  const following = Boolean(first.data?.live || first.data?.frames?.length)
+  if (!following || typeof EventSource === 'undefined') return null
+  return <LiveStream initial={first.data} />
+}
+
+function LiveStream({ initial }) {
+  const [race, setRace] = useState(initial)
+  const [frames, setFrames] = useState(initial.frames || [])
+  const [connection, setConnection] = useState('connecting')
+
+  useEffect(() => {
+    const since = (initial.frames || []).at(-1)?.lap ?? -1
+    const source = new EventSource(`${liveStreamUrl()}?since=${since}`)
+    source.addEventListener('race', (e) => setRace(JSON.parse(e.data)))
+    source.addEventListener('frame', (e) => {
+      const frame = JSON.parse(e.data)
+      setFrames((all) => (all.length && all.at(-1).lap >= frame.lap ? all : [...all, frame]))
+    })
+    source.addEventListener('unavailable', () => setConnection('waiting'))
+    source.onopen = () => setConnection('open')
+    source.onerror = () => setConnection('reconnecting')
+    return () => source.close()
+  }, [initial])
+
+  const now = frames.at(-1)
+  const status = race.finished ? 'Finished' : race.live ? 'Live' : 'Feed stopped'
+  return (
+    <>
+      <Panel
+        title={race.race_name || `Round ${race.round}`}
+        subtitle={`${status} · ${race.mode === 'replay' ? 'replaying a recorded race · ' : ''}`
+          + `${race.runs} simulated races at every lap`}
+      >
+        <div className="live-controls">
+          <Pill tone={race.live && !race.finished ? 'bad' : 'soft'}>{status}</Pill>
+          <span className="live-lap mono">
+            {now ? (now.lap === 0 ? 'Grid' : `Lap ${now.lap}/${race.total_laps || '?'}`) : 'Waiting for lap 1'}
+          </span>
+          {now?.flag && <Pill tone="soft">{FLAG_LABEL[now.flag] || now.flag}</Pill>}
+          {connection === 'reconnecting' && <span className="muted small">Reconnecting…</span>}
+          {connection === 'waiting' && <span className="muted small">Forecast service not answering; retrying</span>}
+        </div>
+        {frames.length > 1 && <WinChart frames={frames} current={frames.length - 1} />}
+        {race.error && <p className="bad small">{race.error}</p>}
+        <p className="muted small">
+          {race.wet
+            ? 'Someone has run a wet tyre: the simulator only knows dry tyres and the correcting network is off.'
+            : race.network
+              ? 'Win and podium chances include the correcting network.'
+              : 'Chances come from the lap simulator, restarted from the race as it stands.'}
+          {' '}A new forecast arrives as the leader completes each lap.
+        </p>
+      </Panel>
+      {now && <CarsTable frame={now} season={race.season} />}
     </>
   )
 }

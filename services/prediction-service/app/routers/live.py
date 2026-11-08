@@ -1,5 +1,6 @@
-"""Live forecasts. For now, replays of finished races (stage 3); the live feed
-itself arrives with stage 4 and will serve frames of the same shape."""
+"""Live forecasts: the race happening now, from ingestion's live feed
+(``/live/now``), and replays of finished races (``/live/{season}/{round}/replay``).
+Both serve frames of the same shape."""
 
 import asyncio
 import logging
@@ -9,6 +10,7 @@ from typing import Dict, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies import get_client, get_predictor
+from app.services import live_tracker
 from app.services.ingestion_client import IngestionClient, IngestionUnavailable
 from app.services.predictor import ConfirmedGridRequired, GridRequired, Predictor, ReplayUnavailable
 
@@ -26,6 +28,21 @@ _locks: Dict[Tuple, asyncio.Lock] = {}
 def clear_cache() -> None:
     _cache.clear()
     _locks.clear()
+
+
+@router.get("/now")
+async def now(
+    since: int = Query(-1, ge=-1, le=200, description="Only frames after this lap"),
+    client: IngestionClient = Depends(get_client),
+    predictor: Predictor = Depends(get_predictor),
+) -> Dict:
+    """The race the live feed is following: one frame per completed lap
+    (0 = the grid), the same frames a replay has. ``live`` is false when no
+    feed is running; frames of the last race followed stay until another
+    starts. Asking keeps the tracker polling (it stops when nobody asks)."""
+    tracker = live_tracker.get_tracker(client, predictor)
+    tracker.touch()
+    return tracker.view(since)
 
 
 @router.get("/{season}/{round_number}/replay")

@@ -143,6 +143,62 @@ def replay_laps(total: int, step: int) -> List[int]:
     return laps
 
 
+def lap_frame(
+    drivers,
+    strengths: np.ndarray,
+    profile: Dict,
+    params: LapSimulationParameters,
+    laps: Sequence[RaceLap],
+    pit_stops: Sequence[PitStop],
+    messages: Sequence[RaceControlMessage],
+    results: Sequence[RaceResult],
+    lap: int,
+    total: int,
+    seed: int,
+    runs: int,
+    prior_laps: float,
+    network=None,
+    wet_so_far: bool = False,
+    retirement_race_k: Optional[float] = None,
+    retirement_team_k: Optional[float] = None,
+):
+    """The forecast at the end of the leader's lap ``lap`` (0 = the grid),
+    and whether anyone has run a wet tyre by then. Shared by the replay and
+    the live feed, so the live page shows exactly what the backtest scored."""
+    from app.training import live_network
+
+    names = [d.driver for d in drivers]
+    teams = [d.team for d in drivers]
+    kwargs = dict(retirement_race_k=retirement_race_k, retirement_team_k=retirement_team_k)
+    if lap < 1:
+        positions, retired = live_forecast.forecast(
+            drivers, strengths, dict(profile, laps=total), params, None,
+            seed=seed, runs=runs, **kwargs)
+        return _frame(0, names, teams, positions, retired, None, ""), wet_so_far
+    state = race_state(names, laps, pit_stops, messages, results,
+                       upto=lap, total_laps=total, profile=profile)
+    positions, retired = live_forecast.forecast(
+        drivers, strengths, profile, params, state, seed=seed + lap, runs=runs,
+        prior_laps=prior_laps, **kwargs)
+    win = podium = None
+    corrected = False
+    # Off for the rest of the race once anyone has run a wet tyre: the
+    # network was trained on dry races. Known live, as it is lap by lap.
+    wet_so_far = wet_so_far or state.wet
+    if network is not None and not wet_so_far:
+        pace, _ = live_forecast.posterior_pace(
+            live_forecast.prior_pace(strengths, params), state,
+            params.race_day_sd, prior_laps)
+        sim_win = ((positions == 1) & ~retired).mean(axis=0)
+        sim_podium = ((positions <= PODIUM) & ~retired).mean(axis=0)
+        x = live_network.features(state, pace, positions.mean(axis=0),
+                                  retired.mean(axis=0), profile)
+        win, podium = network.predict(x, sim_win, sim_podium, ~state.retired)
+        corrected = True
+    return (_frame(lap, names, teams, positions, retired, state, _flag(state, messages),
+                   win, podium, corrected), wet_so_far)
+
+
 def build_replay(
     drivers,
     strengths: np.ndarray,
@@ -162,8 +218,6 @@ def build_replay(
 ) -> Dict:
     """The whole timeline of one finished race. ``drivers`` are the race
     model's features for the field."""
-    from app.training import live_network
-
     names = [d.driver for d in drivers]
     teams = [d.team for d in drivers]
     total = total_laps_of(laps, results)
@@ -174,34 +228,10 @@ def build_replay(
     frames = []
     wet_so_far = False
     for lap in replay_laps(total, step):
-        if lap < 1:
-            positions, retired = live_forecast.forecast(
-                drivers, strengths, dict(profile, laps=total), params, None,
-                seed=seed, runs=runs, **kwargs)
-            frames.append(_frame(0, names, teams, positions, retired, None, ""))
-            continue
-        state = race_state(names, laps, pit_stops, messages, results,
-                           upto=lap, total_laps=total, profile=profile)
-        positions, retired = live_forecast.forecast(
-            drivers, strengths, profile, params, state, seed=seed + lap, runs=runs,
-            prior_laps=prior_laps, **kwargs)
-        win = podium = None
-        corrected = False
-        # Off for the rest of the race once anyone has run a wet tyre: the
-        # network was trained on dry races. Known live, as it is lap by lap.
-        wet_so_far = wet_so_far or state.wet
-        if network is not None and not wet_so_far:
-            pace, _ = live_forecast.posterior_pace(
-                live_forecast.prior_pace(strengths, params), state,
-                params.race_day_sd, prior_laps)
-            sim_win = ((positions == 1) & ~retired).mean(axis=0)
-            sim_podium = ((positions <= PODIUM) & ~retired).mean(axis=0)
-            x = live_network.features(state, pace, positions.mean(axis=0),
-                                      retired.mean(axis=0), profile)
-            win, podium = network.predict(x, sim_win, sim_podium, ~state.retired)
-            corrected = True
-        frames.append(_frame(lap, names, teams, positions, retired, state,
-                             _flag(state, messages), win, podium, corrected))
+        frame, wet_so_far = lap_frame(
+            drivers, strengths, profile, params, laps, pit_stops, messages, results,
+            lap, total, seed, runs, prior_laps, network, wet_so_far, **kwargs)
+        frames.append(frame)
 
     actual = actual_places(names, results)
     by_driver = {r.driver: r for r in results}

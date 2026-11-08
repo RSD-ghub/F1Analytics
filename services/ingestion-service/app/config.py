@@ -17,6 +17,11 @@ class Settings(ServiceSettings):
     # Earliest season the backfill will reach for.
     season_floor: int = 2010
 
+    # Where the live feed's recordings are kept (one text file per race, as
+    # FastF1's live client writes it). Kept after the race so it can be
+    # replayed through the live path; see services/live_feed.py.
+    live_recordings_dir: str = "live-recordings"
+
     # Periodic refresh of the current season, in hours.
     auto_refresh_hours: int = 24
 

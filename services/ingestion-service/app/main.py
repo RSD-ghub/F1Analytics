@@ -22,6 +22,7 @@ from app.regulations import router as regulations_router
 from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
 from app.routers import f1tv as f1tv_router
+from app.routers import live as live_router
 from app.services import f1tv_auth, scheduler
 from app.services.storage import IngestionStore
 from f1_common import cache
@@ -63,6 +64,7 @@ async def lifespan(_: FastAPI):
     )
     yield
     scheduler.shutdown()
+    await live_router.shutdown()
     await cache.close()
     db.close()
 
@@ -86,3 +88,4 @@ app.include_router(circuits_router.router)
 app.include_router(news_router.router)
 app.include_router(guide_router.router)
 app.include_router(f1tv_router.router)
+app.include_router(live_router.router)
