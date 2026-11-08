@@ -12,6 +12,15 @@ guarantee — which is exactly what the ad-hoc pull scripts this replaces did no
     python scripts/backfill.py full 2018 2025 --refresh   # re-read, after a schema change
     python scripts/backfill.py sprints 2021 2025
     python scripts/backfill.py full 2026 2026 --round 19   # re-read one race
+    python scripts/backfill.py positions 2018 2026          # add lap positions only
+    python scripts/backfill.py positions 2026 2026 --round 2
+
+``positions`` reads each race again for its per-lap positions and sets them on
+the laps already stored, and does nothing else: no row is inserted, replaced or
+deleted, so it cannot lose a lap the way a ``--refresh`` can when the source
+now returns fewer. Races whose stored laps all have a position are skipped
+unless ``--all`` is given. Where official timing has no positions (FastF1
+cannot load Monza 2018), jolpica's lap chart is used instead.
 
 ``full`` adds laps, stints, pit stops, weather and race control on top of
 ``results``. It is much slower — lap frames are the bulk of what FastF1 serves —
@@ -95,6 +104,31 @@ async def main() -> int:
         # minutes and then stops, turning one pass into four across four hours.
         sessions_per_hour=int(os.getenv("BACKFILL_SESSIONS_PER_HOUR", "55")),
     )
+
+    if mode == "positions":
+        from app.config import get_settings
+        from app.services.historical_laps import JolpicaClient
+
+        jolpica = JolpicaClient(get_settings().ergast_base_url)
+        every = "--all" in sys.argv[4:]
+        for season in range(first, (first if only_round is not None else last) + 1):
+            await runner.refresh_manifest(season, season)
+            for expected in await store.list_expected_sessions(season, season):
+                if only_round is not None and expected.round != only_round:
+                    continue
+                where = {"season": season, "round": expected.round}
+                if not await store.count_matching("laps", where):
+                    continue
+                missing = await store.count_matching(
+                    "laps", dict(where, position={"$not": {"$gt": 0}}))
+                if not missing and not every:
+                    continue
+                outcome = await runner.fill_lap_positions(expected, jolpica=jolpica)
+                after = await store.count_matching(
+                    "laps", dict(where, position={"$not": {"$gt": 0}}))
+                logger.info("%s: %s -> laps without a position %s -> %s",
+                            expected.key, outcome, missing, after)
+        return 0
 
     if only_round is not None:
         if mode != "full":

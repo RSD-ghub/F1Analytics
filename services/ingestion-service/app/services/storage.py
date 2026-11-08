@@ -456,6 +456,31 @@ class IngestionStore:
         return await self._db[collection].count_documents(query)
 
     @invalidates("ingestion")
+    async def set_lap_positions(
+        self, season: int, round_number: int, positions: Dict[Tuple[str, int], int]
+    ) -> int:
+        """Write each stored lap's place at its end, and nothing else.
+
+        Only ``position`` is set, only on laps already stored, matched on
+        (driver, lap). Nothing is inserted, replaced or deleted, so a source
+        that comes back with fewer laps than we hold (a lap-1 retirement it
+        now drops, a race it fails to load) costs nothing. Returns how many
+        stored laps matched.
+        """
+        operations = [
+            UpdateOne(
+                {"season": season, "round": round_number, "driver": driver, "lap": lap},
+                {"$set": {"position": int(place)}},
+            )
+            for (driver, lap), place in positions.items()
+            if place and place > 0
+        ]
+        if not operations:
+            return 0
+        result = await self._db[DATA_COLLECTIONS["laps"]].bulk_write(operations, ordered=False)
+        return int(result.matched_count)
+
+    @invalidates("ingestion")
     async def backfill_result_grid(self, season: int, round_number: int) -> dict:
         """Fill a finished race's starting grid from the grid we already hold.
 
