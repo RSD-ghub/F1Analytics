@@ -173,3 +173,27 @@ def test_outside_tyre_ages_and_safety_car_laps_are_used():
     assert 20 not in rows.laps
     assert all(rows.x[i, COL["since_neutralised"]] == 2 for i in range(len(rows.y))
                if rows.laps[i] == 22)
+
+
+def test_next_lap_rows_match_the_rows_training_saw():
+    from app.training.lap_time_network import next_lap_rows
+
+    laps = _race()
+    full = race_rows(2024, 1, laps, 30)
+    nxt, typical = next_lap_rows(2024, 1, laps, 11, 30)
+    assert set(nxt) == {"D{}".format(i) for i in range(6)}
+    assert typical > 0
+    for driver, (x, compound, age) in nxt.items():
+        trained = full.x[_row(full, 12, driver)]
+        # Inputs for lap 12 depend only on laps 1-11; the target scale (typical
+        # lap) differs slightly, so compare the inputs that do not use it.
+        for name in ("race_share", "tyre_age", "stint", "live_laps", "gap_ahead",
+                     "position_share", "since_neutralised"):
+            assert x[COL[name]] == trained[COL[name]], name
+        assert compound == "MEDIUM" and age == 12
+
+
+def test_next_lap_rows_before_the_first_lap_is_empty():
+    from app.training.lap_time_network import next_lap_rows
+
+    assert next_lap_rows(2024, 1, _race(), 0, 30) == ({}, 0.0)

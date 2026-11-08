@@ -471,3 +471,31 @@ def simulator_prediction(rows: RaceRows, prior_pct: Mapping[str, float], profile
             seen_sum[d] = seen_sum.get(d, 0.0) + float(r)
             seen_count[d] = seen_count.get(d, 0) + 1
     return out
+
+
+def next_lap_rows(season: int, round_number: int, laps: Sequence[RaceLap], upto: int,
+                  total_laps: int, archetype: str = "",
+                  weather: Optional[Mapping[str, float]] = None):
+    """(driver -> (features, compound, tyre age), typical lap) for lap ``upto + 1``,
+    for every car that completed lap ``upto``, from the laps up to ``upto`` only.
+
+    Built by ``race_rows`` itself, so the features are exactly the ones the
+    model was trained on: each car gets a placeholder lap ``upto + 1`` on its
+    current tyre at the race's typical pace. A placeholder is never evidence,
+    because a row's inputs only use the laps before it.
+    """
+    known = [lap for lap in laps if lap.lap <= upto]
+    if upto < 1:
+        return {}, 0.0
+    _, typical = neutralised_laps(known)
+    if typical <= 0:
+        return {}, 0.0
+    ghosts = [lap.model_copy(update={"lap": upto + 1, "lap_time_seconds": typical, "position": 0})
+              for lap in known if lap.lap == upto]
+    rows = race_rows(season, round_number, known + ghosts, total_laps, archetype, weather)
+    if rows is None:
+        return {}, typical
+    out = {}
+    for i in np.where(rows.laps == upto + 1)[0]:
+        out[rows.drivers[i]] = (rows.x[i], rows.compounds[i], float(rows.ages[i]))
+    return out, typical

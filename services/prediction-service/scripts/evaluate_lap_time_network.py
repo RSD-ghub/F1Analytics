@@ -315,6 +315,8 @@ def main() -> int:
                     name, result["mean"], result["low"], result["high"],
                     100 * result["better_share"], result["races"])
     enabled = comparisons["network vs simulator"]["low"] > 0
+    linear_enabled = comparisons["linear vs simulator"]["low"] > 0
+    report["linear_enabled"] = bool(linear_enabled)
     verdict = ("the network predicts laps better than the simulator" if enabled
                else "keep the simulator's lap model: the interval does not clear zero")
     report["verdict"] = verdict
@@ -329,6 +331,8 @@ def main() -> int:
         return 0
     everything = table.season >= deep["from"]
     final = fit(tuple(deep["hidden"]), deep["l2"], everything, last)
+    linear_rows = table.season >= linear["from"]
+    final_linear = fit((), 0.0, linear_rows, last)
     artifact = {
         "version": LAP_TIME_NETWORK_VERSION,
         "fitted_at": datetime.now(timezone.utc).isoformat(),
@@ -339,6 +343,12 @@ def main() -> int:
         "enabled": bool(enabled),
         "metrics": {k: report[k] for k in ("rmse", "comparisons", "verdict", "chosen")},
         "network": final.to_dict(),
+        # app/services/lap_model.py loads this one. linear_enabled is the
+        # lap-level gate only; serving does not call it until the live replay
+        # backtest (backtest_live.py --lap-model) has passed too.
+        "linear_enabled": bool(linear_enabled),
+        "linear_laps": int(linear_rows.sum()),
+        "linear": final_linear.to_dict(),
     }
     path = os.path.abspath(ARTIFACT)
     with open(path, "w") as handle:
