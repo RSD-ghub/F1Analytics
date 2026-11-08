@@ -151,3 +151,10 @@ def test_the_endpoint_caches_a_replay():
         app.dependency_overrides.clear()
         live_router.clear_cache()
     assert calls == [(2025, 3)]
+
+
+def test_the_network_stays_off_once_anyone_has_run_a_wet_tyre():
+    laps = [lap.model_copy(update={"compound": "INTERMEDIATE"})
+            if lap.lap <= 5 and lap.driver == "D3" else lap for lap in scripted_race()]
+    replay = build(laps=laps, network=zero_network())
+    assert not any(f["corrected"] for f in replay["frames"])

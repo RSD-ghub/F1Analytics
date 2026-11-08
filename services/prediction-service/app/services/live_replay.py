@@ -172,6 +172,7 @@ def build_replay(
     wet = any((lap.compound or "").upper() in WET_COMPOUNDS for lap in laps)
     kwargs = dict(retirement_race_k=retirement_race_k, retirement_team_k=retirement_team_k)
     frames = []
+    wet_so_far = False
     for lap in replay_laps(total, step):
         if lap < 1:
             positions, retired = live_forecast.forecast(
@@ -186,7 +187,10 @@ def build_replay(
             prior_laps=prior_laps, **kwargs)
         win = podium = None
         corrected = False
-        if network is not None and not state.wet:
+        # Off for the rest of the race once anyone has run a wet tyre: the
+        # network was trained on dry races. Known live, as it is lap by lap.
+        wet_so_far = wet_so_far or state.wet
+        if network is not None and not wet_so_far:
             pace, _ = live_forecast.posterior_pace(
                 live_forecast.prior_pace(strengths, params), state,
                 params.race_day_sd, prior_laps)

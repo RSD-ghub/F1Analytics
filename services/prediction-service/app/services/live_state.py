@@ -123,6 +123,13 @@ def neutralisation(messages: Sequence[RaceControlMessage], upto: int) -> Tuple[s
         elif message.category == "Flag" and text.startswith("RED FLAG"):
             # The race restarts behind the safety car: it ends as one does.
             sc_from = message.lap
+        elif sc_from is not None and message.lap > sc_from and (
+                text.startswith("ROLLING START") or text.startswith("DRS ENABLED")):
+            # Some restarts never get an "IN THIS LAP" message (Spa 2025
+            # started behind the safety car after a red flag and only says
+            # ROLLING START). DRS is never enabled under a safety car.
+            neutral.update(range(sc_from, message.lap))
+            sc_from = None
     sc_left = vsc_left = 0
     if sc_from is not None:
         neutral.update(range(sc_from, upto + 1))
@@ -223,9 +230,7 @@ def race_state(
                 if c in DRY:
                     state.used[i, DRY.index(c)] = True
         if rows and rows[done].stint and rows[done].stint > 0:
-            stint = rows[done].stint
-            state.stops[i] = stint - 1
-            state.tyre_age[i] = sum(1 for r in rows.values() if r.stint == stint)
+            state.stops[i], state.tyre_age[i] = _stops_from_stints(rows, done)
         else:
             # No stint numbers: count the stops the pit lane recorded.
             stops = sorted(s.lap for s in pit_stops if s.driver == driver and 0 < s.lap <= upto)
@@ -236,6 +241,27 @@ def race_state(
     neutral |= {n for n, m in medians.items() if m > NEUTRALISED_FACTOR * typical}
     _observe_pace(state, by_driver, neutral, typical, profile)
     return state
+
+
+#: A change of stint number this early without a change of compound is a
+#: timing artefact, not a stop (Australia 2025 has three for every car on
+#: laps 2-4, all on intermediates).
+EARLY_STINT_LAPS = 5
+
+
+def _stops_from_stints(rows: Dict[int, RaceLap], done: int) -> Tuple[int, int]:
+    """(stops made, laps on the current tyre) from the stint numbers on a
+    car's laps up to ``done``, ignoring early same-compound stint changes."""
+    stops, fitted, previous = 0, min(rows), None
+    for number in sorted(rows):
+        row = rows[number]
+        if previous is not None and row.stint and previous.stint and row.stint != previous.stint:
+            same = (row.compound or "").upper() == (previous.compound or "").upper()
+            if not (same and number <= EARLY_STINT_LAPS):
+                stops += 1
+                fitted = number
+        previous = row
+    return stops, done - fitted + 1
 
 
 def _pit_laps(by_driver, pit_stops: Sequence[PitStop], upto: int) -> set:

@@ -304,3 +304,30 @@ def test_a_missing_in_lap_still_costs_the_stop():
     state = state_at(20, laps)
     assert state.running_order() == DRIVERS
     assert state.gaps[1] > state.gaps[0]
+
+
+# --- data quirks met in real races --------------------------------------------
+
+def test_a_safety_car_with_no_in_this_lap_ends_at_drs_enabled():
+    # Spa 2025: a red flag on lap 1, a rolling start, and no "IN THIS LAP".
+    messages = [RaceControlMessage(season=2025, round=1, category="Flag", message="RED FLAG", lap=1),
+                RaceControlMessage(season=2025, round=1, category="Other",
+                                   message="DRS ENABLED", lap=12)]
+    neutral, sc_left, _ = neutralisation(messages, upto=20)
+    assert sc_left == 0
+    assert neutral == set(range(1, 12))
+
+
+def test_early_stint_changes_on_the_same_tyre_are_not_stops():
+    # Australia 2025: every car has stints 1-3 on laps 1-4, all intermediates.
+    laps = []
+    for i, driver in enumerate(DRIVERS):
+        for lap in range(1, 21):
+            stint = {1: 1, 2: 1, 3: 2, 4: 3}.get(lap, 4 if lap <= 12 else 5)
+            compound = "INTERMEDIATE" if lap <= 12 else "HARD"
+            laps.append(RaceLap(season=2025, round=1, driver=driver, lap=lap,
+                                lap_time_seconds=90.0 + i * 0.1, compound=compound,
+                                stint=stint))
+    state = state_at(20, laps)
+    assert (state.stops == 1).all()
+    assert (state.tyre_age == 8).all()
