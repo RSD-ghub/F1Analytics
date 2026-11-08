@@ -213,7 +213,8 @@ class IngestionStore:
 
     @invalidates("ingestion")
     async def save_payload(
-        self, payload: SessionPayload, depth: IngestDepth = IngestDepth.FULL
+        self, payload: SessionPayload, depth: IngestDepth = IngestDepth.FULL,
+        not_fetched: Iterable[str] = (),
     ) -> Dict[str, int]:
         """Persist one session's data, replacing any previous ingest of it.
 
@@ -232,6 +233,11 @@ class IngestionStore:
             # "not requested", not "none exist". Clearing on that would let a
             # cheap training backfill silently destroy a full ingest's lap data.
             if depth is IngestDepth.RESULTS and attribute != "results" and not rows:
+                continue
+            # Same for a collection this source was set up not to fetch:
+            # backfill.py runs without telemetry, and clearing on its empty
+            # list wiped Mexico 2026's telemetry when its laps were refreshed.
+            if attribute in not_fetched and not rows:
                 continue
             written[attribute] = await self._replace_session_rows(
                 collection, season, round_number, rows, run_id
