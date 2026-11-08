@@ -74,7 +74,7 @@ async def _rows(api, name, seasons):
     async with httpx.AsyncClient(timeout=120) as client:
         for season in seasons:
             response = await client.get(f"{api}/data/{name}",
-                                        params={"season": season, "limit": 50000})
+                                        params={"season": season, "limit": 20000})
             response.raise_for_status()
             out.extend(response.json())
     return out
