@@ -45,9 +45,11 @@ class Predictor:
 
 
 def run(tracker, feed, laps):
+    """Advance the race until each lap in ``laps`` is ready to forecast: the
+    leader one lap further on."""
     async def go():
         for lap in laps:
-            feed.lap = lap
+            feed.lap = lap + 1
             await tracker.step()
     asyncio.run(go())
 
@@ -178,3 +180,31 @@ def test_the_tracker_wakes_on_the_laps_stream():
             live_tracker.POLL_SECONDS = saved
     finally:
         streams.use_client(None)
+
+
+def test_a_lap_is_forecast_once_the_field_has_completed_it():
+    assert live_tracker.ready_lap(0, 71) == 0
+    assert live_tracker.ready_lap(1, 71) == 0      # leader done with lap 1: not yet
+    assert live_tracker.ready_lap(6, 71) == 5
+    assert live_tracker.ready_lap(71, 71) == 70    # the last lap before the flag
+    assert live_tracker.ready_lap(5, 0) == 4
+
+
+def test_gaps_are_real_when_the_leader_has_just_crossed_the_line():
+    # Leader D0 has completed lap 6; the rest are still out on it.
+    class Crossing(Feed):
+        async def live_snapshot(self):
+            self.snapshots += 1
+            rows = [r.model_dump() for r in LAPS
+                    if r.lap <= 5 or (r.lap == 6 and r.driver == "D0")]
+            return {"lap": 6, "total_laps": 30, "laps": rows, "pit_stops": [],
+                    "race_control": [], "retired": []}
+
+    feed = Crossing()
+    feed.lap = 6
+    tracker = live_tracker.LiveTracker(feed, Predictor(), runs=100)
+    asyncio.run(tracker.step())
+    last = tracker.frames[-1]
+    assert last["lap"] == 5
+    gaps = [c["gap"] for c in last["cars"] if c["position"] > 1]
+    assert max(gaps) < 30          # not a lap down
