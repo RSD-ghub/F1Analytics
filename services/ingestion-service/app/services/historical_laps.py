@@ -120,6 +120,37 @@ async def race_timings(client: JolpicaClient, season: int, round_number: int
     return name, rows
 
 
+def _surname_key(name: str) -> str:
+    """Last word of a name, accents and case removed: "Hülkenberg" and
+    "Hulkenberg" meet, as do "Kimi Antonelli" and "Andrea Kimi Antonelli"."""
+    import unicodedata
+
+    last = (name or "").strip().split()[-1:] or [""]
+    plain = unicodedata.normalize("NFKD", last[0])
+    return "".join(c for c in plain if not unicodedata.combining(c)).casefold()
+
+
+async def lap_positions(client: JolpicaClient, season: int, round_number: int,
+                        drivers: Sequence[str]) -> Dict[Tuple[str, int], int]:
+    """{(stored driver name, lap): place at the end of the lap} from jolpica.
+
+    Jolpica spells drivers its own way, so each is matched to ``drivers``
+    (the names already stored for the race) by surname. A surname two
+    stored drivers share is left out rather than guessed.
+    """
+    by_key: Dict[str, List[str]] = {}
+    for name in drivers:
+        by_key.setdefault(_surname_key(name), []).append(name)
+    names = await driver_names(client, season)
+    _, timings = await race_timings(client, season, round_number)
+    out: Dict[Tuple[str, int], int] = {}
+    for driver_id, lap, _, place in timings:
+        stored = by_key.get(_surname_key(names.get(driver_id, "")), [])
+        if len(stored) == 1 and place > 0:
+            out[(stored[0], lap)] = place
+    return out
+
+
 async def race_pit_stops(client: JolpicaClient, season: int, round_number: int
                          ) -> List[Tuple[str, int, int, float]]:
     """[(driverId, stop, lap, pit-lane seconds)]; empty before 2012."""

@@ -871,6 +871,40 @@ class IngestRunner:
         except Exception:
             logger.exception("signal extraction failed for %s (ignored)", session.key)
 
+    async def fill_lap_positions(self, expected: ExpectedSession, jolpica=None) -> dict:
+        """Add each stored lap's place on the road, without rewriting the race.
+
+        Unlike a refresh, nothing is cleared or replaced: the race is read
+        again only for its positions, which are set on the laps already
+        stored. A source that now returns fewer laps (a car out on lap 1) or
+        fails outright (FastF1 on Monza 2018) cannot lose data this way. When
+        official timing has no positions, jolpica's lap-by-lap table is used,
+        matched to the stored drivers by surname. Leaves the ingest record
+        alone: the race is no more or less complete than it was.
+        """
+        season, round_number = expected.season, expected.round
+        positions, source = {}, "none"
+        try:
+            frames = await self._fetch_with_retry(
+                expected, SessionIngestState(season=season, round=round_number),
+                IngestDepth.FULL)
+            laps = build_payload(frames).laps
+            positions = {(r.driver, r.lap): r.position for r in laps if r.position > 0}
+            source = "official" if positions else source
+        except (SessionUnavailableError, SessionFetchError) as exc:
+            logger.warning("positions for %s: %s", expected.key, exc)
+        if not positions and jolpica is not None:
+            from app.services import historical_laps
+
+            stored = await self._store.find_rows(
+                "laps", {"season": season, "round": round_number}, limit=20000)
+            drivers = sorted({row["driver"] for row in stored})
+            positions = await historical_laps.lap_positions(
+                jolpica, season, round_number, drivers)
+            source = "jolpica" if positions else source
+        matched = await self._store.set_lap_positions(season, round_number, positions)
+        return {"source": source, "positions": len(positions), "matched": matched}
+
     async def _fetch_with_retry(
         self,
         expected: ExpectedSession,
