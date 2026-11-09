@@ -115,3 +115,43 @@ def test_hinted_codes_are_probed_first_and_every_code_still_follows():
     assert set(codes) == set(fia_check.EVENT_CODES)
     assert fia_check.codes_to_try("Miami Grand Prix")[0] == "usa"
     assert fia_check.codes_to_try("Mexico City Grand Prix")[0] == "mex"
+
+
+class _Trickle:
+    """A 200 whose body arrives one slow chunk at a time."""
+
+    status_code = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_content(self, size):
+        while True:
+            yield b"%PDF-" if not hasattr(self, "sent") else b"x"
+            self.sent = True
+
+
+def test_a_download_that_trickles_past_the_deadline_is_abandoned(monkeypatch):
+    import requests
+
+    clock = iter(range(0, 10_000, 30))  # every look at the clock moves it 30 s
+    monkeypatch.setattr(fia_check, "REQUEST_GAP", 0)
+    monkeypatch.setattr("time.monotonic", lambda: float(next(clock)))
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Trickle())
+    assert fia_check._get("https://example.invalid/x.pdf") is None
+
+
+def test_a_429_stops_the_run(monkeypatch):
+    import pytest
+    import requests
+
+    class Limited(_Trickle):
+        status_code = 429
+
+    monkeypatch.setattr(fia_check, "REQUEST_GAP", 0)
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Limited())
+    with pytest.raises(fia_check.RateLimited):
+        fia_check._get("https://example.invalid/x.pdf")

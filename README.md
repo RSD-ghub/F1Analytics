@@ -186,7 +186,9 @@ stewards' *Final* Race Classification, which lands some hours after the timing
 sheets: the provisional one predates post-race penalties and would report every
 penalised driver as a mismatch. Until the final is out the check says so and
 skips that part, so run it again later. A sprint has no stored laps, so
-`--sprint` checks the classification alone. About 30 s of parsing per race;
+`--sprint` checks the classification alone. About 30 s of parsing per race,
+on a Mac that stays awake: on battery it goes into maintenance sleep mid-run
+and the check simply resumes a quarter of an hour later;
 `MONGO_URI` and `MONGO_DATABASE` override the local defaults; `--code mex`
 skips probing for the FIA's event code. Its tests need no fia-doc:
 `.venv/bin/python -m pytest scripts/tests -q`.

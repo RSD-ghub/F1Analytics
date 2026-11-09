@@ -236,11 +236,14 @@ class RateLimited(DocumentsUnavailable):
 #: Seconds between requests to fia.com. Probing every event code back to back
 #: got this machine rate-limited within a few dozen requests.
 REQUEST_GAP = 1.5
+#: A whole download, not one socket read. ``requests``' own timeout restarts
+#: with every chunk, so a response that trickles in would never trip it.
+REQUEST_DEADLINE = 90
 _last_request = [0.0]
 
 
 def _get(url: str):
-    """The PDF at ``url``, or None when it is not published."""
+    """The PDF at ``url``, or None when it is not published (or will not arrive)."""
     import time
 
     import requests
@@ -248,13 +251,20 @@ def _get(url: str):
     wait = _last_request[0] + REQUEST_GAP - time.monotonic()
     if wait > 0:
         time.sleep(wait)
-    _last_request[0] = time.monotonic()
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
-    if response.status_code == 429:
-        raise RateLimited("fia.com is rate-limiting this machine (HTTP 429); try again later")
-    if response.status_code == 200 and response.content[:5] == b"%PDF-":
-        return response.content
-    return None
+    _last_request[0] = started = time.monotonic()
+    with requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=(10, 30),
+                      stream=True) as response:
+        if response.status_code == 429:
+            raise RateLimited("fia.com is rate-limiting this machine (HTTP 429); try again later")
+        if response.status_code != 200:
+            return None
+        body = bytearray()
+        for chunk in response.iter_content(64 * 1024):
+            body.extend(chunk)
+            if time.monotonic() - started > REQUEST_DEADLINE:
+                print("gave up on {} after {} s".format(url, REQUEST_DEADLINE), file=sys.stderr)
+                return None
+    return bytes(body) if body[:5] == b"%PDF-" else None
 
 
 #: Codes worth trying first for an event, by a word in its name. Saves probing
