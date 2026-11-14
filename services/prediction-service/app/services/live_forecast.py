@@ -89,9 +89,15 @@ def forecast(
     prior_laps: float = DEFAULT_PRIOR_LAPS,
     retirement_race_k: Optional[float] = None,
     retirement_team_k: Optional[float] = None,
+    pace_override: Optional[np.ndarray] = None,
 ):
     """(positions, retired), each (runs, n), from ``state`` on; from the grid
-    when ``state`` is None or no lap has been completed."""
+    when ``state`` is None or no lap has been completed.
+
+    ``pace_override`` (seconds per lap per car, NaN where it has nothing) takes
+    the place of the posterior pace for the cars it covers, shifted to the
+    posterior's level over those cars: the lap model's view of each car
+    (``app/services/lap_model.py``). The spread is left as it is."""
     if state is None or state.lap < 1:
         if state is not None:
             profile = dict(profile, laps=state.total_laps)
@@ -103,10 +109,24 @@ def forecast(
         raise ValueError("race state drivers are not in the forecast's order")
     pace, spread = posterior_pace(prior_pace(strengths, params), state,
                                   params.race_day_sd, prior_laps)
+    pace = apply_override(pace, pace_override, state.retired)
     return simulate(drivers, strengths, profile, params, seed=seed, runs=runs,
                     retirement_race_k=retirement_race_k,
                     retirement_team_k=retirement_team_k,
                     start=live_start(state, pace, spread))
+
+
+def apply_override(pace: np.ndarray, override: Optional[np.ndarray],
+                   retired: np.ndarray) -> np.ndarray:
+    """``pace`` with ``override`` where it is finite, on the same level."""
+    if override is None:
+        return pace
+    override = np.asarray(override, float)
+    use = np.isfinite(override) & ~np.asarray(retired, bool)
+    if use.sum() < 2:
+        return pace
+    shifted = override - override[use].mean() + pace[use].mean()
+    return np.where(use, shifted, pace)
 
 
 def summarise(drivers: Sequence[DriverFeatures], positions: np.ndarray,
