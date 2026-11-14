@@ -158,6 +158,41 @@ Once the services are up this mostly runs itself: finished races are ingested,
 starting grids are confirmed from FIA PDFs as they publish, and forecasts are
 locked and scored on schedule.
 
+### Checking a race against the FIA
+
+`scripts/fia_check.py` compares a stored race with the FIA timekeepers' PDFs,
+parsed by [fia-doc](https://github.com/harningle/fia-doc): every lap time
+(lap 1 included) to 0.01 s, the position at the end of each lap, pit stops by
+driver and lap, and the final classification's positions and points. It also
+flags laps stored as 0.0 s that the FIA times, and laps stored past a car's
+last FIA lap. It only reads Mongo.
+
+fia-doc brings paddlepaddle and OCR models (about 1.2 GB, up to ~7 GB of
+memory while parsing), so it gets a venv of its own rather than a service's:
+
+```bash
+python3.12 -m venv ~/fiadoc-venv
+~/fiadoc-venv/bin/pip install -r scripts/requirements-fia-check.txt
+
+# A few hours after the race, once the FIA has posted the timing PDFs.
+~/fiadoc-venv/bin/python scripts/fia_check.py --season 2026 --round 19
+~/fiadoc-venv/bin/python scripts/fia_check.py --season 2026 --round 17 --sprint --json sprint.json
+```
+
+Exit 0 is clean, 1 is a disagreement or a flagged row, 2 means the documents
+are not up yet (or fia.com is rate-limiting; it spaces its requests 1.5 s apart
+and stops at the first 429). The classification is only compared against the
+stewards' *Final* Race Classification, which lands some hours after the timing
+sheets: the provisional one predates post-race penalties and would report every
+penalised driver as a mismatch. Until the final is out the check says so and
+skips that part, so run it again later. A sprint has no stored laps, so
+`--sprint` checks the classification alone. About 30 s of parsing per race,
+on a Mac that stays awake: on battery it goes into maintenance sleep mid-run
+and the check simply resumes a quarter of an hour later;
+`MONGO_URI` and `MONGO_DATABASE` override the local defaults; `--code mex`
+skips probing for the FIA's event code. Its tests need no fia-doc:
+`.venv/bin/python -m pytest scripts/tests -q`.
+
 ---
 
 ## Forecasts
