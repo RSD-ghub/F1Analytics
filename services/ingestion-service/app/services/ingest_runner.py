@@ -21,7 +21,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.models.schemas import (
     CompletenessSummary,
@@ -107,6 +107,12 @@ class _Pacer:
 #: data yet" (São Paulo 2026: three failures from 22:36 IST, then filled in by
 #: a later backfill). Two hours covers a race run without a red flag.
 RACE_RESULTS_AFTER = timedelta(hours=2)
+#: A practice session's laps are read this long after it starts (an hour of
+#: running, then OpenF1 or F1 publishing it).
+PRACTICE_READY_AFTER = timedelta(minutes=90)
+#: Practice is still read up to this long after the race start, so a weekend
+#: missed by a sleeping host is filled in afterwards for the next model fit.
+PRACTICE_KEEP_TRYING = timedelta(days=2)
 
 
 def _has_run(when: Any, now: Optional[datetime] = None,
@@ -168,6 +174,7 @@ class IngestRunner:
         self._source = source
         self._store = store
         self._max_attempts = max_attempts
+        self._practice_read: Dict[Tuple[int, int], int] = {}
         self._backoff_seconds = backoff_seconds
         # Injectable so retry tests don't actually wait.
         self._sleep = sleep or asyncio.sleep
@@ -740,6 +747,44 @@ class IngestRunner:
                 "back to the qualifying classification", expected.key
             )
         return rows
+
+    async def ingest_weekend_practice(self, season: int,
+                                      now: Optional[datetime] = None) -> List[str]:
+        """Practice pace for the weekend under way, as each session ends.
+
+        Practice was only ever read by ``scripts/backfill.py practice``, so no
+        2026 weekend had any and every forecast used the neutral practice gap.
+        This runs on the grid cadence: once a practice session is
+        ``PRACTICE_READY_AFTER`` past its start, the weekend's practice is read
+        (FP2 first, OpenF1 when F1's timing refuses), and read again after
+        each later session. A weekend whose read came back empty is tried
+        again on the next tick.
+        """
+        now = now or datetime.now(timezone.utc)
+        done = []
+        for weekend in await self._store.list_weekends(season, season):
+            if not _has_run(weekend.get("race_start_utc"), now=now - PRACTICE_KEEP_TRYING) \
+                    and weekend.get("race_start_utc") is not None:
+                finished = sum(
+                    1 for name, start in (weekend.get("sessions") or {}).items()
+                    if name.lower().startswith("practice")
+                    and _has_run(start, now=now, after=PRACTICE_READY_AFTER))
+                key = (season, weekend["round"])
+                if not finished or self._practice_read.get(key, 0) >= finished:
+                    continue
+                expected = ExpectedSession(
+                    season=season, round=weekend["round"],
+                    race_name=weekend.get("race_name", ""),
+                    circuit=weekend.get("circuit", ""))
+                try:
+                    rows = await self.ingest_practice(expected)
+                except Exception:
+                    logger.exception("practice ingest failed for %s", expected.key)
+                    continue
+                if rows:
+                    self._practice_read[key] = finished
+                    done.append(expected.key)
+        return done
 
     async def ingest_practice(
         self,

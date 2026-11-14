@@ -310,6 +310,27 @@ class Predictor:
             "engine": engine.version,
         }
 
+    async def _pace_history(self, season: int):
+        """Qualifying (this season and last) and this season's practice.
+
+        Training builds every example with both (``training/dataset.py``), so
+        the qualifying-gap and practice features carry real weight in the
+        model; served without them, every driver got the neutral value and the
+        forecast was not the one the backtest scored. Unavailable is not fatal:
+        the neutral values are what a missing session means anyway.
+        """
+        quali, practice = [], []
+        for year in (season - 1, season):
+            try:
+                quali += list(await self._client.season_qualifying(year))
+            except IngestionUnavailable:
+                logger.warning("qualifying for %s unavailable; quali gaps neutral", year)
+        try:
+            practice = list(await self._client.season_practice(season))
+        except IngestionUnavailable:
+            logger.warning("practice for %s unavailable; practice gaps neutral", season)
+        return quali, practice
+
     async def _prepare(
         self,
         season: int,
@@ -328,6 +349,7 @@ class Predictor:
                 )
             except IngestionUnavailable:
                 logger.warning("prior season unavailable; using current season only")
+        quali_history, practice = await self._pace_history(season)
 
         grid = await self._maybe_grid(season, round_number, window)
         if window in SPRINT_WINDOWS and not grid:
@@ -379,6 +401,8 @@ class Predictor:
             window=window,
             circuit=circuit,
             grid=grid,
+            quali_history=quali_history,
+            practice=practice,
         )
         # A grid we had to infer from qualifying classification is not the grid.
         # Recorded on the prediction so a penalty-weekend forecast is

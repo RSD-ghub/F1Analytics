@@ -7,13 +7,13 @@ from app.services import ingest_runner, live_autostart, live_feed
 from app.services import scheduler as ingest_scheduler
 
 START = datetime(2026, 11, 22, 4, 0, tzinfo=timezone.utc)
-VEGAS = {"season": 2026, "round": 22, "race_name": "Las Vegas Grand Prix",
+VEGAS = {"season": 2026, "round": 21, "race_name": "Las Vegas Grand Prix",
          "race_start_utc": START.isoformat()}
 
 
 class Store:
     async def list_weekends(self, a, b):
-        return [{"season": 2026, "round": 21, "race_start_utc": "2026-11-08T17:00:00Z"},
+        return [{"season": 2026, "round": 20, "race_start_utc": "2026-11-08T17:00:00Z"},
                 VEGAS]
 
     async def recall_drivers(self, season):
@@ -53,7 +53,7 @@ def test_it_starts_once_with_the_drivers_names(monkeypatch):
     assert tick(feed, START - timedelta(days=1)) is None
     tick(feed, START - timedelta(minutes=5))
     tick(feed, START)          # already started: an owner's Stop holds
-    assert feed.starts == [(2026, 22, {4: "Lando Norris"})]
+    assert feed.starts == [(2026, 21, {4: "Lando Norris"})]
 
 
 def test_without_f1tv_it_says_why_instead_of_starting(monkeypatch):
@@ -94,3 +94,32 @@ def test_results_are_not_looked_for_until_the_race_can_be_over():
                                       after=ingest_runner.RACE_RESULTS_AFTER)
     assert ingest_runner._has_run(START, now=START + timedelta(hours=2, minutes=1),
                                   after=ingest_runner.RACE_RESULTS_AFTER)
+
+
+def test_practice_is_read_after_each_session_ends():
+    fp1 = datetime(2026, 11, 20, 0, 30, tzinfo=timezone.utc)
+    fp2 = datetime(2026, 11, 20, 4, 0, tzinfo=timezone.utc)
+
+    class PracticeStore:
+        async def list_weekends(self, a, b):
+            return [dict(VEGAS, sessions={"Practice 1": fp1, "Practice 2": fp2,
+                                          "Qualifying": START - timedelta(days=1)})]
+
+    runner = ingest_runner.IngestRunner(source=None, store=PracticeStore())
+    reads = []
+
+    async def ingest_practice(expected):
+        reads.append(expected.round)
+        return 0 if len(reads) == 1 else 20      # first read finds nothing yet
+
+    runner.ingest_practice = ingest_practice
+
+    def at(moment):
+        return asyncio.run(runner.ingest_weekend_practice(2026, now=moment))
+
+    assert at(fp1 + timedelta(minutes=30)) == [] and reads == []     # still running
+    assert at(fp1 + timedelta(hours=2)) == []                         # nothing yet: retried
+    assert at(fp1 + timedelta(hours=2, minutes=30)) == ["2026-21"]
+    assert at(fp1 + timedelta(hours=3)) == [] and len(reads) == 2      # FP1 done
+    assert at(fp2 + timedelta(hours=2)) == ["2026-21"]                # after FP2, again
+    assert at(START + timedelta(days=3)) == []                        # long gone
