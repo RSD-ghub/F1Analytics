@@ -159,6 +159,31 @@ def test_gaps_and_order_are_rebuilt_from_lap_times():
     assert not state.retired.any()
 
 
+def test_the_timing_screens_gap_wins_over_summed_lap_times():
+    # Every lap-1 time lost: summed, the start's 2 s steps vanish.
+    laps = scripted_race(pace=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+                         missing={(d, 1) for d in DRIVERS})
+    assert state_at(10, laps).gaps[5] == pytest.approx(0.5 * 9)
+    measured = {"D3": 7.25, "D5": 15.5}
+    for row in laps:
+        if row.lap == 10 and row.driver in measured:
+            row.gap_to_leader = measured[row.driver]
+    state = state_at(10, laps)
+    assert state.gaps[3] == pytest.approx(7.25) and state.gaps[5] == pytest.approx(15.5)
+    assert state.gaps[4] == pytest.approx(0.4 * 9)    # no screen gap: summed
+
+
+def test_a_close_gap_from_the_screen_is_not_pushed_apart():
+    laps = scripted_race()
+    for row in laps:
+        if row.lap == 10:
+            row.position = DRIVERS.index(row.driver) + 1
+            row.gap_to_leader = 0.1 * DRIVERS.index(row.driver)
+    state = state_at(10, laps)
+    assert state.running_order() == DRIVERS
+    assert state.gaps[1] == pytest.approx(0.1) and state.gaps[5] == pytest.approx(0.5)
+
+
 def test_a_missing_lap_time_does_not_move_a_car():
     laps = scripted_race(pace=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
                          missing={("D0", 5), ("D3", 6), ("D3", 7)})

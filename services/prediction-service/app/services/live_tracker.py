@@ -43,8 +43,13 @@ logger = logging.getLogger(__name__)
 
 #: Seconds between polls of the feed's status.
 POLL_SECONDS = 3.0
-#: Simulated races per lap. As the replay.
-RUNS = live_replay.REPLAY_RUNS
+#: Simulated races per lap. The replay page builds a whole race at once and
+#: keeps 300; live there is a lap (75-95 s) for each forecast. At 10,000 the
+#: Monte Carlo error on any win or podium chance is at most 0.5 points
+#: (300 gave up to 2.9, so chances jumped a few points lap to lap with nothing
+#: changed) and a lap takes about 1.6 s: 71 laps caught up after a restart
+#: is about 2 minutes.
+RUNS = 10_000
 #: Longest one blocking read of the laps stream, seconds.
 WAIT_SECONDS = 15.0
 #: Stop polling this long after the last viewer asked, seconds.

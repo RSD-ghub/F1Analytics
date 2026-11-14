@@ -6,7 +6,7 @@ import json
 import pytest
 
 from app.services import live_feed
-from app.services.live_timing import LiveTiming, lap_seconds, merge, parse_line
+from app.services.live_timing import LiveTiming, gap_seconds, lap_seconds, merge, parse_line
 
 
 def _initial(topic, data):
@@ -105,6 +105,28 @@ def test_a_recorded_race_becomes_lap_rows():
     assert {"category": "SafetyCar", "message": "VIRTUAL SAFETY CAR DEPLOYED", "lap": 3,
             "season": 2026, "round": 22} in snap["race_control"]
     assert snap["unnamed_cars"] == ["4"]
+
+
+def test_gap_seconds():
+    assert gap_seconds("+4.340") == pytest.approx(4.34)
+    assert gap_seconds("LAP 5", position=1) == 0.0
+    assert gap_seconds("", position=1) == 0.0
+    assert gap_seconds("1L") is None and gap_seconds("2 L") is None
+    assert gap_seconds("") is None and gap_seconds(None) is None
+
+
+def test_each_lap_keeps_the_gap_the_screen_showed_at_the_line():
+    timing = LiveTiming(2026, 22)
+    timing.apply("TimingData", {"Lines": {"1": {"NumberOfLaps": 1, "Position": "1",
+                                                "GapToLeader": "LAP 2"},
+                                          "4": {"NumberOfLaps": 1, "Position": "2",
+                                                "GapToLeader": "+4.340"}}})
+    timing.apply("TimingData", {"Lines": {"4": {"GapToLeader": "+4.900"}}})  # out on lap 2
+    timing.apply("TimingData", {"Lines": {"9": {"NumberOfLaps": 1, "Position": "3",
+                                                "GapToLeader": "1L"}}})
+    assert timing.laps["1"][1]["gap_to_leader"] == 0.0
+    assert timing.laps["4"][1]["gap_to_leader"] == pytest.approx(4.34)
+    assert timing.laps["9"][1]["gap_to_leader"] is None
 
 
 def test_a_lap_time_arriving_late_fills_its_lap():
