@@ -20,7 +20,7 @@ service look dead during a backfill.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from app.models.schemas import (
@@ -102,8 +102,16 @@ class _Pacer:
         self._last = time.monotonic()
 
 
-def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
-    """Has a scheduled session's start time passed?
+#: A race's results are not looked for until this long after lights out.
+#: Asked from the start, every race spent its first two hours failing as "no
+#: data yet" (São Paulo 2026: three failures from 22:36 IST, then filled in by
+#: a later backfill). Two hours covers a race run without a red flag.
+RACE_RESULTS_AFTER = timedelta(hours=2)
+
+
+def _has_run(when: Any, now: Optional[datetime] = None,
+             after: timedelta = timedelta(0)) -> bool:
+    """Has a scheduled session's start time (plus ``after``) passed?
 
     False when the calendar has no time for it — an unknown start is not an
     invitation to fetch something that may not exist yet.
@@ -117,7 +125,7 @@ def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
             return False
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    return (now or datetime.now(timezone.utc)) >= when
+    return (now or datetime.now(timezone.utc)) >= when + after
 
 
 def _due_for_retry(
@@ -487,7 +495,7 @@ class IngestRunner:
         ingested, waiting, failed = [], [], []
         for weekend in await self._store.list_weekends(season, season):
             round_number = weekend["round"]
-            if not _has_run(weekend.get("race_start_utc")):
+            if not _has_run(weekend.get("race_start_utc"), after=RACE_RESULTS_AFTER):
                 continue
             if await self._store.count_matching(
                 DATA_COLLECTIONS["results"], {"season": season, "round": round_number}

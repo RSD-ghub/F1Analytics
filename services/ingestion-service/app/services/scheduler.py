@@ -27,6 +27,7 @@ GRID_JOB_ID = "confirm-starting-grids"
 RESULTS_JOB_ID = "ingest-finished-races"
 SPRINT_JOB_ID = "ingest-sprint-sessions"
 NEWS_JOB_ID = "refresh-paddock-news"
+LIVE_JOB_ID = "auto-start-live-feed"
 
 
 async def heal_current_season(runner: IngestRunner) -> None:
@@ -111,12 +112,21 @@ async def refresh_news(news_refresh: Callable[[], Awaitable[Any]]) -> None:
         logger.exception("scheduled news refresh failed")
 
 
+async def auto_start_live(live_tick: Callable[[], Awaitable[Any]]) -> None:
+    """Start the live feed for a race about to begin (``live_autostart``)."""
+    try:
+        await live_tick()
+    except Exception:
+        logger.exception("live feed auto-start check failed")
+
+
 def start(
     runner: IngestRunner,
     interval_hours: int,
     grid_check_minutes: int = 30,
     news_refresh: Optional[Callable[[], Awaitable[Any]]] = None,
     news_minutes: int = 0,
+    live_tick: Optional[Callable[[], Awaitable[Any]]] = None,
 ) -> Optional[AsyncIOScheduler]:
     """Start the healing job. ``interval_hours <= 0`` disables it, and every
     other scheduled job with it."""
@@ -205,6 +215,19 @@ def start(
             misfire_grace_time=None,
         )
         logger.info("paddock news refresh scheduled every %smin", news_minutes)
+
+    if live_tick is not None:
+        _scheduler.add_job(
+            auto_start_live,
+            trigger=IntervalTrigger(minutes=1),
+            args=[live_tick],
+            id=LIVE_JOB_ID,
+            next_run_time=datetime.now(timezone.utc),
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=None,
+        )
+        logger.info("live feed auto-start checked every minute")
 
     _scheduler.start()
     logger.info("auto-refresh scheduled every %sh", interval_hours)
