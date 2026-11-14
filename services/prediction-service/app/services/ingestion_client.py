@@ -126,6 +126,10 @@ class RaceLap(BaseModel):
     #: Place on the road at the end of the lap; 0 when ingestion has none
     #: (laps fetched before it stored positions).
     position: int = 0
+    #: Seconds behind the leader at the line, as the live timing screen
+    #: measured it. Only live rows carry it; None elsewhere, and for a car a
+    #: lap or more down.
+    gap_to_leader: Optional[float] = None
 
     @model_validator(mode="before")
     @classmethod

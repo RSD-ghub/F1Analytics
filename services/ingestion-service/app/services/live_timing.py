@@ -114,6 +114,26 @@ def lap_seconds(text: Any) -> float:
         return 0.0
 
 
+def gap_seconds(text: Any, position: int = 0) -> Optional[float]:
+    """The feed's ``GapToLeader`` -> seconds behind the leader.
+
+    ``"+4.340"`` -> 4.34. The leader's own entry (``"LAP 5"`` or blank, at
+    position 1) -> 0.0. A lapped car (``"1L"``) or anything unreadable -> None,
+    so the caller falls back to summed lap times.
+    """
+    if position == 1:
+        return 0.0
+    if not isinstance(text, str):
+        return None
+    text = text.strip().lstrip("+")
+    if not text or text.upper().endswith("L") or text.upper().startswith("LAP"):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -188,6 +208,11 @@ class LiveTiming:
                         # Only the lap just completed has its time in this update.
                         "lap_time_seconds": time_now if number == done else 0.0,
                         "position": _int(now.get("Position"), 0),
+                        # Measured at the line, like the timing screen; only
+                        # for the lap just completed.
+                        "gap_to_leader": (gap_seconds(now.get("GapToLeader"),
+                                                      _int(now.get("Position"), 0))
+                                          if number == done else None),
                         "compound": compound,
                         "stint": stint,
                     }

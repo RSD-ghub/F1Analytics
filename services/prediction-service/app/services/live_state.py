@@ -19,6 +19,10 @@ road is rebuilt by adding lap times up. A missing lap time (a timing gap, a
 lap OpenF1 dropped) is filled with that lap's median across the field, so a gap
 in the data never moves a car. A car behind the leader's lap count is measured
 at the last lap it completed, plus a typical lap for each lap it is down.
+Live rows also carry the timing screen's own gap to the leader at the line;
+where one is there it is used instead of the sum. Summed live, the gaps
+behind P2 came out out of order and were all pushed to ``MIN_GAP`` apart
+(São Paulo 2026: Verstappen +8.4 s at lap 50 when the screen said +17.6 s).
 
 **Pace this race.** For every clean lap (not lap 1, not an in- or out-lap, not
 under a safety car, VSC or red flag, not an outlier) the lap time is corrected
@@ -219,7 +223,10 @@ def race_state(
         if done == 0:
             state.gaps[i] = upto * typical  # never started a lap
         else:
-            state.gaps[i] = elapsed[driver][done] - leader_at[done] + (upto - done) * typical
+            measured = rows[done].gap_to_leader if done in rows else None
+            behind = (measured if measured is not None and measured >= 0
+                      else elapsed[driver][done] - leader_at[done])
+            state.gaps[i] = behind + (upto - done) * typical
 
         if rows:
             current = rows[done]
