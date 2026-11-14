@@ -21,6 +21,10 @@ class Settings(ServiceSettings):
     # FastF1's live client writes it). Kept after the race so it can be
     # replayed through the live path; see services/live_feed.py.
     live_recordings_dir: str = "live-recordings"
+    # Start the live feed this many minutes before each race's calendar start,
+    # without anyone pressing Start live (services/live_autostart.py). Needs
+    # F1TV connected. 0 turns it off.
+    live_autostart_minutes: int = 10
 
     # Periodic refresh of the current season, in hours.
     auto_refresh_hours: int = 24

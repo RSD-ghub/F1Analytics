@@ -55,6 +55,14 @@ class FakeClient:
     async def season_results(self, season):
         return _season_rows(season) if season == 2026 else []
 
+    async def season_qualifying(self, season):
+        self.paced = getattr(self, "paced", []) + [("quali", season)]
+        return []
+
+    async def season_practice(self, season):
+        self.paced = getattr(self, "paced", []) + [("practice", season)]
+        return []
+
     async def grid(self, season, round_number):
         if not self._grid:
             return []

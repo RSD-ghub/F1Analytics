@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
-from app.dependencies import get_news_store, get_runner
+from app.dependencies import get_news_store, get_runner, get_store
 from app.guide import GuideStore
 from app.guide import router as guide_router
 from app.news import NewsStore
@@ -23,7 +23,7 @@ from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
 from app.routers import f1tv as f1tv_router
 from app.routers import live as live_router
-from app.services import f1tv_auth, scheduler
+from app.services import f1tv_auth, live_autostart, live_feed, scheduler
 from app.services.storage import IngestionStore
 from f1_common import cache, streams
 from f1_common.health import build_health_router
@@ -62,6 +62,10 @@ async def lifespan(_: FastAPI):
             get_news_store(), retention_days=settings.news_retention_days
         ),
         news_minutes=settings.news_refresh_minutes,
+        live_tick=(lambda: live_autostart.tick(
+            get_store(), live_feed.get_feed(settings.live_recordings_dir),
+            settings.live_autostart_minutes))
+        if settings.live_autostart_minutes > 0 else None,
     )
     yield
     scheduler.shutdown()

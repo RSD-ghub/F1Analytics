@@ -27,6 +27,8 @@ GRID_JOB_ID = "confirm-starting-grids"
 RESULTS_JOB_ID = "ingest-finished-races"
 SPRINT_JOB_ID = "ingest-sprint-sessions"
 NEWS_JOB_ID = "refresh-paddock-news"
+LIVE_JOB_ID = "auto-start-live-feed"
+PRACTICE_JOB_ID = "ingest-weekend-practice"
 
 
 async def heal_current_season(runner: IngestRunner) -> None:
@@ -84,6 +86,15 @@ async def ingest_finished_races(runner: IngestRunner) -> None:
         logger.exception("scheduled results ingest failed for %s", season)
 
 
+async def ingest_weekend_practice(runner: IngestRunner) -> None:
+    """Practice pace for this weekend, as each session ends."""
+    season = datetime.now(timezone.utc).year
+    try:
+        await runner.ingest_weekend_practice(season)
+    except Exception:
+        logger.exception("scheduled practice ingest failed for %s", season)
+
+
 async def ingest_sprint_sessions(runner: IngestRunner) -> None:
     """Sprint qualifying for the sprint lock window, the sprint for scoring.
 
@@ -111,12 +122,21 @@ async def refresh_news(news_refresh: Callable[[], Awaitable[Any]]) -> None:
         logger.exception("scheduled news refresh failed")
 
 
+async def auto_start_live(live_tick: Callable[[], Awaitable[Any]]) -> None:
+    """Start the live feed for a race about to begin (``live_autostart``)."""
+    try:
+        await live_tick()
+    except Exception:
+        logger.exception("live feed auto-start check failed")
+
+
 def start(
     runner: IngestRunner,
     interval_hours: int,
     grid_check_minutes: int = 30,
     news_refresh: Optional[Callable[[], Awaitable[Any]]] = None,
     news_minutes: int = 0,
+    live_tick: Optional[Callable[[], Awaitable[Any]]] = None,
 ) -> Optional[AsyncIOScheduler]:
     """Start the healing job. ``interval_hours <= 0`` disables it, and every
     other scheduled job with it."""
@@ -191,6 +211,18 @@ def start(
         )
         logger.info("sprint ingest scheduled every %smin", grid_check_minutes)
 
+        _scheduler.add_job(
+            ingest_weekend_practice,
+            trigger=IntervalTrigger(minutes=grid_check_minutes),
+            args=[runner],
+            id=PRACTICE_JOB_ID,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=None,
+            next_run_time=datetime.now(timezone.utc),
+        )
+        logger.info("weekend practice ingest scheduled every %smin", grid_check_minutes)
+
     if news_refresh is not None and news_minutes > 0:
         _scheduler.add_job(
             refresh_news,
@@ -205,6 +237,19 @@ def start(
             misfire_grace_time=None,
         )
         logger.info("paddock news refresh scheduled every %smin", news_minutes)
+
+    if live_tick is not None:
+        _scheduler.add_job(
+            auto_start_live,
+            trigger=IntervalTrigger(minutes=1),
+            args=[live_tick],
+            id=LIVE_JOB_ID,
+            next_run_time=datetime.now(timezone.utc),
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=None,
+        )
+        logger.info("live feed auto-start checked every minute")
 
     _scheduler.start()
     logger.info("auto-refresh scheduled every %sh", interval_hours)

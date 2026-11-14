@@ -113,6 +113,26 @@ READABLE_COLLECTIONS = dict(
 RUN_FIELD = "_run"
 
 
+
+#: jolpica's constructor names -> the ones F1's own timing uses, which every
+#: other row is stored under. Qualifying taken from jolpica when FastF1 had
+#: nothing (Mexico City 2026) filed Verstappen under "Red Bull" while the rest
+#: of the season said "Red Bull Racing", so anything keyed by team saw two
+#: teams. From 2018 only: "Red Bull" is the period name in older seasons.
+TEAM_ALIASES = {
+    "Red Bull": "Red Bull Racing",
+    "RB F1 Team": "Racing Bulls",
+    "Alpine F1 Team": "Alpine",
+    "Cadillac F1 Team": "Cadillac",
+}
+TEAM_ALIAS_FROM = 2018
+
+
+def _canonical_team(document: Dict[str, Any], season: int) -> None:
+    team = document.get("team")
+    if team and season >= TEAM_ALIAS_FROM:
+        document["team"] = TEAM_ALIASES.get(team, team)
+
 class IngestionStore:
     """All Mongo access for ingestion-service."""
 
@@ -265,6 +285,7 @@ class IngestionStore:
         operations: List[Any] = []
         for row in rows:
             document = row.model_dump(mode="json")
+            _canonical_team(document, season)
             document["_id"] = document.pop("id")
             document[RUN_FIELD] = run_id
             operations.append(
@@ -332,6 +353,7 @@ class IngestionStore:
         operations: List[Any] = []
         for row in rows:
             document = row.model_dump(mode="json")
+            _canonical_team(document, season)
             document["_id"] = document.pop("id")
             document[RUN_FIELD] = run_id
             document["_ingested_at"] = datetime.now(timezone.utc)
