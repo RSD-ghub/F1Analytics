@@ -53,6 +53,23 @@ IDLE_STOP = 15 * 60
 RUNNING = "Finished"
 
 
+def ready_lap(leader_lap: int, total_laps: int) -> int:
+    """The last lap whose forecast can be made now.
+
+    Lap ``L`` is forecast once the leader has completed ``L + 1``: by then the
+    rest of the field has crossed the line on lap ``L`` and its gaps are
+    real. Made the moment the leader finishes ``L``, every car behind is still
+    out on that lap, so it is measured a lap down (São Paulo 2026: P2 shown at
+    +90.7 s when Lawson was 5 s behind) and the win chances follow. As in the
+    replay, the last forecast is for the lap before the flag. The grid (0) is
+    ready from the start.
+    """
+    ready = leader_lap - 1
+    if total_laps > 0:
+        ready = min(ready, total_laps - 1)
+    return max(ready, 0)
+
+
 def live_results(season: int, round_number: int, drivers, retired) -> List[RaceResult]:
     """A status per car: retired as the feed says, everyone else running."""
     out = set(retired or [])
@@ -149,7 +166,8 @@ class LiveTracker:
             await self._new_race(season, round_number, run)
         if self.inputs is None:
             return
-        lap = int(status.get("lap") or 0)
+        total = int(status.get("total_laps") or 0) or self.total_laps
+        lap = ready_lap(int(status.get("lap") or 0), total)
         done = self.frames[-1]["lap"] if self.frames else -1
         if self.frames and lap <= done:
             return
@@ -160,7 +178,7 @@ class LiveTracker:
         self.total_laps = (int(snapshot.get("total_laps") or 0) or self.total_laps
                            or int(self.inputs["profile"].get("laps") or 0))
         self.wet = self.wet or any((r.compound or "").upper() in WET_COMPOUNDS for r in laps)
-        lap = min(int(snapshot.get("lap") or 0), max(self.total_laps, 1))
+        lap = ready_lap(int(snapshot.get("lap") or 0), self.total_laps)
         for number in range(done + 1, lap + 1):
             frame, self._wet_so_far = await asyncio.to_thread(
                 self._frame, laps, stops, messages, results, number)
