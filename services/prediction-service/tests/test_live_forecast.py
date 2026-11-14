@@ -173,6 +173,17 @@ def test_the_timing_screens_gap_wins_over_summed_lap_times():
     assert state.gaps[4] == pytest.approx(0.4 * 9)    # no screen gap: summed
 
 
+def test_a_close_gap_from_the_screen_is_not_pushed_apart():
+    laps = scripted_race()
+    for row in laps:
+        if row.lap == 10:
+            row.position = DRIVERS.index(row.driver) + 1
+            row.gap_to_leader = 0.1 * DRIVERS.index(row.driver)
+    state = state_at(10, laps)
+    assert state.running_order() == DRIVERS
+    assert state.gaps[1] == pytest.approx(0.1) and state.gaps[5] == pytest.approx(0.5)
+
+
 def test_a_missing_lap_time_does_not_move_a_car():
     laps = scripted_race(pace=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
                          missing={("D0", 5), ("D3", 6), ("D3", 7)})

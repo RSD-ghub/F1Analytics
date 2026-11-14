@@ -212,6 +212,7 @@ def race_state(
         for number, value in series.items():
             leader_at[number] = min(leader_at.get(number, np.inf), value)
 
+    screen = set()  # cars whose gap is the timing screen's own
     for driver in drivers:
         i = index[driver]
         done = completed[driver]
@@ -224,8 +225,11 @@ def race_state(
             state.gaps[i] = upto * typical  # never started a lap
         else:
             measured = rows[done].gap_to_leader if done in rows else None
-            behind = (measured if measured is not None and measured >= 0
-                      else elapsed[driver][done] - leader_at[done])
+            if measured is not None and measured >= 0:
+                behind = measured
+                screen.add(i)
+            else:
+                behind = elapsed[driver][done] - leader_at[done]
             state.gaps[i] = behind + (upto - done) * typical
 
         if rows:
@@ -244,7 +248,7 @@ def race_state(
             state.stops[i] = len(stops)
             state.tyre_age[i] = max(min(done, upto) - (stops[-1] if stops else 0), 0)
 
-    _order_by_positions(state, by_driver, completed)
+    _order_by_positions(state, by_driver, completed, screen)
 
     neutral, state.safety_car_laps, state.vsc_laps = neutralisation(messages, upto)
     neutral |= {n for n, m in medians.items() if m > NEUTRALISED_FACTOR * typical}
@@ -257,7 +261,8 @@ def race_state(
 MIN_GAP = 0.3
 
 
-def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) -> None:
+def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int],
+                        screen=frozenset()) -> None:
     """Make the gaps agree with the timing feed's order on the road.
 
     Summed lap times are the gaps, but they are only as good as every lap's
@@ -266,7 +271,9 @@ def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) 
     cars it never passed (Piastri, Australia 2025). When the lap rows carry
     positions, the running cars are ordered by laps done, then by their place
     at the end of their last lap, and any gap that disagrees is raised to just
-    behind the car ahead. Without positions nothing changes.
+    behind the car ahead. Without positions nothing changes. A gap the
+    timing screen measured (``screen``) is only raised when it is out of
+    order, so two cars 0.1 s apart stay 0.1 s apart.
     """
     running = [i for i, d in enumerate(state.drivers) if not state.retired[i]]
     place = {}
@@ -283,7 +290,7 @@ def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) 
     for i in order:
         if previous is None:
             state.gaps[i] = max(state.gaps[i], 0.0)
-        else:
+        elif not (i in screen and state.gaps[i] >= previous):
             state.gaps[i] = max(state.gaps[i], previous + MIN_GAP)
         previous = state.gaps[i]
     leader = state.gaps[order[0]]
