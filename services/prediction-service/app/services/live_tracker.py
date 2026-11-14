@@ -43,8 +43,12 @@ logger = logging.getLogger(__name__)
 
 #: Seconds between polls of the feed's status.
 POLL_SECONDS = 3.0
-#: Simulated races per lap. As the replay.
-RUNS = live_replay.REPLAY_RUNS
+#: Simulated races per lap. A win chance from k runs is off by up to
+#: 0.5/sqrt(k): 2.9 points at the replay's 300, 0.7 at 5,000, so a frame no
+#: longer jumps by more than the race did. A lap of 5,000 takes about 1.4 s on
+#: an M-series Mac, and catching up a full race after a restart under two
+#: minutes; 10,000 would halve the noise again for twice that.
+RUNS = 5000
 #: Longest one blocking read of the laps stream, seconds.
 WAIT_SECONDS = 15.0
 #: Stop polling this long after the last viewer asked, seconds.

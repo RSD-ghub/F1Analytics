@@ -252,8 +252,8 @@ def race_state(
     return state
 
 
-#: Least gap, seconds, between neighbours when the timing feed's positions
-#: overrule the order the summed lap times give.
+#: The gap, seconds, a car is put behind the car ahead when the timing
+#: feed's positions overrule the order the summed lap times give.
 MIN_GAP = 0.3
 
 
@@ -265,8 +265,10 @@ def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) 
     catching the queue behind a safety car, can put a car a minute ahead of
     cars it never passed (Piastri, Australia 2025). When the lap rows carry
     positions, the running cars are ordered by laps done, then by their place
-    at the end of their last lap, and any gap that disagrees is raised to just
-    behind the car ahead. Without positions nothing changes.
+    at the end of their last lap, and a car whose gap puts it level with or
+    ahead of the car in front is moved to just behind it. A gap already in
+    order stays as measured, however close (São Paulo 2026: Norris 0.17 s
+    behind Lawson at lap 5 came out 0.3 s). Without positions nothing changes.
     """
     running = [i for i, d in enumerate(state.drivers) if not state.retired[i]]
     place = {}
@@ -283,8 +285,8 @@ def _order_by_positions(state: RaceState, by_driver, completed: Dict[str, int]) 
     for i in order:
         if previous is None:
             state.gaps[i] = max(state.gaps[i], 0.0)
-        else:
-            state.gaps[i] = max(state.gaps[i], previous + MIN_GAP)
+        elif state.gaps[i] <= previous:
+            state.gaps[i] = previous + MIN_GAP
         previous = state.gaps[i]
     leader = state.gaps[order[0]]
     for i in running:

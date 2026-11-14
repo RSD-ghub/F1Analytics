@@ -369,3 +369,16 @@ def test_timing_positions_overrule_a_deleted_lap():
 
     blind = [lap.model_copy(update={"position": 0}) for lap in laps]
     assert state_at(20, blind).running_order()[0] == "D5"
+
+
+def test_a_close_gap_in_order_is_kept_as_the_screen_has_it():
+    # São Paulo 2026, lap 5: Norris 0.17 s behind Lawson on the timing screen.
+    laps = scripted_race(pace=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
+    measured = {"D1": 4.363, "D2": 4.534, "D3": 5.496}
+    for row in laps:
+        row.position = DRIVERS.index(row.driver) + 1
+        if row.lap == 10 and row.driver in measured:
+            row.gap_to_leader = measured[row.driver]
+    state = state_at(10, laps)
+    assert state.running_order() == DRIVERS
+    assert state.gaps[1:4].tolist() == pytest.approx([4.363, 4.534, 5.496])
