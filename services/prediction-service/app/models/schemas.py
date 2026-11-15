@@ -49,6 +49,8 @@ class Market(str, Enum):
 #: (-19.6% and +13.5%) — that is, no better than guessing which driver wins, and
 #: sometimes considerably worse. Publishing a number we cannot beat a coin toss
 #: with would poison the one thing this product is selling.
+#: ``scripts/backtest_win_market.py`` re-measures it on the current features and
+#: prints whether it has earned its place back.
 #:
 #: Its podium (+28% to +38%) and points (+25% to +39%) forecasts are genuinely
 #: skilful and are published. Once the grid is known, all three are.
