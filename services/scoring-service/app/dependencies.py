@@ -43,4 +43,6 @@ def get_watchdog() -> Watchdog:
         expected_windows=[
             w.strip() for w in settings.watchdog_expected_windows.split(",")
         ],
+        check_f1tv=settings.watchdog_check_f1tv,
+        timezone_name=settings.alert_timezone,
     )

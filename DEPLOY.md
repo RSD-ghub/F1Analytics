@@ -218,9 +218,11 @@ forecast rather than one per reader.
 Set both in `.env`. `0` disables a limit, which is fine locally and reckless in
 public.
 
-**Registration is open and unthrottled.** There is no email verification and no
-rate limit on `/auth/register`. For a small public deployment this is usually
-survivable; if the app gets attention, this is the first thing to fix.
+**Registration is open but throttled.** Login, register and password reset are
+rate limited per address in memory (`services/rate_limit.py`), which resets on a
+restart and is per process. There is still no email verification. For a small
+public deployment this is usually survivable; if the app gets attention, email
+verification is the next thing to add.
 
 ---
 

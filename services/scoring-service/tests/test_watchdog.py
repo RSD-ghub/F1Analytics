@@ -255,3 +255,83 @@ def test_the_watchdog_route_lists_problems_without_sending():
 
     assert body[0]["title"].startswith("Missed forecast lock")
     assert notifier.messages == []
+
+
+# ── F1TV login ──────────────────────────────────────────────────────────────
+
+VEGAS = datetime(2026, 11, 22, 4, 0, tzinfo=timezone.utc)  # 9:30 am IST
+
+
+class _F1TVIngestion(_Ingestion):
+    def __init__(self, weekends, status=None, fail_status=False):
+        super().__init__(weekends)
+        self.status, self.fail_status = status or {}, fail_status
+
+    async def f1tv_status(self):
+        if self.fail_status:
+            raise UpstreamUnavailable("down")
+        return dict(self.status)
+
+
+def _vegas():
+    return CalendarWeekend(season=2026, round=21, race_name="Las Vegas Grand Prix",
+                           race_start_utc=VEGAS)
+
+
+def _status(expires=None, connected=True, auto_renew=False, available=True):
+    return {"available": available, "connected": connected, "auto_renew": auto_renew,
+            "expires_at": expires.isoformat() if expires else None}
+
+
+def _f1tv_watchdog(status=None, fail_status=False, notifier=None):
+    return Watchdog(
+        ingestion=_F1TVIngestion([_vegas()], status, fail_status),
+        predictions=_Predictions([]), store=_Store(),
+        notifier=notifier or _Notifier(), timezone_name="Asia/Kolkata",
+    )
+
+
+@pytest.mark.asyncio
+async def test_f1tv_expiring_before_the_race_is_reported_in_local_time():
+    # The real case: the token from 14 Nov runs out Wed 18 Nov 9:15 pm IST.
+    expires = datetime(2026, 11, 18, 15, 45, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
+    alerts = await _f1tv_watchdog(_status(expires, connected=False)).check(now)
+    assert len(alerts) == 1
+    alert = alerts[0]
+    assert alert.title == "Reconnect F1TV before 2026 Las Vegas Grand Prix (R21)"
+    assert "expired at Wed 18 Nov 21:15 IST" in alert.message
+    assert "until Sun 22 Nov 12:30 IST" in alert.message
+
+
+@pytest.mark.asyncio
+async def test_f1tv_too_short_but_still_valid_is_reported():
+    now = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
+    expires = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
+    alerts = await _f1tv_watchdog(_status(expires)).check(now)
+    assert len(alerts) == 1 and "expires at Sat 21 Nov 17:30 IST" in alerts[0].message
+
+
+@pytest.mark.asyncio
+async def test_f1tv_not_reported_when_it_covers_the_weekend_or_cannot_help():
+    covered = datetime(2026, 11, 23, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
+    assert await _f1tv_watchdog(_status(covered)).check(now) == []
+    # A week out, a fresh login would not last until the race: wait.
+    early = datetime(2026, 11, 15, 6, 0, tzinfo=timezone.utc)
+    assert await _f1tv_watchdog(_status(None, connected=False)).check(early) == []
+    # Renewed by ingestion itself, or FastF1 too old to use F1TV at all.
+    assert await _f1tv_watchdog(_status(None, connected=False, auto_renew=True)).check(now) == []
+    assert await _f1tv_watchdog(_status(None, connected=False, available=False)).check(now) == []
+    # Status unreadable: no alert rather than a false one.
+    assert await _f1tv_watchdog(fail_status=True).check(now) == []
+
+
+@pytest.mark.asyncio
+async def test_f1tv_alert_is_sent_once_per_token():
+    notifier = _Notifier()
+    watchdog = _f1tv_watchdog(_status(None, connected=False), notifier=notifier)
+    now = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
+    assert len(await watchdog.run(now)) == 1
+    assert await watchdog.run(now + timedelta(hours=1)) == []
+    assert len(notifier.messages) == 1

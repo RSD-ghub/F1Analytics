@@ -105,6 +105,50 @@ carries no win probability, wrong-password and unknown-account responses are
 byte-identical, every blog entry cites sources, Bernie's reply contains no
 reasoning-trace markers.
 
+
+**Letting the Mac run it by itself.** `scripts/mac/install_launchd.sh` turns
+the commands above into per-user launchd agents: the four services and the
+frontend start at login and restart if they crash, backups run Monday and
+Thursday at 12:00, and the weekly retrain report runs Tuesday at 06:00
+(report only). `--awake` also keeps the Mac from sleeping while it is on the
+charger. Failed jobs are pushed to `ALERT_WEBHOOK_URL`.
+
+```bash
+scripts/mac/install_launchd.sh --dry-run   # look first
+# stop the hand-started services (Ctrl-C), then:
+scripts/mac/install_launchd.sh --awake
+launchctl list | grep com.f1forecast       # what is running
+scripts/mac/install_launchd.sh --uninstall # back to running by hand
+```
+
+Two Mac details. The repo sits under `~/Desktop`, which macOS keeps from
+background jobs, so give `/bin/bash` Full Disk Access (System Settings →
+Privacy & Security) or the agents fail with "Operation not permitted" in
+`~/Library/Logs/f1forecast/`. And a backup on the same disk as the database is
+not much of a backup: set `BACKUP_DIR` in `.env` to a folder in iCloud Drive or
+on another disk. `scripts/mac/run_service.sh <name>` runs any one part in a
+Terminal the same way the agents do.
+
+The watchdog also warns when the F1TV login will not last the next race
+weekend, from about 3.5 days before lights out, with times in `ALERT_TIMEZONE`
+(default Asia/Kolkata).
+
+**Opening it on a phone.** Everything stays bound to the Mac's localhost; the
+phone reaches it through [Tailscale](https://tailscale.com), a private network
+between your own devices, with nothing opened to the internet. Install
+Tailscale on the Mac and the phone and sign both in to the same account, then
+on the Mac:
+
+```bash
+tailscale serve --bg 5173   # https://<mac-name>.<tailnet>.ts.net on your devices only
+tailscale serve status      # the address to open on the phone
+tailscale serve reset       # stop sharing
+```
+
+Only the frontend is shared; it proxies `/api` to core-api on the Mac, so login
+and every check work as on the Mac. In Safari, Share → Add to Home Screen gives
+it an app icon. Alerts reach the phone already through the ntfy app subscribed
+to the `ALERT_WEBHOOK_URL` topic.
 ---
 
 ## Getting data in

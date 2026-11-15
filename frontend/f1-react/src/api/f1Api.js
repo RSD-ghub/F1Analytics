@@ -64,7 +64,20 @@ async function request(path, { auth = false, ...options } = {}) {
     expireStoredAuth()
   }
   if (!res.ok) throw await parseError(res)
-  return res.status === 204 ? null : res.json()
+  if (res.status === 204) return null
+  // core-api only ever answers in JSON. A web page here means the /api proxy
+  // never reached it: the dev server once served a pre-proxy config for 20
+  // days, and every panel failed with a JSON parse error nobody could read.
+  if ((res.headers.get('content-type') || '').includes('text/html')) {
+    throw new ApiError(
+      'The API answered with a web page instead of data, so the /api proxy is ' +
+        'not reaching core-api. Restart the frontend (npm run dev) and check ' +
+        'that core-api is running on port 8000.',
+      res.status,
+      'proxy',
+    )
+  }
+  return res.json()
 }
 
 const post = (path, body, opts = {}) =>
