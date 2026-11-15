@@ -164,6 +164,10 @@ class IngestionClient(_JsonClient):
         payload = await self._get("/forward/calendar/{}".format(season))
         return [CalendarWeekend(**row) for row in payload]
 
+    async def f1tv_status(self) -> Dict[str, Any]:
+        """The F1TV connection as ingestion-service sees it (never the token)."""
+        return await self._get("/f1tv/status")
+
     async def sprint_results(
         self, season: int, round_number: int
     ) -> List[RaceResultRow]:

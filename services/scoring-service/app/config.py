@@ -33,6 +33,10 @@ class Settings(ServiceSettings):
     alert_webhook_format: str = "text"
     # Grand Prix windows that should lock every weekend. Comma-separated.
     watchdog_expected_windows: str = "pre_quali,post_quali,final_grid"
+    # Warn when the F1TV login will not last the next race weekend.
+    watchdog_check_f1tv: bool = True
+    # Time zone for times written in alerts (an IANA name).
+    alert_timezone: str = "Asia/Kolkata"
 
 
 @lru_cache
