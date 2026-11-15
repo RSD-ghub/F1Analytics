@@ -261,6 +261,12 @@ PACE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, PACE_NETWORK_FILE)
 LIVE_NETWORK_FILE = "live_network.json"
 LIVE_NETWORK_PATH = os.path.join(MODEL_STATE_DIR, LIVE_NETWORK_FILE)
 
+#: The late-race lean toward "the order holds" (``training/late_blend.py``),
+#: fitted and gated by ``scripts/backtest_live.py --late-blend --write-blend``.
+#: Absent or not enabled means no blend.
+LIVE_BLEND_FILE = "live_blend.json"
+LIVE_BLEND_PATH = os.path.join(MODEL_STATE_DIR, LIVE_BLEND_FILE)
+
 
 def ensure_state_dir(state_dir: Optional[str] = None,
                      packaged_dir: Optional[str] = None) -> List[str]:
