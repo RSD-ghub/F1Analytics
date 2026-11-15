@@ -18,6 +18,21 @@ from app.models.schemas import DriverFeatures, DriverProbability, SimulatedDrive
 from app.services.model import PODIUM_POSITIONS, POINTS_POSITIONS, RaceModel
 
 
+def _teammate(drivers, index: int, positions: np.ndarray, retired: np.ndarray) -> Dict:
+    """The head-to-head with the other car of the same team, if there is one."""
+    team = drivers[index].team
+    mate = next((j for j, d in enumerate(drivers)
+                 if j != index and d.team == team and team not in ("", "Unknown")), None)
+    if mate is None:
+        return {}
+    mine, theirs = retired[:, index], retired[:, mate]
+    ahead = (~mine & theirs) | (~mine & ~theirs & (positions[:, index] < positions[:, mate]))
+    return {
+        "teammate": drivers[mate].driver,
+        "p_beats_teammate": float(ahead.sum() / positions.shape[0]),
+    }
+
+
 def simulate(
     model: RaceModel,
     drivers: Sequence[DriverFeatures],
@@ -61,6 +76,7 @@ def simulate(
             expected_position=float(column.mean()),
             position_probabilities=[float(c / runs) for c in counts],
             baseline=by_driver.get(driver.driver),
+            **_teammate(drivers, index, positions, retired),
         ))
     out.sort(key=lambda d: (-d.p_win, d.expected_position, d.driver))
     return out
