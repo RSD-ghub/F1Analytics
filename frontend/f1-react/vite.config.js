@@ -15,6 +15,10 @@ export default defineConfig({
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   server: {
+    // Vite refuses requests for host names it does not know. ".ts.net" lets
+    // the phone reach the Mac through `tailscale serve` (README, Mac section);
+    // nothing else is added, so the dev server stays closed to other names.
+    allowedHosts: ['.ts.net'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
