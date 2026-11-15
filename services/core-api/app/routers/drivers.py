@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import Settings, get_settings
 from app.services.downstream import ServiceClient
 from app.services.driver_pages import driver_profile, pit_stop_review, season_drivers
+from app.services.race_story import race_story
 
 router = APIRouter(tags=["drivers"])
 
@@ -54,3 +55,33 @@ async def race_review(
     stints = await client.get("/data/stints", scope)
     stops = await client.get("/data/pit_stops", scope)
     return pit_stop_review(results, stints or [], stops or [])
+
+
+#: A whole race of laps: 22 cars x ~78 laps, well inside ingestion's cap.
+RACE_LAP_ROWS = 5000
+
+
+@router.get("/race-story/{season}/{round_number}", response_model=Dict[str, Any])
+async def race_story_page(
+    season: int, round_number: int, settings: Settings = Depends(get_settings)
+):
+    """A finished race lap by lap, with the forecasts we locked beside it.
+
+    Everything comes from stored data, so it is quick. The lap-by-lap live
+    forecast is ``/live-replay``, asked for separately because it simulates.
+    """
+    client = _ingestion(settings)
+    scope = {"season": season, "round": round_number, "limit": 200}
+    results = await client.get("/data/results", scope)
+    if not results:
+        raise HTTPException(status_code=404, detail="no result recorded for that race")
+    laps = await client.get("/data/laps", dict(scope, limit=RACE_LAP_ROWS))
+    stops = await client.get("/data/pit_stops", scope)
+    messages = await client.get("/data/race_control", dict(scope, limit=2000))
+    prediction = ServiceClient("prediction", settings.prediction_service_url,
+                               settings.downstream_timeout_seconds)
+    try:
+        predictions = await prediction.get("/predictions/{}/{}".format(season, round_number))
+    except Exception:  # the race is still worth showing without them
+        predictions = []
+    return race_story(results, laps or [], stops or [], messages or [], predictions or [])

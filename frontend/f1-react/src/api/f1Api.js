@@ -207,6 +207,8 @@ export const getDrivers = (season) => request(`/drivers/${season}`)
 export const getDriver = (season, driver) =>
   request(`/drivers/${season}/${encodeURIComponent(driver)}`)
 export const getRaceReview = (season, round) => request(`/race-review/${season}/${round}`)
+// A finished race lap by lap, beside the forecasts locked for it.
+export const getRaceStory = (season, round) => request(`/race-story/${season}/${round}`)
 
 // A finished race forecast again lap by lap: the Live page's replay. Slow the
 // first time (it simulates every lap), cached after.

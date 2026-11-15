@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
 import {
-  Activity, BookOpen, Flag, House, Menu, MessageCircle, Newspaper, Route, Target, Trophy, Users, X,
+  Activity, BookOpen, ChartLine, Flag, House, Menu, MessageCircle, Newspaper, Route, Target, Trophy, Users, X,
 } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ const LINKS = [
   { to: '/', label: 'Home', icon: House, end: true, tab: true },
   { to: '/next-race', label: 'Next race', icon: Flag, tab: true },
   { to: '/live', label: 'Live forecast', icon: Activity },
+  { to: '/race', label: 'Race story', icon: ChartLine },
   { to: '/championship', label: 'Championship', short: 'Standings', icon: Trophy, tab: true },
   { to: '/news', label: 'Paddock news', short: 'News', icon: Newspaper, tab: true },
   { to: '/blog', label: 'One Blog', icon: BookOpen },

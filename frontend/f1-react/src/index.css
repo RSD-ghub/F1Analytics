@@ -1687,6 +1687,14 @@ input { background: var(--panel-soft); }
 .live-swatch.is-dashed { border-top-style: dashed; }
 .live-swatch.is-flag { height: 10px; border: 0; background: rgba(255, 183, 77, 0.35); }
 .table-scroll { overflow-x: auto; }
+.race-red { fill: rgba(225, 6, 0, 0.16); }
+.race-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.race-chip {
+  font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-soft);
+  background: transparent; color: var(--dim); cursor: pointer;
+}
+.race-chip.is-on { color: var(--text); border-color: var(--text); }
+.race-messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .live-table td { vertical-align: middle; white-space: nowrap; }
 .live-table tr.is-out { opacity: 0.5; }
 .live-win { display: inline-flex; align-items: center; gap: 8px; min-width: 120px; }
