@@ -158,3 +158,27 @@ def test_the_network_stays_off_once_anyone_has_run_a_wet_tyre():
             if lap.lap <= 5 and lap.driver == "D3" else lap for lap in scripted_race()]
     replay = build(laps=laps, network=zero_network())
     assert not any(f["corrected"] for f in replay["frames"])
+
+
+def test_the_scorecard_scores_three_forecasts_at_each_checkpoint():
+    replay = build()
+    card = replay["scorecard"]
+    assert [row["checkpoint"] for row in card] == [0.1, 0.25, 0.5, 0.75, 0.9]
+    assert [row["lap"] for row in card] == [3, 8, 15, 22, 27]
+    for row in card:
+        for method in live_replay.SCORECARD_METHODS:
+            assert set(row[method]) == {"winner_log_loss", "winner_hit", "podium_brier", "position_error"}
+    # D0 leads throughout and wins: order holds is perfect, and the live
+    # forecast is better at 90% than the grid forecast it started from.
+    late = card[-1]
+    assert late["order_holds"]["podium_brier"] == 0.0
+    assert late["live"]["winner_log_loss"] < late["pre_race"]["winner_log_loss"]
+
+
+def test_the_scorecard_uses_the_nearest_earlier_frame_and_needs_a_winner():
+    card = build(step=10)["scorecard"]
+    # 10% and 25% (laps 3, 8) come before the first frame after the grid.
+    assert [row["lap"] for row in card] == [10, 20, 20]
+    frames = [{"lap": 0, "cars": [{"driver": "A", "team": "", "win": 1, "podium": 1,
+                                    "expected_position": 1, "retired": False}]}]
+    assert live_replay.scorecard(frames, [{"driver": "A", "position": None}], 30) == []

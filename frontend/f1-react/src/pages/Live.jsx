@@ -184,7 +184,66 @@ function Replay({ season, round }) {
           </p>
         </Panel>
       )}
+
+      {atEnd && data.scorecard?.length > 0 && <Scorecard rows={data.scorecard} />}
     </>
+  )
+}
+
+const METHODS = [
+  { key: 'live', label: 'Live' },
+  { key: 'pre_race', label: 'Pre-race' },
+  { key: 'order_holds', label: 'Order holds' },
+]
+
+/**
+ * How this race's live forecast did at each stage, against the forecast from
+ * the grid and against "the running order is the result". Lower is better;
+ * the best of the three is bold. One race is one sample, so this says what
+ * happened here, not which method is better.
+ */
+function Scorecard({ rows }) {
+  const cell = (row, measure) => {
+    const values = METHODS.map((m) => row[m.key]?.[measure])
+    const best = Math.min(...values.filter((v) => v !== null && v !== undefined))
+    return METHODS.map((m, i) => (
+      <td key={m.key} className={`num${values[i] === best ? ' strong' : ''}`}>
+        {values[i] === null || values[i] === undefined ? '—' : values[i].toFixed(2)}
+      </td>
+    ))
+  }
+  return (
+    <Panel title="How the forecast did" subtitle="Scored against the result at each stage · lower is better">
+      <div className="table-scroll">
+        <table className="datatable compact">
+          <thead>
+            <tr>
+              <th rowSpan={2}>Stage</th>
+              <th colSpan={3}>Winner log loss</th>
+              <th colSpan={3}>Podium Brier</th>
+            </tr>
+            <tr>
+              {METHODS.map((m) => <th key={`w-${m.key}`} className="num">{m.label}</th>)}
+              {METHODS.map((m) => <th key={`p-${m.key}`} className="num">{m.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.checkpoint}>
+                <td>{Math.round(row.checkpoint * 100)}% · lap {row.lap}</td>
+                {cell(row, 'winner_log_loss')}
+                {cell(row, 'podium_brier')}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">
+        Winner log loss is minus the log of the chance given to the real winner.
+        Podium Brier adds up each car's squared podium miss. "Order holds"
+        takes the running order at that lap as the result.
+      </p>
+    </Panel>
   )
 }
 
@@ -295,6 +354,16 @@ function LiveStream({ initial }) {
         </p>
       </Panel>
       {now && <CarsTable frame={now} season={race.season} />}
+      {race.finished && race.season && race.round && (
+        <Panel title="Chequered flag" subtitle={`The last forecast was made after lap ${now?.lap ?? '?'}`}>
+          <p className="small">
+            The official result and how the live forecast did at each stage
+            appear in the replay once the results are in, about two hours
+            after lights out.{' '}
+            <Link className="link" to={`/live/${race.season}/${race.round}`}>Open the replay →</Link>
+          </p>
+        </Panel>
+      )}
     </>
   )
 }
