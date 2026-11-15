@@ -1,67 +1,60 @@
 # What's left
 
-Ordered by what blocks what. Checked items are verified in the tree, not assumed.
+Rewritten 15 Nov 2026 from the code on `main` (15cd43e) and the project's
+notes. The September version had gone stale: the promotion gate cleared on
+5 Oct, Baku was reconciled, rate limits and password reset exist, and CI runs
+on every pull request. The full list with effort and benefit is the
+"F1 platform enhancement list" doc; the deploy path is in the
+"Production readiness grade" doc.
 
 ## Blocking a public deploy
 
-- [ ] **Rotate `ANTHROPIC_API_KEY`.** It was printed into a session transcript. Removing it
-      from `.env` (done) is not rotation. Owner: you, at console.anthropic.com.
-- [ ] **Generate production `JWT_SECRET` and `MONGO_PASSWORD` on the box.** Never through a
-      transcript. Minimum 32 bytes for the JWT secret (RFC 7518 §3.2).
-- [ ] **Provision the VM and point DNS at it.** The A record must resolve *before* Caddy
-      first starts, or ACME fails and retries with backoff.
-- [ ] **First `docker-compose.prod.yml` run.** This path has never been executed once. Assume
-      it breaks the first time.
+- [ ] **Rotate secrets on the server.** Generate `JWT_SECRET` (32+ bytes) and
+      `MONGO_PASSWORD` on the box, never through a transcript. Revoke the old
+      Anthropic key even though nothing reads it any more.
+- [ ] **Provision the VM and point DNS at it** before Caddy's first start, or
+      ACME fails and backs off.
+- [ ] **First `docker-compose.prod.yml` run.** Never executed. Assume it breaks.
+      Known before it runs: the live feed writes its recording into a
+      root-owned folder while the service runs as a normal user, and the F1TV
+      token is kept outside any volume, so a redeploy signs F1TV out.
+- [ ] **Security policy.** Add OpenF1, F1's image server and jsdelivr to the
+      CSP in `Caddyfile`, then switch it from report-only to enforcing.
+- [ ] **Limit race replays and simulations.** They need no sign-in and each new
+      combination runs tens of seconds in the process that locks forecasts.
+- [ ] **Hide /docs in production, send index.html no-cache, upgrade Vite**
+      (two dev-server advisories).
 
-## Approved roadmap items, not yet built
+## Running on the Mac
 
-- [x] **Surface grid penalties in Bernie.** Done 23 Sep. Penalties reach the facts pack worst
-      first with the stewards' wording verbatim. Note the stored rows predated the fields and
-      carried nothing — R13 and R14 grids were re-resolved to populate them.
-- [x] **Surface grid penalties in One Blog.** Done 26 Sep. The panel was inferring penalties
-      from position movement and published one Stroll never received; it now reads the
-      stewards' data. Two React key collisions fixed alongside it.
-- [x] **Paddock news is the remaining half of roadmap item 1.** Built 11 Oct. Source:
-      the Formula1.com and Autosport RSS feeds (no key), read every 30 min by
-      ingestion-service into `paddock_news`. Public page at /news.
-- [x] **Paddock news in One Blog**, and the same feed into Bernie so she can correlate.
-      Built 11 Oct. One Blog gets a race-week entry (never narrated); Bernie gets the
-      week's headlines plus question matches, labelled as unverified reports.
-- [ ] **Paddock news has not read a live feed yet.** Parsing is tested against
-      synthetic RSS and Atom only — the build sandbox could not reach either outlet.
-      After deploying, `curl -X POST localhost:8001/news/refresh` and check both
-      outlets report `new` rather than `error`.
-- [ ] **The Vite dev server had been serving a pre-proxy config for 20 days**, so every
-      /api call returned index.html and the whole frontend was broken against core-api.
-      Restarted. Worth a startup check that catches this rather than a person noticing.
+- [ ] **Set `ALERT_WEBHOOK_URL`** (an ntfy topic) so the watchdog reaches a phone.
+- [ ] **Install the launchd agents** (`scripts/mac/install_launchd.sh`): services
+      restart on their own, backups and the retrain report are scheduled.
+- [ ] **Backups off the machine.** Point `BACKUP_DIR` at iCloud Drive or another disk.
+- [ ] **An outside uptime check**, so a dead Mac is noticed.
 
 ## Verification owed
 
-- [x] **Bernie ↔ regulations, end to end.** Verified live 22 Sep. The wiring was correct in
-      source but dead in the running system: ingestion and core-api were processes from 8-10
-      days ago, predating `ca06b3f`, so `/regulations/search` 404'd and the facts pack carried
-      no rules at all. Both restarted; retrieval and citation now confirmed working.
-- [ ] **Restart prediction (8002) and scoring (8003).** Still running code from 10 and 9 days
-      ago. They predate the speed-trap capture and the retrain-gate record. 8002 is what locks
-      the Baku forecast on the 26th — restart it before then.
-- [ ] **Retrieval misses the article that answers the question.** "How many power unit elements
-      before a penalty" returns B8.2.8, which *states the penalty* and refers to the allowances
-      in B8.2.2-B8.2.4 without containing them. The corpus has those articles; lexical search
-      does not reach them. Bernie handles it correctly — cites B8.2.8, refuses to invent the
-      numbers — but the answer was in the corpus and we did not retrieve it. This is the
-      reranking gap.
-- [ ] **Azerbaijan R15, 26 September.** First race where all three lock windows fire with
-      every fix in place. Watch it, then reconcile.
+- [ ] **Bernie against the question set.** `python scripts/bernie_eval.py`, then
+      `--ask --stream` (streaming has never run against live Tinker).
+- [ ] **Regulation retrieval misses referred-to articles.** "How many power unit
+      elements before a penalty" returns B8.2.8, which refers to B8.2.2-B8.2.4
+      without containing them. Marked as a known gap in the question set.
+- [ ] **Paddock news against the live feeds** after any deploy:
+      `curl -X POST localhost:8001/news/refresh`, both outlets `new`, not `error`.
 
-## Waiting on data, no action
+## Forecast quality, known
 
-- [ ] **Retrain / promotion gate.** Holding at 13 unseen races against a threshold of 15.
-      Clears after two more races. Running it also clears the train/serve skew left by the
-      circuit-alias fix (Marina Bay/Singapore and friends counted twice).
+- [ ] Late in a race the live forecast is too wide: "order holds" beats its
+      podium probabilities at 90%.
+- [ ] The live NN corrector is off in the wet (5 wet races in its data).
+- [ ] Gaps to lapped cars are estimated.
+- [ ] The linear lap model (PR #31) failed replay and stays off.
 
-## Decided — close these out
+## Decided — do not reopen
 
-- [x] Lap backfill 2018–2026: complete, 205,681 laps, every one carrying a speed trap.
-- [x] Circuit-character features: built, measured, withheld. Then refitted on real trap
-      speed, measured again, withheld again — worse by almost exactly the same margin.
-      The plan at `~/.claude/plans/mossy-nibbling-catmull.md` is answered. The answer is no.
+- Weather as a model input: backtested, no gain; display only.
+- TUM timing database and undercut-f1: no gain.
+- Circuit-character features: measured twice, withheld twice.
+- Bookmaker odds: a Track record benchmark at most, never a model input;
+  parked until a usable feed exists.
