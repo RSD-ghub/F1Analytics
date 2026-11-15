@@ -67,6 +67,39 @@ def _article_references(query: str) -> List[str]:
     return found
 
 
+#: A range of articles: "B8.2.2-B8.2.4", "B8.2.2 to B8.2.4", "B8.2.2–4".
+_ARTICLE_RANGE = re.compile(
+    r"\b([A-F]\d+(?:\.\d+)*)\.(\d+)\s*(?:-|–|to)\s*(?:\1\.)?(\d+)\b", re.IGNORECASE
+)
+
+#: The longest range expanded; a wider one is a section span, not a list.
+_MAX_RANGE = 10
+
+#: Articles a hit refers to are fetched for this many of the best hits ...
+REFERENCE_SOURCES = 3
+#: ... and at most this many referred-to articles are added in all.
+MAX_REFERENCED = 4
+
+
+def _cited_articles(text: str) -> List[str]:
+    """Article numbers an article's text refers to, ranges expanded, in order."""
+    found: List[str] = []
+
+    def add(reference: str) -> None:
+        reference = reference.upper()
+        if reference not in found:
+            found.append(reference)
+
+    for prefix, start, end in _ARTICLE_RANGE.findall(text or ""):
+        first, last = int(start), int(end)
+        if first < last <= first + _MAX_RANGE:
+            for n in range(first, last + 1):
+                add("{}.{}".format(prefix, n))
+    for reference in _article_references(text):
+        add(reference)
+    return found
+
+
 class RegulationStore:
     """All Mongo access for the regulations corpus."""
 
@@ -200,7 +233,7 @@ class RegulationStore:
         found = [doc async for doc in cursor]
 
         if not exact:
-            return found
+            return await self._with_references(found, season)
 
         # An explicit reference outranks anything the fuzzy search turned up, by
         # construction rather than by luck: scoring it above the best text hit
@@ -212,4 +245,51 @@ class RegulationStore:
 
         seen = {(doc["section"], doc["article"]) for doc in exact}
         rest = [d for d in found if (d["section"], d["article"]) not in seen]
-        return (exact + rest)[:limit]
+        return await self._with_references((exact + rest)[:limit], season)
+
+    async def _with_references(
+        self, hits: List[Dict[str, Any]], season: Optional[int]
+    ) -> List[Dict[str, Any]]:
+        """``hits``, then the articles the best of them refer to.
+
+        A rule often states its consequence in one article and its numbers in
+        another: B8.2.8 imposes the grid penalty "should a driver use more
+        Power Unit elements than the numbers prescribed in Articles B8.2.2,
+        B8.2.3 and B8.2.4", and those three hold the numbers. The question
+        matches the first and not the others, so the answer was in the corpus
+        and never reached Bernie.
+
+        Referred-to articles come after the ranked hits, carrying
+        ``referred_by`` and no text score of their own, so a caller that cuts
+        on score keeps them apart rather than ranking them against matches.
+        """
+        if not hits:
+            return hits
+        have = {doc.get("article") for doc in hits}
+        wanted: List[str] = []
+        referrer: Dict[str, str] = {}
+        for doc in hits[:REFERENCE_SOURCES]:
+            for reference in _cited_articles(doc.get("text") or ""):
+                if reference in have or reference in referrer:
+                    continue
+                referrer[reference] = doc.get("article")
+                wanted.append(reference)
+        wanted = wanted[:MAX_REFERENCED]
+        if not wanted:
+            return hits
+        criteria: Dict[str, Any] = {"article": {"$in": wanted}}
+        if season is not None:
+            criteria["season"] = season
+        fetched = {
+            doc["article"]: doc
+            async for doc in self._db[REGULATIONS].find(criteria, {"_id": False})
+        }
+        referenced = []
+        for reference in wanted:
+            doc = fetched.get(reference)
+            if doc is None:
+                continue
+            doc.pop("score", None)
+            doc["referred_by"] = referrer[reference]
+            referenced.append(doc)
+        return hits + referenced

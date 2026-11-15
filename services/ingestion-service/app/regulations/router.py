@@ -26,6 +26,10 @@ async def search(
 ) -> List[Dict[str, Any]]:
     """Articles matching a question, best first, each with its ``score``.
 
+    Up to ``limit`` ranked hits, then any articles the best of them refer to
+    (marked ``referred_by``, with no score), so a rule arrives with the
+    articles that hold its numbers.
+
     Returns the raw hits including the text score. Deciding which of them are
     good enough to act on is the caller's judgement, not this service's:
     core-api is the one that knows whether a passage is about to be handed to a

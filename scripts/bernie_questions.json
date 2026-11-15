@@ -16,7 +16,7 @@
       "id": "pu-allowance-numbers",
       "category": "regulations",
       "known_gap": true,
-      "note": "B8.2.8 states the penalty and refers to the allowances in B8.2.2-B8.2.4 without containing them. Lexical search does not reach those (TODO.md, 'Retrieval misses the article that answers the question').",
+      "note": "B8.2.8 states the penalty and refers to the allowances in B8.2.2-B8.2.4 without containing them. Lexical search does not reach those. Search now follows an article's references, which should close this gap; drop known_gap once a run against the real corpus shows it closed.",
       "turns": [{
         "question": "How many power unit elements can a driver use before getting a grid penalty?",
         "expect": {

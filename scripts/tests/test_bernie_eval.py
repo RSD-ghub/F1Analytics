@@ -45,6 +45,7 @@ def test_mirrored_constants_match_core_api():
     source = open(CORE_BERNIE, encoding="utf-8").read()
     assert re.search(r"^RELATIVE_SCORE_FLOOR = {}$".format(ev.RELATIVE_SCORE_FLOOR), source, re.M)
     assert 'REGULATIONS_KEY = "{}"'.format(ev.REGULATIONS_KEY) in source
+    assert re.search(r"^MAX_REFERENCED_PASSAGES = {}$".format(ev.MAX_REFERENCED_PASSAGES), source, re.M)
     assert re.search(r"def regulation_facts\(\s*hits[^)]*limit: int = {}".format(ev.PASSAGE_LIMIT), source)
     router = open(CORE_ROUTER, encoding="utf-8").read()
     assert '"/regulations/search",\n            {{"q": question, "season": season, "limit": {}}}'.format(
@@ -58,10 +59,20 @@ def test_select_passages_applies_floor_and_cut():
     assert ev.select_passages([{"article": "A", "text": ""}]) == []
 
 
+def test_select_passages_adds_referred_articles_of_kept_hits_only():
+    hits = PU_HITS + [
+        {"article": "B8.2.2", "text": "numbers", "referred_by": "B8.2.8"},
+        {"article": "B3.2", "text": "x", "referred_by": "B3.1"},  # B3.1 fell below the floor
+    ]
+    assert [h["article"] for h in ev.select_passages(hits)] == ["B8.2.8", "B8.2.1", "B8.2.2"]
+
+
 def test_passage_article_reads_rendered_passages():
     assert ev.passage_article("Article B8.2.8 — Penalties (2026 Section B, issue 8): ...") == "B8.2.8"
     assert ev.passage_article("Article B1.2 [truncated] — X (2026 Section B, issue 8): ...") == "B1.2"
     assert ev.passage_article("something else") is None
+    assert ev.passage_article(
+        "Article B8.2.2 — Numbers (2026 Section B, issue 8; referred to by B8.2.8): ...") == "B8.2.2"
 
 
 def test_entry_driver():

@@ -529,3 +529,78 @@ mounting fasteners 6B Primer C6.6.2,C SSC Primer pump(s), and Primer pump(s)
     articles = {a.article: a for a in _split(text, _doc(section="C", issue=20))}
 
     assert articles["C6.6.6"].text.startswith("The pressure of the fuel")
+
+
+# ── Following an article's references ───────────────────────────────────────
+
+
+class _CorpusMongo:
+    """Text search returns ``text``; a lookup by article returns from ``corpus``."""
+
+    def __init__(self, text, corpus):
+        self._text, self._corpus = text, corpus
+        self.lookups = []
+
+    def __getitem__(self, _collection):
+        return self
+
+    def find(self, criteria, projection=None):
+        if "$text" in criteria:
+            return _FakeCursor(self._text)
+        wanted = criteria["article"]["$in"]
+        self.lookups.append(list(wanted))
+        return _FakeCursor([row for row in self._corpus if row["article"] in wanted])
+
+    async def search(self, query, season=2026, limit=6):
+        from app.regulations.store import RegulationStore
+
+        return await RegulationStore(self).search_regulations(query, season=season, limit=limit)
+
+
+def _article(number, text="", score=None):
+    row = {"season": 2026, "section": number[0], "article": number, "heading": "", "text": text}
+    if score is not None:
+        row["score"] = score
+    return row
+
+
+PENALTY = _article("B8.2.8", score=15.0, text=(
+    "Should a driver use more Power Unit elements than the numbers prescribed in "
+    "Articles B8.2.2, B8.2.3 and B8.2.4 of any one of the elements during a Championship, "
+    "a grid place penalty will be imposed upon them."))
+ALLOWANCES = [_article("B8.2.%d" % n, text="Each driver may use no more than ...") for n in (2, 3, 4)]
+
+
+def test_a_hit_arrives_with_the_articles_it_refers_to():
+    import asyncio
+
+    mongo = _CorpusMongo([PENALTY, _article("B8.2.7", score=9.0)], ALLOWANCES)
+    ranked = asyncio.run(mongo.search("how many power unit elements before a grid penalty"))
+
+    assert [r["article"] for r in ranked] == ["B8.2.8", "B8.2.7", "B8.2.2", "B8.2.3", "B8.2.4"]
+    assert all(r["referred_by"] == "B8.2.8" for r in ranked[2:])
+    assert all("score" not in r for r in ranked[2:])
+    assert "referred_by" not in ranked[0]
+
+
+def test_ranges_are_expanded_and_articles_already_present_are_not_fetched_again():
+    from app.regulations.store import _cited_articles
+
+    assert _cited_articles("Articles B8.2.2-B8.2.4 and C3.1") == ["B8.2.2", "B8.2.3", "B8.2.4", "C3.1"]
+    assert _cited_articles("B8.2.2 to 4") == ["B8.2.2", "B8.2.3", "B8.2.4"]
+    assert _cited_articles("B1.1-B1.40") == ["B1.1", "B1.40"]  # a span, not a list
+
+    import asyncio
+
+    mongo = _CorpusMongo([PENALTY, _article("B8.2.2", score=9.0)], ALLOWANCES)
+    ranked = asyncio.run(mongo.search("power unit penalty"))
+    assert mongo.lookups == [["B8.2.3", "B8.2.4"]]
+    assert [r["article"] for r in ranked] == ["B8.2.8", "B8.2.2", "B8.2.3", "B8.2.4"]
+
+
+def test_no_lookup_when_nothing_is_referred_to():
+    import asyncio
+
+    mongo = _CorpusMongo([_article("B5.13.1", score=16.0, text="The safety car may be deployed.")], [])
+    ranked = asyncio.run(mongo.search("when is the safety car deployed"))
+    assert [r["article"] for r in ranked] == ["B5.13.1"] and mongo.lookups == []
