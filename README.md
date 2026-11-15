@@ -28,6 +28,7 @@ Four FastAPI services over MongoDB, with a React frontend.
 | Service | Port | Database | Public | Responsibility |
 |---|---|---|---|---|
 | mongodb | 27017 | — | no | — |
+| redis | 6379 | — | no | Read-through cache in front of the internal services (compose only) |
 | ingestion-service | 8001 | `f1_ingestion` | no | FastF1 + FIA acquisition, completeness, the regulations corpus |
 | prediction-service | 8002 | `f1_prediction` | no | Feature snapshots, training, locked forecasts |
 | scoring-service | 8003 | `f1_scoring` | no | Reconciliation and Brier scoring against baselines |
@@ -40,14 +41,40 @@ That is what makes core-api the single place authentication is enforced — if a
 internal service ever starts publishing a host port, that property is quietly
 gone. `compose-preflight.sh` checks for exactly that.
 
-Shared code lives in `shared/f1_common` (settings, Mongo, health, LLM client)
-and is installed into each service as an editable dependency.
+Shared code lives in `shared/f1_common` (settings, Mongo, health, LLM client,
+cache) and is installed into each service as an editable dependency.
+
+**Redis is a cache, never a store of record.** core-api answers the downstream
+reads listed in `services/core-api/app/services/cache_policy.py` from Redis,
+each with a TTL. Every storage write in the other services bumps a generation
+counter for its domain, which retires everything core-api cached from that
+domain at once. With `REDIS_URL` unset (the dev setup below) or Redis down,
+every read goes to the service as before.
 
 ---
 
 ## Running it
 
 Prerequisites: MongoDB on 27017, a Python venv at `.venv`, `npm`.
+
+Install the Python packages at the pinned versions in `constraints.txt` (the
+same ones Docker uses), from the repo root:
+
+```bash
+for s in core-api ingestion-service prediction-service scoring-service; do
+  (cd services/$s && ../../.venv/bin/pip install -c ../../constraints.txt -r requirements.txt)
+done
+.venv/bin/pip install -r requirements-dev.txt   # pytest, for the test suites
+```
+
+`scripts/lock_requirements.sh` regenerates the pins when you want to upgrade.
+
+**Alerts and backups.** Set `ALERT_WEBHOOK_URL` in `.env` (an ntfy.sh topic
+works as a phone push) and scoring-service will tell you when a lock window
+passes with no forecast or a race stays unscored; test it with
+`curl -X POST localhost:8003/watchdog/test`. `scripts/backup_mongo.sh` backs up
+the locked forecasts, accounts and scores (needs `brew install
+mongodb-database-tools`); see DEPLOY.md sections 7 and 8.
 
 ```bash
 export $(grep -E '^(JWT_SECRET|TINKER_API_KEY|TINKER_BASE_URL|INKLING_MODEL)=' .env | sed 's/"//g' | xargs)
@@ -98,8 +125,16 @@ reasoning-trace markers.
 BACKFILL_SESSIONS_PER_HOUR=0 \
   .venv/bin/python services/ingestion-service/scripts/backfill.py full 2018 2026 --refresh
 
+# Sprint qualifying and sprint results, which live apart from the Grand Prix's.
+.venv/bin/python services/ingestion-service/scripts/backfill.py sprints 2021 2025
+
 # The FIA regulations, chunked by article. Re-run when a section is reissued.
 .venv/bin/python services/ingestion-service/scripts/ingest_regulations.py 2026
+
+# The strategy guide behind the Strategy page and Bernie's plans: a strategist's
+# book as plain text, chunked by chapter. The book is copyrighted, so keep the
+# file outside the repository; add --dry-run to check the parse first.
+.venv/bin/python services/ingestion-service/scripts/ingest_strategy_guide.py ~/books/how-to-win-a-grand-prix.txt
 ```
 
 Two things come in over the running service rather than from a script — the
@@ -123,6 +158,41 @@ Once the services are up this mostly runs itself: finished races are ingested,
 starting grids are confirmed from FIA PDFs as they publish, and forecasts are
 locked and scored on schedule.
 
+### Checking a race against the FIA
+
+`scripts/fia_check.py` compares a stored race with the FIA timekeepers' PDFs,
+parsed by [fia-doc](https://github.com/harningle/fia-doc): every lap time
+(lap 1 included) to 0.01 s, the position at the end of each lap, pit stops by
+driver and lap, and the final classification's positions and points. It also
+flags laps stored as 0.0 s that the FIA times, and laps stored past a car's
+last FIA lap. It only reads Mongo.
+
+fia-doc brings paddlepaddle and OCR models (about 1.2 GB, up to ~7 GB of
+memory while parsing), so it gets a venv of its own rather than a service's:
+
+```bash
+python3.12 -m venv ~/fiadoc-venv
+~/fiadoc-venv/bin/pip install -r scripts/requirements-fia-check.txt
+
+# A few hours after the race, once the FIA has posted the timing PDFs.
+~/fiadoc-venv/bin/python scripts/fia_check.py --season 2026 --round 19
+~/fiadoc-venv/bin/python scripts/fia_check.py --season 2026 --round 17 --sprint --json sprint.json
+```
+
+Exit 0 is clean, 1 is a disagreement or a flagged row, 2 means the documents
+are not up yet (or fia.com is rate-limiting; it spaces its requests 1.5 s apart
+and stops at the first 429). The classification is only compared against the
+stewards' *Final* Race Classification, which lands some hours after the timing
+sheets: the provisional one predates post-race penalties and would report every
+penalised driver as a mismatch. Until the final is out the check says so and
+skips that part, so run it again later. A sprint has no stored laps, so
+`--sprint` checks the classification alone. About 30 s of parsing per race,
+on a Mac that stays awake: on battery it goes into maintenance sleep mid-run
+and the check simply resumes a quarter of an hour later;
+`MONGO_URI` and `MONGO_DATABASE` override the local defaults; `--code mex`
+skips probing for the FIA's event code. Its tests need no fia-doc:
+`.venv/bin/python -m pytest scripts/tests -q`.
+
 ---
 
 ## Forecasts
@@ -134,6 +204,20 @@ Three lock windows, each conditioned on what is actually known at the time:
 | `pre_quali` | Form and history only | podium, points |
 | `post_quali` | Qualifying classification | win, podium, points |
 | `final_grid` | Penalty-adjusted starting grid | win, podium, points |
+
+Sprint weekends add a fourth, for the sprint itself:
+
+| Window | Conditioned on | Publishes |
+|---|---|---|
+| `sprint` | Sprint qualifying classification, 12h before the sprint | win, podium, points (top 8) |
+
+It is a separate race, not a Grand Prix window: it locks against the sprint's
+start, is scored against the sprint's result, and is served only on request
+(`/predictions/{season}/{round}?event=sprint`), so everything that reads "the
+forecasts for round N" still gets the Grand Prix's. Its markets rest on the
+Grand Prix's measured grid-aware skill until
+`services/prediction-service/scripts/backtest_sprints.py` has been run on
+past sprints.
 
 A locked forecast is immutable — re-locking returns 409 — because a forecast you
 can edit after the fact is not a forecast. Sampling is seeded on the prediction

@@ -5,10 +5,14 @@ the frontend. A caller that forgets to render it would be presenting an AI
 persona as a person, and that must not depend on client-side discipline.
 """
 
+import asyncio
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from f1_common.llm import _split_leaked_reasoning as split_leaked_reasoning
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
@@ -32,6 +36,8 @@ from app.services.bernie import (
     Bernie,
     BernieUnavailable,
     grid_penalty_facts,
+    guide_facts,
+    news_facts,
     regulation_facts,
     why_this_prediction_facts,
 )
@@ -41,7 +47,16 @@ from app.services.conversation import (
     clamp_question,
     history_for_prompt,
 )
+from app.services import weather
 from app.services.downstream import ServiceClient, gather_optional
+from app.routers.strategy import as_mapping, as_rows, load_race
+from app.services.strategy import build_inputs, simulate, strategy_facts
+from app.services.strategy_engine import (
+    build_field,
+    engine_facts,
+    mentioned_driver,
+    plan_race,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +198,10 @@ async def _weekend_facts(
             "/data/qualifying",
             {"season": season, "round": round_number, "limit": 40},
         ),
+        # For the race-day weather. Only the next weekend can be inside the
+        # forecast horizon, so that is the only one asked about.
+        next_weekend=ingestion_client.get("/forward/next"),
+        circuit=ingestion_client.get("/circuits/{}/{}".format(season, round_number)),
     )
 
     facts: Dict[str, Any] = {"race": "{} round {}".format(season, round_number)}
@@ -256,7 +275,16 @@ async def _weekend_facts(
         if (row.get("long_run_seconds") or 0) > 0
     ]
     if practice:
-        ranked = sorted(practice, key=lambda r: r["long_run_seconds"])[:5]
+        # The whole field, not the top five: a strategy question is as often
+        # about the car in eighth, and its race pace against the cars around
+        # it is what decides whether an offset strategy can work. One line per
+        # driver, their quickest long run, so three sessions do not triple it.
+        quickest: Dict[str, Dict[str, Any]] = {}
+        for row in practice:
+            held = quickest.get(row["driver"])
+            if held is None or row["long_run_seconds"] < held["long_run_seconds"]:
+                quickest[row["driver"]] = row
+        ranked = sorted(quickest.values(), key=lambda r: r["long_run_seconds"])
         reference = ranked[0]["long_run_seconds"]
         facts["practice long-run pace"] = [
             "{} {:+.2f}s a lap over {} laps ({})".format(
@@ -268,6 +296,14 @@ async def _weekend_facts(
             for row in ranked
         ]
 
+    upcoming = fetched.get("next_weekend") or {}
+    if (upcoming.get("season"), upcoming.get("round")) == (season, round_number):
+        facts.update(weather.weather_facts(await weather.race_forecast(
+            fetched.get("circuit"), upcoming.get("race_start_utc"),
+            url=settings.weather_forecast_url,
+            timeout=settings.weather_timeout_seconds,
+        )))
+
     if fetched["_unavailable"]:
         facts["unavailable"] = (
             "Some data could not be loaded: {}. Say so if asked about it.".format(
@@ -276,6 +312,99 @@ async def _weekend_facts(
         )
     return facts
 
+
+
+async def _strategy_facts(
+    settings: Settings, season: int, round_number: int, question: str = ""
+) -> Dict[str, Any]:
+    """Simulate the race's strategy options and plan it, on every turn.
+
+    Always included, never gated on the question: "what should Norris do from
+    P8?" names no tyre, and a gate guessing which questions are about strategy
+    would be wrong in exactly the way the regulations search avoids by running
+    unconditionally.
+
+    Never empty either. With no history for a circuit — or ingestion down — the
+    simulation runs on generic figures and says so line by line. Telling a
+    reader there is no strategy because a measurement is missing is the
+    dismissal this exists to replace; a strategist at a new circuit still has
+    a plan.
+
+    The engine plans for the car the question names, when the grid holds one,
+    so "what should Norris do from P8?" gets Norris's rejoin and undercut, not
+    the leader's. It is the plan the Strategy page shows for the same car.
+    """
+    fetched = await load_race(settings, season, round_number)
+    circuit = as_mapping(fetched.get("circuit"))
+    official = circuit.get("official") or {}
+    profile = fetched.get("profile") if isinstance(fetched.get("profile"), dict) else None
+    field = build_field(as_rows(fetched.get("qualifying")), as_rows(fetched.get("practice")))
+    car = mentioned_driver(field, clamp_question(question))
+    stats = circuit.get("stats") or {}
+
+    def run():
+        sim = simulate(build_inputs(profile, official.get("scheduled_laps")))
+        return sim, plan_race(sim, stats, field, car)
+
+    # Pure arithmetic, but a few hundred thousand steps of it: off the event
+    # loop so one Bernie turn does not stall every other request.
+    sim, plan = await asyncio.to_thread(run)
+    facts = strategy_facts(sim)
+    facts.update(engine_facts(plan))
+
+    # How much track position is worth here, which the simulation leaves out:
+    # an extra stop that is quicker on paper is no use at a circuit where the
+    # order does not change.
+    position: List[str] = []
+    if stats.get("mean_places_changed") is not None:
+        position.append(
+            "classified finishers here gained or lost {} places on average between "
+            "grid and flag (over {} finishes)".format(
+                stats["mean_places_changed"], stats.get("places_changed_sample", "?"))
+        )
+    if stats.get("pole_win_rate") is not None:
+        position.append("pole won {:.0%} of {} races here".format(
+            stats["pole_win_rate"], stats.get("pole_starts", "?")))
+    elif stats.get("pole_starts"):
+        position.append("pole won {} of {} races here".format(
+            stats.get("pole_wins", 0), stats["pole_starts"]))
+    if position:
+        facts["track position at this circuit"] = position
+
+    if {"profile", "circuit"} & set(fetched["_unavailable"]):
+        facts["note on the strategy simulation"] = (
+            "This circuit's history could not be loaded, so the simulation used "
+            "generic figures wherever its inputs say GENERIC."
+        )
+    return facts
+
+
+async def _guide_facts(settings: Settings, question: str) -> Dict[str, Any]:
+    """Passages from the strategy guide for **this** question, on every turn.
+
+    Ungated, like the regulations, for the same reason: "should they gamble on
+    a safety car from the back?" is a strategy-philosophy question that names
+    nothing a keyword list would catch. Bernie is told to pass over passages
+    that do not bear on the question.
+    """
+    question = clamp_question(question)
+    if len(question) < 2:
+        return {}
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    try:
+        hits = await ingestion_client.get("/guide/search", {"q": question, "limit": 5})
+    except Exception as exc:
+        logger.warning("strategy guide unavailable: %s", exc)
+        return {
+            "note on the strategy guide": (
+                "The strategy guide could not be searched for this question. Plan "
+                "from the strategy engine and say so if asked what the guide says."
+            )
+        }
+    return guide_facts(hits if isinstance(hits, list) else [])
 
 
 async def _regulation_facts(
@@ -331,6 +460,47 @@ async def _regulation_facts(
     return regulation_facts(hits or [])
 
 
+async def _news_facts(
+    settings: Settings, question: str, season: int, round_number: int
+) -> Dict[str, Any]:
+    """Race-week headlines for **this** question, on every turn.
+
+    Two calls: the week's newest headlines, and the week's headlines matching
+    the question. Per turn rather than per thread for the reason the weekend
+    facts are — news lands during a weekend, and a thread started on Thursday
+    should know on Saturday what was reported on Friday.
+    """
+    ingestion_client = ServiceClient(
+        "ingestion", settings.ingestion_service_url,
+        settings.downstream_timeout_seconds,
+    )
+    question = clamp_question(question)
+    calls = {
+        "latest": ingestion_client.get(
+            "/news/weekend/{}/{}".format(season, round_number), {"limit": 6}
+        ),
+    }
+    if len(question) >= 2:
+        calls["matching"] = ingestion_client.get(
+            "/news/search",
+            {"q": question, "season": season, "round": round_number, "limit": 4},
+        )
+    fetched = await gather_optional(**calls)
+
+    latest = (fetched.get("latest") or {}).get("items") or []
+    facts = news_facts(fetched.get("matching") or [], latest)
+    if fetched["_unavailable"] and not facts:
+        # Stated rather than swallowed, as with the regulations: without it a
+        # question about the paddock gets "I have no news" with nothing to say
+        # the news was simply unreachable. A round with no known start date
+        # lands here too, and the note is still true of it.
+        facts["note on paddock news"] = (
+            "Race-week news could not be loaded for this question. Say so if "
+            "asked about the news rather than answering from memory."
+        )
+    return facts
+
+
 async def _charge(usage: UsageStore, settings: Settings, user) -> None:
     """Spend one unit of this caller's daily allowance, or 429.
 
@@ -356,8 +526,13 @@ async def start_thread(
     store: ConversationStore = Depends(get_conversations),
     usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
+    stream: bool = Query(False, description="Stream the answer as server-sent events"),
 ) -> BernieTurnResponse:
-    """Open a conversation about a race weekend."""
+    """Open a conversation about a race weekend.
+
+    With ``?stream=true`` the answer arrives as server-sent events; see
+    ``_turn_stream`` for the event shapes.
+    """
     bernie = Bernie(llm)
     if not bernie.available:
         raise HTTPException(
@@ -368,7 +543,16 @@ async def start_thread(
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, request.season, request.round)
     facts.update(await _regulation_facts(settings, request.question, request.season))
+    facts.update(await _news_facts(
+        settings, request.question, request.season, request.round
+    ))
+    facts.update(await _guide_facts(settings, request.question))
+    facts.update(await _strategy_facts(
+        settings, request.season, request.round, request.question
+    ))
     thread = await store.create(user["_id"], request.season, request.round)
+    if stream:
+        return _turn_stream(bernie, store, thread, request.question, facts)
     return await _turn(bernie, store, thread, request.question, facts)
 
 
@@ -381,6 +565,7 @@ async def continue_thread(
     store: ConversationStore = Depends(get_conversations),
     usage: UsageStore = Depends(get_usage),
     user=Depends(current_user),
+    stream: bool = Query(False, description="Stream the answer as server-sent events"),
 ) -> BernieTurnResponse:
     """Ask a follow-up. History gives continuity; facts are re-derived fresh."""
     bernie = Bernie(llm)
@@ -397,6 +582,15 @@ async def continue_thread(
     await _charge(usage, settings, user)
     facts = await _weekend_facts(settings, thread.season, thread.round)
     facts.update(await _regulation_facts(settings, request.question, thread.season))
+    facts.update(await _news_facts(
+        settings, request.question, thread.season, thread.round
+    ))
+    facts.update(await _guide_facts(settings, request.question))
+    facts.update(await _strategy_facts(
+        settings, thread.season, thread.round, request.question
+    ))
+    if stream:
+        return _turn_stream(bernie, store, thread, request.question, facts)
     return await _turn(bernie, store, thread, request.question, facts)
 
 
@@ -462,4 +656,69 @@ async def _turn(
         disclaimer=DISCLAIMER,
         grounded_on=facts,
         turn_count=len(thread.turns),
+    )
+
+
+def _sse(event: str, data: Dict[str, Any]) -> str:
+    return "event: {}\ndata: {}\n\n".format(event, json.dumps(data, default=str))
+
+
+def _turn_stream(
+    bernie: Bernie,
+    store: ConversationStore,
+    thread: Thread,
+    question: str,
+    facts: Dict[str, Any],
+) -> StreamingResponse:
+    """``_turn``, with the answer sent as it is written.
+
+    Server-sent events, in order:
+
+    * ``delta`` ``{"text": ...}`` — a fragment of the answer, zero or more;
+    * then exactly one of ``done`` (the full ``BernieTurnResponse``, whose
+      ``answer`` is the saved text and replaces the fragments shown so far) or
+      ``error`` ``{"reason", "message"}`` (the same reasons as the 503 detail).
+
+    Checks that can fail before the model is called (auth, budget, an unknown
+    thread, an empty question) still fail as ordinary HTTP errors, because
+    they run before this response starts.
+    """
+    question = clamp_question(question)
+    if not question:
+        raise HTTPException(status_code=422, detail="question is empty")
+
+    async def events() -> AsyncIterator[str]:
+        history = history_for_prompt(thread)
+        await store.append(thread, Role.USER, question)
+        fragments: List[str] = []
+        try:
+            async for fragment in bernie.converse_stream(question, facts, history=history):
+                fragments.append(fragment)
+                yield _sse("delta", {"text": fragment})
+        except BernieUnavailable as exc:
+            yield _sse("error", {
+                "reason": getattr(exc, "reason", "unavailable"), "message": str(exc),
+            })
+            return
+
+        # A leaked reasoning trace can only be recognised in the whole text.
+        answer, reasoning = split_leaked_reasoning("".join(fragments).strip())
+        answer = answer.strip()
+        if not answer:
+            yield _sse("error", {"reason": "empty", "message": "empty response"})
+            return
+        await store.append(thread, Role.ASSISTANT, answer, reasoning=reasoning or None)
+        yield _sse("done", BernieTurnResponse(
+            thread_id=thread.thread_id,
+            answer=answer,
+            disclaimer=DISCLAIMER,
+            grounded_on=facts,
+            turn_count=len(thread.turns),
+        ).model_dump(mode="json"))
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # Proxies (Caddy, nginx) must pass fragments on, not hold them.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

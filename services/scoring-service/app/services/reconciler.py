@@ -7,9 +7,18 @@ score is much harder to explain away later than a delayed one.
 """
 
 import logging
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.models.schemas import Market, PredictionScore, RaceOutcome, TrackRecord
+from app.models.schemas import (
+    RACE,
+    SPRINT,
+    HeldPrediction,
+    Market,
+    PredictionScore,
+    RaceOutcome,
+    TrackRecord,
+    outcome_key,
+)
 from app.services import track_record as record_builder
 from app.services.clients import (
     IngestionClient,
@@ -17,10 +26,21 @@ from app.services.clients import (
     PredictionClient,
     UpstreamUnavailable,
 )
-from app.services.reconciliation import build_outcome, score_prediction
+from app.services.grid_baseline import GridRates, HistoricalStart
+from app.services.reconciliation import (
+    POINTS_POSITIONS,
+    build_outcome,
+    name_mismatches,
+    score_prediction,
+    sprint_points_positions,
+)
 from app.services.storage import ScoringStore
 
 logger = logging.getLogger(__name__)
+
+#: Seasons of Grand Prix history behind the grid-order baseline. Ten is a few
+#: thousand starts: plenty per slot, recent enough to reflect modern racing.
+GRID_HISTORY_SEASONS = 10
 
 
 class Reconciler:
@@ -33,29 +53,48 @@ class Reconciler:
         self._ingestion = ingestion
         self._predictions = predictions
         self._store = store
+        #: Finished seasons never change, so their starts are fetched once.
+        self._season_starts: Dict[int, List[HistoricalStart]] = {}
 
     async def reconcile_race(
-        self, season: int, round_number: int
+        self, season: int, round_number: int, event: str = RACE
     ) -> Tuple[Optional[RaceOutcome], List[PredictionScore]]:
         """Score every locked prediction for one race.
+
+        ``event`` picks the Grand Prix or the sprint. Each is scored only
+        against its own result: a sprint forecast read against the Grand Prix
+        classification would be a confident, well-formed and entirely wrong
+        score.
 
         Returns ``(None, [])`` when the race has no usable result yet — that is
         the normal state for an upcoming race, not a failure.
         """
-        results = await self._ingestion.race_results(season, round_number)
+        if event == SPRINT:
+            results = await self._ingestion.sprint_results(season, round_number)
+            points_positions = sprint_points_positions(season)
+        else:
+            results = await self._ingestion.race_results(season, round_number)
+            points_positions = POINTS_POSITIONS
         if not _has_classified_winner(results):
             logger.info(
-                "skipping %s-%s: no classified winner in ingested results",
+                "skipping %s-%s %s: no classified winner in ingested results",
                 season,
                 round_number,
+                event,
             )
             return None, []
 
         race_name = next((r.race_name for r in results if r.race_name), "")
-        outcome = build_outcome(season, round_number, results, race_name)
+        outcome = build_outcome(
+            season, round_number, results, race_name,
+            event=event, points_positions=points_positions,
+        )
         await self._store.save_outcome(outcome)
 
-        predictions = await self._predictions.predictions_for(season, round_number)
+        predictions = await self._predictions.predictions_for(
+            season, round_number, event=event
+        )
+        grid_rates = await self._grid_rates(season, round_number, points_positions)
         scores: List[PredictionScore] = []
         for prediction in predictions:
             if prediction.is_late_lock:
@@ -82,32 +121,109 @@ class Reconciler:
                     prediction.prediction_id, prediction.locked_at,
                     prediction.race_start_utc,
                 )
-            score = score_prediction(prediction, outcome)
+            score = score_prediction(prediction, outcome, grid_rates)
+            mismatches = name_mismatches(
+                score.predicted_not_raced, score.raced_not_predicted
+            )
+            if mismatches:
+                logger.error(
+                    "HOLDING %s for %s-%s %s: forecast and results name the same "
+                    "driver differently (%s). Fix the names, then reconcile again.",
+                    prediction.prediction_id, season, round_number, event,
+                    ", ".join(
+                        "{!r} vs {!r}".format(m.forecast_name, m.result_name)
+                        for m in mismatches
+                    ),
+                )
+                outcome.held.append(HeldPrediction(
+                    prediction_id=prediction.prediction_id,
+                    window=prediction.window,
+                    mismatches=mismatches,
+                ))
+                continue
             await self._store.save_score(score)
             scores.append(score)
 
+        if outcome.held:
+            # Saved with the outcome so the track record can count them.
+            await self._store.save_outcome(outcome)
+
         logger.info(
-            "reconciled %s-%s: %s prediction(s) scored", season, round_number, len(scores)
+            "reconciled %s-%s %s: %s prediction(s) scored",
+            season, round_number, event, len(scores),
         )
         return outcome, scores
 
-    async def reconcile_season(self, season: int) -> List[PredictionScore]:
-        """Sweep every round that has a locked prediction and a finished race."""
+    async def _grid_rates(
+        self, season: int, round_number: int, points_positions: int
+    ) -> Optional[GridRates]:
+        """Grid-slot rates from Grand Prix results before this round.
+
+        Sprints use Grand Prix history too: there are too few sprints to give
+        every slot a rate, and the points market is counted to the sprint's own
+        number of scoring places. A failure here costs only the extra baseline,
+        so it is logged and the race is still scored.
+        """
+        starts: List[HistoricalStart] = []
         try:
-            predictions = await self._predictions.list_predictions(season)
+            for year in range(season - GRID_HISTORY_SEASONS, season + 1):
+                starts.extend(await self._starts_for(year, finished=year < season))
+        except UpstreamUnavailable as exc:
+            logger.warning(
+                "no grid baseline for %s-%s: history unavailable (%s)",
+                season, round_number, exc,
+            )
+            return None
+        rates = GridRates.from_history(
+            starts, before=(season, round_number), points_positions=points_positions
+        )
+        if not rates.usable:
+            logger.info(
+                "no grid baseline for %s-%s: only %s past races",
+                season, round_number, rates.races,
+            )
+            return None
+        return rates
+
+    async def _starts_for(self, season: int, finished: bool) -> List[HistoricalStart]:
+        if finished and season in self._season_starts:
+            return self._season_starts[season]
+        rows = await self._ingestion.season_results(season)
+        starts = [
+            HistoricalStart(
+                season=row.season,
+                round=row.round,
+                grid_position=row.grid_position,
+                position=row.position,
+                classified=row.classified,
+            )
+            for row in rows
+        ]
+        if finished:
+            self._season_starts[season] = starts
+        return starts
+
+    async def reconcile_season(self, season: int) -> List[PredictionScore]:
+        """Sweep every race and sprint that has a locked prediction and a result."""
+        try:
+            predictions = await self._predictions.list_predictions(
+                season, event="all"
+            )
         except UpstreamUnavailable as exc:
             logger.error("cannot list predictions for %s: %s", season, exc)
             raise
 
         scored: List[PredictionScore] = []
-        for round_number in sorted({p.round for p in predictions}):
+        for round_number, event in sorted({(p.round, p.event) for p in predictions}):
             try:
-                _, scores = await self.reconcile_race(season, round_number)
+                _, scores = await self.reconcile_race(season, round_number, event)
                 scored.extend(scores)
             except UpstreamUnavailable as exc:
                 # One unreachable round must not abandon the rest of the sweep;
                 # the next run picks it up because reconciliation is idempotent.
-                logger.warning("skipping %s-%s: %s", season, round_number, exc)
+                logger.warning(
+                    "skipping %s-%s %s: %s", season, round_number, event, exc
+                )
         return scored
 
     async def track_record(
@@ -122,11 +238,27 @@ class Reconciler:
         """
         scores = await self._store.list_scores(season=season)
         pending, refused_late = await self._count_pending(season, scores)
+        held = await self._count_held(season, scores)
         samples = await self._calibration_samples(season, scores)
-        return record_builder.build_track_record(
-            scores, samples, pending=pending, refused_late=refused_late,
-            buckets=buckets
+        record = record_builder.build_track_record(
+            scores, samples, pending=max(pending - held, 0),
+            refused_late=refused_late, buckets=buckets
         )
+        record.predictions_held_name_mismatch = held
+        return record
+
+    async def _count_held(
+        self, season: Optional[int], scores: Sequence[PredictionScore]
+    ) -> int:
+        """Forecasts currently held for a name mismatch and still unscored."""
+        scored_ids = {score.prediction_id for score in scores}
+        outcomes = await self._store.list_outcomes(season)
+        return len({
+            held.prediction_id
+            for outcome in outcomes
+            for held in outcome.held
+            if held.prediction_id not in scored_ids
+        })
 
     async def _count_pending(
         self, season: Optional[int], scores: Sequence[PredictionScore]
@@ -138,7 +270,7 @@ class Reconciler:
         refused forecast masquerade as a backlog.
         """
         try:
-            locked = await self._predictions.list_predictions(season)
+            locked = await self._predictions.list_predictions(season, event="all")
         except UpstreamUnavailable:
             logger.warning("cannot count pending predictions; reporting 0")
             return 0, 0
@@ -165,7 +297,7 @@ class Reconciler:
         for score in scores:
             try:
                 predictions = await self._predictions.predictions_for(
-                    score.season, score.round
+                    score.season, score.round, event="all"
                 )
             except UpstreamUnavailable:
                 continue
@@ -193,7 +325,7 @@ def _probability_rows(
     exactly the sort of divergence that makes "absent means absent" a rule worth
     enforcing in one place rather than remembering in two.
     """
-    key_prefix = "{}-{}".format(prediction.season, prediction.round)
+    key_prefix = outcome_key(prediction.season, prediction.round, prediction.event)
     rows: List[Tuple[str, Market, str, float]] = []
     for row in prediction.driver_probabilities:
         key = "{}|{}".format(key_prefix, row.driver)

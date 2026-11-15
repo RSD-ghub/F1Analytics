@@ -20,6 +20,9 @@ class Settings(ServiceSettings):
     prediction_service_url: str = "http://prediction-service:8002"
     scoring_service_url: str = "http://scoring-service:8003"
     downstream_timeout_seconds: float = 10.0
+    #: A race replay simulates every lap of a Grand Prix the first time it is
+    #: asked for: tens of seconds, not the usual sub-second read.
+    live_replay_timeout_seconds: float = 180.0
 
     # Auth. jwt_secret has no usable default on purpose — a weak signing key is
     # worse than a missing one, so it must be supplied via the environment.
@@ -52,6 +55,35 @@ class Settings(ServiceSettings):
     # limits multiply by however many accounts someone can register.
     bernie_calls_per_user_per_day: int = 20
     bernie_calls_per_day: int = 500
+
+    # Behind Caddy in production, every request arrives from the proxy's
+    # address; set this so rate limits key on the real client. Leave it off
+    # when core-api is reachable directly, or callers can pick their own key.
+    trust_forwarded_for: bool = False
+
+    # Accounts allowed to run the site's own controls (today: connecting the
+    # F1TV account that FastF1 signs in with). Comma-separated emails, case
+    # ignored. Empty means nobody, so a fresh deployment exposes nothing.
+    admin_emails: str = ""
+
+    def is_admin(self, email: str) -> bool:
+        wanted = {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+        return bool(email) and email.strip().lower() in wanted
+
+    # Password reset email. Without SMTP_HOST the link is logged instead,
+    # which is fine on a laptop and wrong on a public deployment.
+    public_base_url: str = "http://localhost:5173"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_starttls: bool = True
+
+    # Race-day weather, shown on Next Race and given to Bernie. Open-Meteo needs
+    # no key. Empty URL turns the panel off (for a host with no egress).
+    weather_forecast_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_timeout_seconds: float = 5.0
 
 
 @lru_cache

@@ -155,3 +155,22 @@ async def test_a_window_with_no_winner_market_reports_no_call(monkeypatch):
 
     assert view.called_winner is None
     assert view.called_winner_probability is None
+
+
+async def test_a_scored_sprint_does_not_stand_in_for_the_grand_prix(monkeypatch):
+    """The sprint is scored on Saturday, before its round's Grand Prix has
+    run. Read as the latest scored race it would either blank the panel (no
+    Grand Prix result yet) or describe the Grand Prix using the sprint's
+    score."""
+    _wire(
+        monkeypatch,
+        scores=[_score(2026, 13, "final_grid"), _score(2026, 14, "sprint")],
+        results=RESULTS,
+        predictions=[_prediction("final_grid", [("Russell", 0.33)])],
+    )
+
+    race = await dashboard.last_race(Settings())
+
+    assert race is not None
+    assert race.round == 13
+    assert race.window == "final_grid"

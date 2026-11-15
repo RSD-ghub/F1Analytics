@@ -20,6 +20,9 @@ from pydantic import BaseModel, Field
 
 
 class EntryKind(str, Enum):
+    #: Race-week headlines from the outlets. The one kind whose facts are not
+    #: ours: each is a report, labelled with who reported it and linked to it.
+    NEWS = "paddock_news"
     PRACTICE = "practice_report"
     QUALIFYING = "qualifying_report"
     FORECAST = "forecast"

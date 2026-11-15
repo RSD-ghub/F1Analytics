@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { usePageTitle } from '../hooks/usePageTitle'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { login, register } from '../api/f1Api'
 import { useAuth } from '../context/useAuth'
 import { Panel } from '../components/Panel'
@@ -17,12 +18,15 @@ import { Label } from '@/components/ui/label'
  */
 export default function Login({ mode = 'login' }) {
   const isRegister = mode === 'register'
+  usePageTitle(isRegister ? 'Create an account' : 'Sign in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const { login: signIn } = useAuth()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const justReset = params.get('reset') === '1'
 
   async function submit(event) {
     event.preventDefault()
@@ -54,6 +58,9 @@ export default function Login({ mode = 'login' }) {
       </header>
 
       <Panel>
+        {justReset && !isRegister && (
+          <p className="notice" role="status">Password changed. Sign in with the new one.</p>
+        )}
         <form className="form" onSubmit={submit}>
           <div className="field">
             {/* Label's htmlFor pairs it with the input, so clicking the word
@@ -91,7 +98,10 @@ export default function Login({ mode = 'login' }) {
           {isRegister ? (
             <>Already have an account? <Link to="/login">Sign in</Link></>
           ) : (
-            <>No account? <Link to="/register">Create one</Link></>
+            <>
+              No account? <Link to="/register">Create one</Link>
+              {' · '}<Link to="/reset-password">Forgot your password?</Link>
+            </>
           )}
         </p>
       </Panel>

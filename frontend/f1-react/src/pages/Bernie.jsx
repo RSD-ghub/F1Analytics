@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useAuth } from '../context/useAuth'
 import { Link } from 'react-router-dom'
-import { continueThread, getNextRace, listThreads, readThread, startThread } from '../api/f1Api'
+import { getNextRace, listThreads, readThread, streamTurn } from '../api/f1Api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel, Loading, Unavailable } from '../components/Panel'
@@ -10,7 +11,7 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * Bernie — a conversational pit-wall strategist.
  *
  * The disclaimer is rendered from the server's own payload rather than
- * hardcoded here. Bernie is an AI persona and the product must not present him
+ * hardcoded here. Bernie is an AI persona and the product must not present her
  * as a person; making that depend on the frontend remembering to add a line
  * would be the wrong place for the guarantee to live.
  *
@@ -20,12 +21,15 @@ import { Panel, Loading, Unavailable } from '../components/Panel'
  * grounding cannot support.
  */
 export default function Bernie() {
+  usePageTitle('Bernie')
   const { auth } = useAuth()
   const [threads, setThreads] = useState([])
   const [active, setActive] = useState(null)
   const [race, setRace] = useState(null)
   const [question, setQuestion] = useState('')
   const [busy, setBusy] = useState(false)
+  // The question being answered and Bernie's answer so far, while it streams.
+  const [pending, setPending] = useState(null)
   const [error, setError] = useState(null)
   const endRef = useRef(null)
 
@@ -37,31 +41,34 @@ export default function Bernie() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [active?.turns?.length])
+  }, [active?.turns?.length, pending?.answer])
 
   if (!auth?.token) {
     /*
      * The signed-out state used to be a bare panel headed "Sign in to talk to
      * Bernie", which asked for an account without ever saying what the
      * account was for. Someone arriving from the masthead had no way to know
-     * what Bernie knows or why he is worth the sign-up.
+     * what Bernie knows or why she is worth the sign-up.
      */
     return (
       <div className="stack">
         <header className="page-head">
           <p className="eyebrow">Bernie</p>
-          <h1>Ask about the weekend</h1>
+          <h1>Plan the race with Bernie</h1>
           <p className="lede">
-            Bernie answers from the stored record — practice pace, qualifying,
-            the confirmed grid and its penalties, the locked forecast, and the
-            text of the FIA regulations. He cites the article when he leans on
-            a rule, and says he does not know when the record does not cover
-            the question.
+            Bernie is a race strategist. Ask for a plan and she simulates the
+            options from this circuit's recent races — tyre wear, what a stop
+            costs, how often the safety car comes out — then weighs them
+            against the grid, practice pace and the forecast. She also answers
+            from the stored record and the FIA regulations, citing the article
+            when she leans on a rule.
           </p>
         </header>
 
-        <Panel title="What he can be asked">
+        <Panel title="What she can be asked">
           <ul className="examples">
+            <li>What's the best strategy for a car starting tenth?</li>
+            <li>One stop or two here, and when should the leader pit?</li>
             <li>Why does a driver start further back than they qualified?</li>
             <li>How many power unit elements are allowed before a penalty?</li>
             <li>What did the forecast say about this race, and how did it score?</li>
@@ -89,25 +96,27 @@ export default function Bernie() {
     // Show the question immediately. The server records it before calling the
     // model for the same reason: a slow or failed turn must not make the user's
     // own message disappear.
-    const optimistic = { role: 'user', content: text, created_at: new Date().toISOString() }
-    setActive((prev) => prev && { ...prev, turns: [...prev.turns, optimistic] })
+    setPending({ question: text, answer: '' })
     setQuestion('')
 
     try {
-      const response = active
-        ? await continueThread(active.thread_id, text)
-        : await startThread(race.season, race.round, text)
+      const response = await streamTurn(
+        active
+          ? { threadId: active.thread_id, question: text }
+          : { season: race.season, round: race.round, question: text },
+        (soFar) => setPending({ question: text, answer: soFar }),
+      )
       const thread = await readThread(response.thread_id)
       setActive(thread)
       setThreads(await listThreads())
     } catch (err) {
       setError(err)
-      // Roll back the optimistic turn — it was never recorded.
-      setActive((prev) =>
-        prev && { ...prev, turns: prev.turns.filter((t) => t !== optimistic) },
-      )
+      // The server keeps the question when the model fails mid-answer, so
+      // reload the thread rather than guess; a new thread may not exist yet.
+      if (active) readThread(active.thread_id).then(setActive).catch(() => {})
       setQuestion(text)
     } finally {
+      setPending(null)
       setBusy(false)
     }
   }
@@ -146,7 +155,18 @@ export default function Bernie() {
             {turn.content.split('\n\n').map((para, j) => <p key={j}>{para}</p>)}
           </div>
         ))}
-        {busy && <Loading what="Bernie is thinking" />}
+        {pending && (
+          <>
+            <div className="turn user"><p>{pending.question}</p></div>
+            {pending.answer ? (
+              <div className="turn assistant" aria-live="polite">
+                {pending.answer.split('\n\n').map((para, j) => <p key={j}>{para}</p>)}
+              </div>
+            ) : (
+              <Loading what="Bernie is thinking" />
+            )}
+          </>
+        )}
         <div ref={endRef} />
 
         {error && <BernieError error={error} />}
@@ -155,8 +175,9 @@ export default function Bernie() {
           <Input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={active ? 'Ask a follow-up…' : 'Who looks strongest this weekend?'}
+            placeholder={active ? 'Ask a follow-up…' : 'What strategy would you run from P5?'}
             disabled={busy || !race}
+            maxLength={2000}
             aria-label="Ask Bernie about this weekend"
           />
           <Button type="submit" disabled={busy || !question.trim() || !race}>
@@ -166,7 +187,7 @@ export default function Bernie() {
 
         <p className="disclaimer">
           Bernie is an AI pit-wall strategist inspired by the role of a real race
-          strategist. He is not a real person and does not represent anyone.
+          strategist. She is not a real person and does not represent anyone.
         </p>
       </section>
     </div>
@@ -183,7 +204,7 @@ function BernieError({ error }) {
   // by the component, so repeating it reads as a stutter.
   const messages = {
     not_configured: 'No language model is configured on this deployment. Everything else on the site works without one.',
-    billing: 'The language model account needs credit before he can answer.',
+    billing: 'The language model account needs credit before she can answer.',
     provider_error: 'The language model could not be reached just now — try again shortly.',
   }
   return <Unavailable what="Bernie" reason={messages[reason] ?? error.message} />

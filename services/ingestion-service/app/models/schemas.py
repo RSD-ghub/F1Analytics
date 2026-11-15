@@ -11,7 +11,7 @@ exercise.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -168,6 +168,9 @@ class ResultRow(RowBase):
     classified_position: str = ""
     # "Finished", "Lapped", "Retired", "Accident", "Engine", ...
     status: str = ""
+    #: Laps completed, from the classification. 0 means unknown. It is what
+    #: tells a race that ran short from lap data that stopped short.
+    laps_completed: int = 0
 
 
 class GridSource(str, Enum):
@@ -294,6 +297,11 @@ class LapRow(RowBase):
     lap_time_seconds: float = 0.0
     compound: str = "Unknown"
     stint: int = 0
+    #: Place on the road at the end of the lap, from the timing feed; 0 when
+    #: unknown. Summed lap times give the order only while every lap is timed:
+    #: a deleted lap (Piastri, Australia 2025 lap 44) or a lapped car catching
+    #: the queue behind a safety car moves a car past others it never passed.
+    position: int = 0
     #: Speed trap, on the longest straight. The one that separates a power
     #: circuit from a high-downforce circuit with a straight attached.
     speed_trap_kph: float = 0.0
@@ -364,10 +372,38 @@ class RaceWeekend(BaseModel):
     race_start_utc: Optional[datetime] = None
     qualifying_start_utc: Optional[datetime] = None
     is_sprint_weekend: bool = False
+    #: The sprint itself and the session that sets its grid. Both ``None`` on a
+    #: Grand Prix-only weekend, and the qualifying one also ``None`` for 2021
+    #: and 2022, when the sprint grid came from Friday's Grand Prix qualifying
+    #: rather than a session of its own.
+    sprint_start_utc: Optional[datetime] = None
+    sprint_qualifying_start_utc: Optional[datetime] = None
 
     @property
     def key(self) -> str:
         return f"{self.season}-{self.round}"
+
+
+def sprint_session_names(
+    sessions: Dict[str, datetime],
+) -> Tuple[Optional[str], Optional[str]]:
+    """``(sprint qualifying, sprint)`` as this weekend's timetable names them.
+
+    Read from the published names rather than assumed, because the format has
+    been renamed under us twice. In 2021 the sprint itself was called "Sprint
+    Qualifying" and its grid came from Friday's qualifying; from 2022 the race
+    is "Sprint"; 2023 added a separate "Sprint Shootout" to set its grid, which
+    2024 renamed "Sprint Qualifying" — the 2021 name, now for a different
+    session. Keying on "Sprint" being present is what tells those two apart.
+    """
+    if "Sprint" in sessions:
+        for name in ("Sprint Qualifying", "Sprint Shootout"):
+            if name in sessions:
+                return name, "Sprint"
+        return None, "Sprint"
+    if "Sprint Qualifying" in sessions:
+        return None, "Sprint Qualifying"
+    return None, None
 
 
 class QualifyingFreshness(BaseModel):

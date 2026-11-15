@@ -27,7 +27,7 @@ would fragment into versions that differ by nothing.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -47,6 +47,17 @@ MIN_RELATIVE_GAIN = 0.02
 #: Below this, a comparison is not worth acting on regardless of the margin.
 #: Roughly a season of racing.
 MIN_EVALUATION_RACES = 15
+
+#: Resamples for the paired bootstrap on the gain. Two thousand puts the 5th
+#: percentile within about a percentage point of where more resamples land.
+BOOTSTRAP_RESAMPLES = 2000
+
+#: One-sided: promote only when the gain's 5th percentile is above zero, so a
+#: promotion is a gain we are 95% sure is real, not merely a large average.
+BOOTSTRAP_LOWER_PERCENTILE = 5.0
+
+#: Fixed so the same inputs always give the same decision.
+BOOTSTRAP_SEED = 20261031
 
 #: Scalings tried when putting two weight vectors on a comparable footing.
 #:
@@ -90,6 +101,10 @@ class PromotionDecision:
     champion_scale: float = 1.0
     challenger_scale: float = 1.0
     scale_fitted_on: List[int] = field(default_factory=list)
+    #: Paired-bootstrap interval on ``relative_gain`` (5th and 95th
+    #: percentiles over resampled races). ``None`` where no comparison ran.
+    gain_ci_low: Optional[float] = None
+    gain_ci_high: Optional[float] = None
     decided_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def as_dict(self) -> Dict:
@@ -105,6 +120,8 @@ class PromotionDecision:
             "champion_scale": self.champion_scale,
             "challenger_scale": self.challenger_scale,
             "scale_fitted_on": self.scale_fitted_on,
+            "gain_ci_low": self.gain_ci_low,
+            "gain_ci_high": self.gain_ci_high,
             "decided_at": self.decided_at.isoformat(),
         }
 
@@ -204,34 +221,59 @@ def compare(
             evaluation_races=len(races),
         )
 
-    champion = _score(champion_weights, feature_names, races, champion_scale)
-    challenger = _score(challenger_weights, feature_names, races, challenger_scale)
-    baseline = uniform_baseline_log_likelihood(races)
+    champion_per_race = _per_race(champion_weights, feature_names, races, champion_scale)
+    challenger_per_race = _per_race(
+        challenger_weights, feature_names, races, challenger_scale
+    )
+    baseline_per_race = np.array(
+        [uniform_baseline_log_likelihood([race]) for race in races]
+    )
+    champion = float(champion_per_race.mean())
+    challenger = float(challenger_per_race.mean())
+    baseline = float(baseline_per_race.mean())
 
     champion_edge = champion - baseline
     if champion_edge <= 0:
         # The incumbent is no better than guessing, so any improvement is worth
         # taking; the relative-margin test would divide by ~zero here.
         gain = 1.0 if challenger > champion else -1.0
+        ci_low = ci_high = None
     else:
         gain = (challenger - champion) / abs(champion_edge)
+        ci_low, ci_high = bootstrap_gain_interval(
+            champion_per_race, challenger_per_race, baseline_per_race
+        )
 
     seasons = sorted({o.season for o in races})
     # Coerced to native Python types. numpy scalars leak in through the scoring
     # helpers, and json.dump rejects np.bool_ / np.float64 outright — the
     # promotion history would have failed to write at the moment it mattered.
-    promote = bool(gain >= min_gain)
     gain = float(gain)
+    clears_margin = gain >= min_gain
+    # The margin alone promoted on averages that one or two lucky races could
+    # produce. The interval asks whether the gain survives resampling the races.
+    clears_noise = ci_low is None or ci_low > 0
+    promote = bool(clears_margin and clears_noise)
+
+    if promote:
+        reason = "challenger beats champion by {:.1%} of its edge over uniform".format(gain)
+        if ci_low is not None:
+            reason += " (95% lower bound {:+.1%})".format(ci_low)
+    elif not clears_margin:
+        reason = "gain of {:.1%} is below the {:.0%} threshold; keeping champion".format(
+            gain, min_gain
+        )
+    else:
+        reason = (
+            "gain of {:.1%} clears the {:.0%} threshold but not the noise: its "
+            "95% lower bound is {:+.1%} over {} races; keeping champion".format(
+                gain, min_gain, ci_low, len(races)
+            )
+        )
 
     return PromotionDecision(
         promote=promote,
-        reason=(
-            "challenger beats champion by {:.1%} of its edge over uniform".format(gain)
-            if promote
-            else "gain of {:.1%} is below the {:.0%} threshold; keeping champion".format(
-                gain, min_gain
-            )
-        ),
+        reason=reason,
         champion_score=float(champion),
         challenger_score=float(challenger),
         baseline_score=float(baseline),
@@ -241,7 +283,47 @@ def compare(
         champion_scale=float(champion_scale),
         challenger_scale=float(challenger_scale),
         scale_fitted_on=sorted(scale_fitted_on or []),
+        gain_ci_low=None if ci_low is None else float(ci_low),
+        gain_ci_high=None if ci_high is None else float(ci_high),
     )
+
+
+def bootstrap_gain_interval(
+    champion: np.ndarray,
+    challenger: np.ndarray,
+    baseline: np.ndarray,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+) -> Tuple[float, float]:
+    """5th and 95th percentile of the relative gain over resampled races.
+
+    Paired: each resample draws whole races, with both models' scores for the
+    same race kept together, so race-to-race difficulty cancels out instead of
+    widening the interval. The gain is recomputed in full per resample (the
+    champion's edge too), exactly as ``compare`` computes it.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(champion)
+    picks = rng.integers(0, n, size=(resamples, n))
+    champ = champion[picks].mean(axis=1)
+    chall = challenger[picks].mean(axis=1)
+    base = baseline[picks].mean(axis=1)
+    edge = np.abs(champ - base)
+    gains = np.where(edge > 0, (chall - champ) / np.where(edge > 0, edge, 1.0), 0.0)
+    return (
+        float(np.percentile(gains, BOOTSTRAP_LOWER_PERCENTILE)),
+        float(np.percentile(gains, 100.0 - BOOTSTRAP_LOWER_PERCENTILE)),
+    )
+
+
+def _per_race(
+    weights: Dict[str, float],
+    feature_names: Sequence[str],
+    races: Sequence[RaceObservation],
+    scale: float = 1.0,
+) -> np.ndarray:
+    vector = np.array([weights.get(name, 0.0) for name in feature_names]) * scale
+    return np.array([mean_log_likelihood(vector, [race]) for race in races])
 
 
 def _score(

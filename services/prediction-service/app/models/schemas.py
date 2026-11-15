@@ -13,7 +13,7 @@ does. Comparing their accuracy measures exactly how much the grid tells you.
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,12 @@ class LockWindow(str, Enum):
     #: pit-lane set, the largest move there is. A window whose premise is "we
     #: know where they start" cannot be satisfied eighteen hours early.
     FINAL_GRID = "final_grid"
+    #: The sprint, forecast on the sprint qualifying classification. A
+    #: separate event rather than a fourth Grand Prix window: it is scored
+    #: against the sprint's own result, locks against the sprint's own start,
+    #: and a sprint forecast compared with a Grand Prix one would be comparing
+    #: two different races.
+    SPRINT = "sprint"
 
 
 class Market(str, Enum):
@@ -46,19 +52,51 @@ class Market(str, Enum):
 #:
 #: Its podium (+28% to +38%) and points (+25% to +39%) forecasts are genuinely
 #: skilful and are published. Once the grid is known, all three are.
+#:
+#: The sprint publishes all three on the same footing as the Grand Prix
+#: post-quali window: it is the same model, conditioned on a grid, over a race
+#: a third the length — where the grid decides more, not less. That is an
+#: argument, not a measurement. ``scripts/backtest_sprints.py`` measures it on
+#: past sprints, and a market it cannot show skill on comes out of this tuple
+#: the way the pre-quali win market did.
 MARKETS_BY_WINDOW = {
     LockWindow.PRE_QUALI: (Market.PODIUM, Market.POINTS),
     LockWindow.POST_QUALI: (Market.WIN, Market.PODIUM, Market.POINTS),
     LockWindow.FINAL_GRID: (Market.WIN, Market.PODIUM, Market.POINTS),
+    LockWindow.SPRINT: (Market.WIN, Market.PODIUM, Market.POINTS),
 }
 
-#: Windows that are conditioned on a starting grid. Both use the grid block of
-#: the model; they differ in how sure that grid is.
-GRID_WINDOWS = (LockWindow.POST_QUALI, LockWindow.FINAL_GRID)
+#: Windows that are conditioned on a starting grid. All use the grid block of
+#: the model; they differ in how sure that grid is, and in which race it is for.
+GRID_WINDOWS = (LockWindow.POST_QUALI, LockWindow.FINAL_GRID, LockWindow.SPRINT)
+
+#: Windows forecasting the sprint rather than the Grand Prix. Kept as a set so
+#: every reader asks "which race is this for?" the same way.
+SPRINT_WINDOWS = (LockWindow.SPRINT,)
+
+
+class Event(str, Enum):
+    """Which race of the weekend a forecast is about."""
+
+    RACE = "race"
+    SPRINT = "sprint"
+
+
+def event_of(window: LockWindow) -> Event:
+    return Event.SPRINT if window in SPRINT_WINDOWS else Event.RACE
 
 
 def published_markets(window: LockWindow) -> List[str]:
     return [market.value for market in MARKETS_BY_WINDOW[window]]
+
+
+def sprint_points_positions(season: int) -> int:
+    """How many places score in a sprint that season.
+
+    Three in 2021, eight since. Not the Grand Prix's ten, so a points market
+    priced on ten would claim two finishing places that score nothing.
+    """
+    return 3 if season <= 2021 else 8
 
 
 class DataQuality(BaseModel):
@@ -130,6 +168,20 @@ class DriverFeatures(BaseModel):
     # unlike the grid this is legitimately available to *both* windows — it is
     # the only current-weekend pace signal the pre-quali model is allowed.
     practice_long_run_gap_pct: float = 0.0
+    # Fuel- and tyre-corrected race pace from lap times, as a fraction of the
+    # race's typical lap: the driver's recent races, and their car's (the
+    # better of its two drivers each race). Prior races only.
+    race_pace_recent_pct: float = 0.015
+    team_race_pace_pct: float = 0.015
+    # The car's form, Kalman-filtered race by race (``services/team_form.py``):
+    # qualifying gap to pole, and mean classified finish. Prior races only.
+    team_form_quali_pct: float = 0.015
+    team_form_finish: float = 10.5
+    # Learned ratings going into the race (``services/ratings.py``): the
+    # driver's, following them between teams, and the car's, following the
+    # organisation between drivers. 0.0 is average.
+    driver_rating: float = 0.0
+    car_rating: float = 0.0
     # How this driver does at circuits of this *type* versus their own
     # baseline, positive meaning better than usual. Generalises
     # ``circuit_avg_finish`` past its sparsity problem: a driver sees one
@@ -196,7 +248,8 @@ class Prediction(BaseModel):
     race_name: str = ""
     window: LockWindow
     locked_at: datetime
-    #: When the race starts. Lets scoring confirm the lock preceded the race.
+    #: When the race starts — the sprint's own start, for a sprint forecast.
+    #: Lets scoring confirm the lock preceded the race it is about.
     race_start_utc: Optional[datetime] = None
     #: When this window opened. Stored so lateness stays derivable from the
     #: prediction alone: a forecast placed hours after its deadline had more of
@@ -216,6 +269,14 @@ class Prediction(BaseModel):
     published_markets: List[str] = Field(default_factory=list)
     feature_snapshot_ref: str
     data_quality: DataQuality = Field(default_factory=DataQuality)
+    #: Finishing places the points market counts: ten for a Grand Prix, eight
+    #: for a sprint. Stored rather than inferred so the forecast says exactly
+    #: what its ``p_points`` meant when it was locked.
+    points_positions: int = 10
+
+    @property
+    def event(self) -> Event:
+        return event_of(self.window)
 
     def publishes(self, market: str) -> bool:
         return market in self.published_markets
@@ -275,3 +336,64 @@ class ChampionshipForecast(BaseModel):
     generated_at: Optional[datetime] = None
     drivers: List[ChampionshipOutcome] = Field(default_factory=list)
     constructors: List[ChampionshipOutcome] = Field(default_factory=list)
+
+
+class SimulationStatus(str, Enum):
+    READY = "ready"
+    #: The FIA's final grid is not published yet. Simulating on qualifying
+    #: order would hand any penalised driver the wrong starting slot.
+    AWAITING_CONFIRMED_GRID = "awaiting_confirmed_grid"
+
+
+class SimulatedDriver(BaseModel):
+    driver: str
+    team: str = "Unknown"
+    grid_position: int = 0
+    p_win: float = 0.0
+    p_podium: float = 0.0
+    p_points: float = 0.0
+    #: Share of simulated races this car did not finish.
+    p_dnf: float = 0.0
+    #: Mean finishing position, a retirement counted behind every finisher —
+    #: the same convention the forecasts use.
+    expected_position: float = 0.0
+    #: ``position_probabilities[k]`` is the chance of finishing P(k+1), over all
+    #: runs. Sums with ``p_dnf`` to 1.
+    position_probabilities: List[float] = Field(default_factory=list)
+    #: The linear model's numbers for the same driver on the same grid, so the
+    #: network's view is always shown next to the one it is measured against.
+    #: None when the simulation ran on the linear model itself.
+    baseline: Optional[DriverProbability] = None
+
+
+class RaceSimulation(BaseModel):
+    """Thousands of simulated races on the confirmed grid, summarised per driver.
+
+    Not a locked forecast: it is recomputed on request and never scored. It is
+    reproducible all the same — the seed is derived from the race, so the same
+    grid and model give the same numbers every time.
+    """
+
+    status: SimulationStatus
+    season: int
+    round: int
+    race_name: str = ""
+    detail: str = ""
+    runs: int = 0
+    seed: int = 0
+    model_version: str = ""
+    baseline_model_version: str = ""
+    #: Whether the network has beaten the linear model on held-out seasons and
+    #: so places the final-grid forecast. False means it is shown alongside,
+    #: not instead.
+    model_promoted: bool = False
+    #: The held-out comparison the promotion was decided on.
+    model_metrics: Dict[str, Any] = Field(default_factory=dict)
+    #: How the races were run: ``lap-sim-…`` when each is simulated lap by
+    #: lap (strategy, safety cars, passing), ``plackett-luce`` when finishing
+    #: orders are sampled directly from the strengths.
+    engine: str = "plackett-luce"
+    engine_metrics: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[datetime] = None
+    data_quality: Optional[DataQuality] = None
+    drivers: List[SimulatedDriver] = Field(default_factory=list)

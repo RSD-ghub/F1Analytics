@@ -21,8 +21,14 @@ class ServiceSettings(BaseSettings):
     service_name: str = "f1-service"
     environment: str = "development"
     log_level: str = "INFO"
+    #: "text" for a terminal, "json" for a log shipper (one object per line).
+    log_format: str = "text"
 
     # Storage — mongo_database is overridden per service and must never be shared.
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_database: str = "f1_scratch"
     mongo_timeout_ms: int = 5000
+
+    # Cache. Empty means off: every read goes to Mongo, which is how tests and
+    # the bare-uvicorn dev setup run. See f1_common.cache.
+    redis_url: str = ""

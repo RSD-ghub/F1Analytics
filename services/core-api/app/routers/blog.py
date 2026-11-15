@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 WINDOW_PREFERENCE = ("final_grid", "post_quali", "pre_quali")
 
 
+def race_scores(scores):
+    """Scores of Grand Prix forecasts only.
+
+    The scored record also holds sprint forecasts, which share their round
+    with the Grand Prix and are scored before it. Every reader here means the
+    Grand Prix by "this round's score", so a sprint score must not stand in
+    for one — or make a round look scored before its Grand Prix has run.
+    """
+    return [s for s in scores if s.get("window") in WINDOW_PREFERENCE]
+
+
 def most_informed(predictions):
     """The best available forecast for a race, or None."""
     for window in WINDOW_PREFERENCE:
@@ -86,6 +97,7 @@ class FeedItem(BaseModel):
 
 
 KIND_LABEL = {
+    "paddock_news": "Paddock news",
     "practice_report": "Practice",
     "qualifying_report": "Qualifying",
     "forecast": "Forecast",
@@ -129,7 +141,7 @@ async def feed(
         calendar=ingestion.get("/forward/calendar/{}".format(chosen)),
         scores=scoring.get("/scores", {"season": chosen, "limit": 200}),
     )
-    scores = fetched.get("scores") or []
+    scores = race_scores(fetched.get("scores") or [])
     now = datetime.now(timezone.utc)
 
     rounds = []
@@ -156,7 +168,16 @@ async def feed(
             logger.exception("feed skipped %s-%s", chosen, round_number)
             continue
         entries = [e for e in entries if e]
-        if not entries:
+        # What the weekend produced, as distinct from what was reported about
+        # it. A card needs at least one of ours to exist, and the summary is
+        # written over ours alone: it says what happened and how the forecast
+        # fared, and headlines arriving through race week would otherwise
+        # change its cache key, and its subject, every half hour.
+        record = [
+            e for e in entries
+            if getattr(e.kind, "value", e.kind) != "paddock_news"
+        ]
+        if not record:
             continue
 
         found = await gather_optional(
@@ -208,7 +229,7 @@ async def feed(
             circuit=weekend.get("circuit", ""),
             race_start_utc=weekend.get("race_start_utc"),
             image=imagery[0]["url"] if imagery else None,
-            headline=result.headline if result else entries[-1].headline,
+            headline=result.headline if result else record[-1].headline,
             winner=classified[0].get("driver", "") if classified else "",
             called_winner=called,
             win_skill=win_skill,
@@ -224,11 +245,11 @@ async def feed(
                 )
                 for e in entries
             ],
-            summary=await _cached_summary(usage, chosen, round_number, entries),
+            summary=await _cached_summary(usage, chosen, round_number, record),
         )
         if not item.summary and bernie.available:
             background.add_task(
-                _write_summary, bernie, usage, chosen, round_number, entries,
+                _write_summary, bernie, usage, chosen, round_number, record,
             )
         items.append(item)
 
@@ -331,7 +352,7 @@ async def index(
 
     # Which rounds were scored, in one pass rather than a call per round.
     scored_rounds = {
-        s["round"] for s in (fetched.get("scores") or []) if s.get("round")
+        s["round"] for s in race_scores(fetched.get("scores") or []) if s.get("round")
     }
     now = datetime.now(timezone.utc)
 
@@ -417,6 +438,10 @@ async def _assemble(settings: Settings, season: int, round_number: int):
             {"season": season, "round": round_number, "limit": 100},
         ),
         predictions=prediction.get("/predictions/{}/{}".format(season, round_number)),
+        news=ingestion.get(
+            "/news/weekend/{}/{}".format(season, round_number),
+            {"limit": builder.NEWS_POOL},
+        ),
     )
     if fetched["_unavailable"]:
         logger.warning(
@@ -430,6 +455,7 @@ async def _assemble(settings: Settings, season: int, round_number: int):
 
     predictions = fetched.get("predictions") or []
     entries = [
+        builder.news_entry(season, round_number, race_name, fetched.get("news")),
         builder.practice_entry(
             season, round_number, race_name, fetched.get("practice") or []
         ),

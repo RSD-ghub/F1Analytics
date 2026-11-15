@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.regulations import source as regulations  # noqa: E402
 from app.regulations.store import RegulationStore  # noqa: E402
+from f1_common import cache  # noqa: E402
 from f1_common.mongo import create_client, get_database  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -30,6 +31,10 @@ async def main() -> int:
         if len(sys.argv) > 2 else regulations.DEFAULT_SECTIONS
     )
 
+    # Writes from here retire what core-api has cached, as the service's own
+    # would. Without REDIS_URL they are not announced, and cached answers
+    # catch up when their TTLs run out.
+    cache.configure(os.getenv("REDIS_URL", ""))
     client = create_client(os.getenv("MONGO_URI", "mongodb://localhost:27017"), 5000)
     store = RegulationStore(get_database(client, os.getenv("MONGO_DATABASE", "f1_ingestion")))
     await store.ensure_indexes()

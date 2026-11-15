@@ -19,6 +19,12 @@ class _Runner:
     async def ingest_finished_races(self, *a, **k):
         return {}
 
+    async def ingest_sprint_sessions(self, *a, **k):
+        return {}
+
+    async def ingest_weekend_practice(self, *a, **k):
+        return []
+
 
 async def test_every_sweep_survives_a_host_that_went_to_sleep():
     """APScheduler's default grace is one second, so on a machine that
@@ -31,7 +37,7 @@ async def test_every_sweep_survives_a_host_that_went_to_sleep():
     try:
         assert started is not None
         jobs = started.get_jobs()
-        assert len(jobs) == 3, "expected all three sweeps, got {}".format(
+        assert len(jobs) == 5, "expected all five sweeps, got {}".format(
             [job.id for job in jobs]
         )
         for job in jobs:

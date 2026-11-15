@@ -65,11 +65,11 @@ class _Predictions:
     def __init__(self, predictions):
         self._p = predictions
 
-    async def predictions_for(self, season, round_number):
-        return self._p
+    async def predictions_for(self, season, round_number, event="race"):
+        return [p for p in self._p if event == "all" or p.event == event]
 
-    async def list_predictions(self, season=None):
-        return self._p
+    async def list_predictions(self, season=None, event="race"):
+        return [p for p in self._p if event == "all" or p.event == event]
 
 
 class _Store:
@@ -85,6 +85,9 @@ class _Store:
     async def list_scores(self, season=None):
         return list(self.saved)
 
+    async def list_outcomes(self, season=None):
+        return []
+
 
 class _Ingestion:
     def __init__(self, results):
@@ -92,6 +95,10 @@ class _Ingestion:
 
     async def race_results(self, season, round_number):
         return self._r
+
+    async def season_results(self, season):
+        # No history, so these races are scored without a grid baseline.
+        return []
 
 
 def _results():

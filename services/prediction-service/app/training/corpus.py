@@ -39,6 +39,65 @@ class CorpusIncomplete(RuntimeError):
     """
 
 
+#: FastF1 lap timing — with compounds, stints, speeds — starts here. The lap
+#: simulator's circuit profiles are built from these seasons only: lap times
+#: from older cars would skew a circuit's typical lap and fuel effect.
+FIRST_LAP_SEASON = 2018
+#: Lap times alone (jolpica, no compounds) go back to here; the race-pace
+#: estimate, which needs only times, uses them.
+FIRST_HISTORICAL_LAP_SEASON = 2008
+
+
+async def load_race_pace(client: IngestionClient, results: List[RaceResult]):
+    """Corrected race-pace gaps for every race in ``results`` that has laps."""
+    from app.services import race_pace
+    from app.services.model import BASE_FEATURES
+
+    if not {"race_pace_recent_pct", "team_race_pace_pct"} & set(BASE_FEATURES):
+        # Withheld from the model (see WITHHELD_FEATURES): nothing to fetch.
+        return {}
+    races = sorted({(r.season, r.round) for r in results
+                    if r.season >= FIRST_HISTORICAL_LAP_SEASON})
+    laps = []
+    for season, round_number in races:
+        laps.extend(await client.race_laps(season, round_number))
+    gaps = race_pace.gaps_by_race(laps)
+    logger.info("race pace: %s laps, %s of %s races usable",
+                len(laps), len(gaps), len(races))
+    return gaps
+
+
+async def load_race_contexts(client: IngestionClient, results: List[RaceResult]):
+    """Every race since lap timing began, summarised for the lap simulator."""
+    from collections import defaultdict
+
+    from app.training import lap_profiles
+
+    by_race = defaultdict(list)
+    for row in results:
+        if row.season >= FIRST_LAP_SEASON:
+            by_race[(row.season, row.round)].append(row)
+    contexts = []
+    for season in sorted({season for season, _ in by_race}):
+        stints, stops, messages = defaultdict(list), defaultdict(list), defaultdict(list)
+        for row in await client.season_stints(season):
+            stints[row.round].append(row)
+        for row in await client.season_pit_stops(season):
+            stops[row.round].append(row)
+        for row in await client.season_race_control(season):
+            messages[row.round].append(row)
+        for round_number in sorted(r for s, r in by_race if s == season):
+            laps = await client.race_laps(season, round_number)
+            if not laps:
+                continue
+            contexts.append(lap_profiles.summarise_race(
+                season, round_number, laps, stints[round_number],
+                stops[round_number], messages[round_number],
+                by_race[(season, round_number)]))
+    logger.info("race context: %s races with laps", len(contexts))
+    return contexts
+
+
 async def load(
     client: IngestionClient,
     from_season: int,

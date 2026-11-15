@@ -19,10 +19,12 @@ from app.config import Settings, get_settings
 from app.dependencies import get_client, get_model, get_predictor, get_store
 from app.models.schemas import (
     ChampionshipForecast,
+    Event,
     FeatureSnapshot,
     LockWindow,
     ModelVersion,
     Prediction,
+    RaceSimulation,
 )
 from app.services import simulation
 from app.services.features import build_snapshot
@@ -46,6 +48,18 @@ class ForecastRequest(BaseModel):
     window: LockWindow = LockWindow.PRE_QUALI
     circuit: str = ""
     race_name: str = ""
+
+
+def _event(value: str) -> Optional[Event]:
+    """``race`` (the default), ``sprint``, or ``all`` for both."""
+    return None if value == "all" else Event(value)
+
+
+EVENT_QUERY = Query(
+    "race",
+    pattern="^(race|sprint|all)$",
+    description="Which race of the weekend: race, sprint, or all",
+)
 
 
 class PreviewResponse(BaseModel):
@@ -115,9 +129,10 @@ async def list_predictions(
     season: Optional[int] = Query(None),
     round_number: Optional[int] = Query(None, alias="round"),
     limit: int = Query(100, ge=1, le=500),
+    event: str = EVENT_QUERY,
     store: PredictionStore = Depends(get_store),
 ) -> List[Prediction]:
-    return await store.list_predictions(season, round_number, limit)
+    return await store.list_predictions(season, round_number, limit, _event(event))
 
 
 # Literal paths must be registered before /{season}/{round_number}: FastAPI
@@ -147,10 +162,53 @@ async def model_versions(
 async def for_race(
     season: int,
     round_number: int,
+    event: str = EVENT_QUERY,
     store: PredictionStore = Depends(get_store),
 ) -> List[Prediction]:
-    """Both windows for one race, so their differences can be compared directly."""
-    return await store.list_predictions(season, round_number)
+    """Every window for one race, so their differences can be compared directly.
+
+    The Grand Prix's by default; ``?event=sprint`` for the sprint's.
+    """
+    return await store.list_predictions(
+        season, round_number, event=_event(event)
+    )
+
+
+@router.get("/{season}/{round_number}/simulation", response_model=RaceSimulation)
+async def race_simulation(
+    season: int,
+    round_number: int,
+    circuit: str = Query("", description="Circuit name, as the weekend has it"),
+    race_name: str = Query(""),
+    runs: Optional[int] = Query(None, ge=100, le=50000),
+    client: IngestionClient = Depends(get_client),
+    predictor: Predictor = Depends(get_predictor),
+) -> RaceSimulation:
+    """The Grand Prix simulated by the neural model on the confirmed grid.
+
+    Always 200 when the service is up: "the grid is not confirmed yet" and "no
+    network has been trained" are states of the race, reported in ``status``
+    for the page to show, not failures. Recomputed on request and never
+    stored; the seed comes from the race, so it is reproducible all the same.
+    """
+    if not circuit:
+        try:
+            weekend = next(
+                (w for w in await client.weekends(season)
+                 if w.season == season and w.round == round_number),
+                None,
+            )
+        except IngestionUnavailable:
+            weekend = None
+        if weekend is not None:
+            circuit = weekend.circuit
+            race_name = race_name or weekend.race_name
+    try:
+        return await predictor.simulate(
+            season, round_number, circuit=circuit, race_name=race_name, runs=runs,
+        )
+    except Exception as exc:
+        raise _handle(exc)
 
 
 # ── Championship ─────────────────────────────────────────────────────────────

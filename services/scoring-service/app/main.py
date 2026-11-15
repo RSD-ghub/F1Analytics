@@ -16,30 +16,37 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
-from app.dependencies import get_reconciler
+from app.dependencies import get_reconciler, get_watchdog
 from app.routers import scores
 from app.services import scheduler as reconcile_scheduler
 from app.services.storage import ScoringStore
+from f1_common import cache
 from f1_common.health import build_health_router
+from f1_common.observability import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level)
+configure_logging(settings.log_level, settings.log_format, settings.service_name)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
 
     try:
         await ScoringStore(db.db()).ensure_indexes()
     except Exception:
         logger.exception("index creation failed; continuing without it")
 
-    reconcile_scheduler.start(get_reconciler(), settings.reconcile_check_minutes)
+    reconcile_scheduler.start(
+        get_reconciler(), settings.reconcile_check_minutes,
+        watchdog=get_watchdog(), watchdog_minutes=settings.watchdog_check_minutes,
+    )
 
     yield
     reconcile_scheduler.shutdown()
+    await cache.close()
     db.close()
 
 
@@ -49,6 +56,7 @@ app = FastAPI(
     description="Post-race reconciliation, Brier/log scoring, calibration, track record.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware, service=settings.service_name)
 
 app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)

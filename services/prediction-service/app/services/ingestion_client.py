@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,69 @@ class PracticePace(BaseModel):
     long_run_laps: int = 0
 
 
+class RaceLap(BaseModel):
+    """One timed lap of a Grand Prix. Lap timing exists from 2018."""
+
+    season: int
+    round: int
+    driver: str
+    lap: int
+    lap_time_seconds: float = 0.0
+    compound: Optional[str] = ""
+    stint: int = 1
+    #: Place on the road at the end of the lap; 0 when ingestion has none
+    #: (laps fetched before it stored positions).
+    position: int = 0
+    #: Seconds behind the leader at the line, as the live timing screen
+    #: measured it. Only live rows carry it; None elsewhere, and for a car a
+    #: lap or more down.
+    gap_to_leader: Optional[float] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _nulls(cls, raw: Any) -> Any:
+        # Ingestion writes a missing lap time or stint as null; read those as
+        # "no time" and "first stint" rather than failing the whole race.
+        if isinstance(raw, dict):
+            raw = dict(raw)
+            if raw.get("lap_time_seconds") is None:
+                raw["lap_time_seconds"] = 0.0
+            if raw.get("stint") is None:
+                raw["stint"] = 1
+            if raw.get("compound") is None:
+                raw["compound"] = ""
+            if raw.get("position") is None:
+                raw["position"] = 0
+        return raw
+
+
+class Stint(BaseModel):
+    season: int
+    round: int
+    driver: str
+    stint: int = 1
+    compound: Optional[str] = ""
+    laps: int = 0
+
+
+class PitStop(BaseModel):
+    season: int
+    round: int
+    driver: str
+    stop: int = 1
+    lap: int = 0
+    #: Pit-lane time, entry to exit, seconds.
+    duration_seconds: Optional[float] = None
+
+
+class RaceControlMessage(BaseModel):
+    season: int
+    round: int
+    category: str = ""
+    message: str = ""
+    lap: Optional[int] = None
+
+
 #: Grid provenances that state where a driver actually starts. Mirrors
 #: ingestion's ``CONFIRMED_GRID_SOURCES``; duplicated rather than imported
 #: because the services share no runtime code, only a wire contract.
@@ -170,6 +233,27 @@ class Weekend(BaseModel):
     race_start_utc: Optional[datetime] = None
     qualifying_start_utc: Optional[datetime] = None
     is_sprint_weekend: bool = False
+    sprint_start_utc: Optional[datetime] = None
+    sprint_qualifying_start_utc: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def _sprint_from_sessions(self) -> "Weekend":
+        """Fill the sprint times from the timetable when ingestion did not.
+
+        A weekend stored before ingestion knew these fields carries only its
+        session names until the next calendar refresh, and the sprint lock
+        window must not quietly skip a sprint for that. The naming rule
+        mirrors ingestion's ``sprint_session_names``: "Sprint" is the race
+        from 2022, and only beside it does "Sprint Qualifying" mean the grid.
+        """
+        if self.sprint_start_utc is None and "Sprint" in self.sessions:
+            self.sprint_start_utc = self.sessions["Sprint"]
+        if self.sprint_qualifying_start_utc is None and "Sprint" in self.sessions:
+            for name in ("Sprint Qualifying", "Sprint Shootout"):
+                if name in self.sessions:
+                    self.sprint_qualifying_start_utc = self.sessions[name]
+                    break
+        return self
 
 
 class CompletenessStatus(BaseModel):
@@ -191,6 +275,15 @@ class IngestionClient:
                 return response.json()
         except httpx.HTTPError as exc:
             raise IngestionUnavailable("GET {} failed: {}".format(path, exc)) from exc
+
+    async def live_status(self) -> Dict[str, Any]:
+        """The live feed's summary: race, leader's lap, session status."""
+        return await self._get("/live/status")
+
+    async def live_snapshot(self) -> Dict[str, Any]:
+        """The live race so far: ``laps``, ``pit_stops``, ``race_control``
+        (rows shaped as stored ones), ``retired`` and the summary fields."""
+        return await self._get("/live/snapshot")
 
     async def season_results(self, season: int) -> List[RaceResult]:
         """Every ingested race result for a season.
@@ -216,11 +309,60 @@ class IngestionClient:
         payload = await self._get("/data/practice", {"season": season, "limit": 20000})
         return [PracticePace(**row) for row in payload]
 
+    async def race_laps(self, season: int, round_number: int) -> List[RaceLap]:
+        """Every timed lap of one Grand Prix.
+
+        Per race rather than per season: a season of laps is ~25,000 rows,
+        over the dataset endpoint's 20,000-row cap.
+        """
+        payload = await self._get(
+            "/data/laps", {"season": season, "round": round_number, "limit": 20000}
+        )
+        return [RaceLap(**row) for row in payload]
+
+    async def season_stints(self, season: int) -> List[Stint]:
+        payload = await self._get("/data/stints", {"season": season, "limit": 20000})
+        return [Stint(**row) for row in payload]
+
+    async def season_pit_stops(self, season: int) -> List[PitStop]:
+        payload = await self._get("/data/pit_stops", {"season": season, "limit": 20000})
+        return [PitStop(**row) for row in payload]
+
+    async def season_race_control(self, season: int) -> List[RaceControlMessage]:
+        payload = await self._get("/data/race_control", {"season": season, "limit": 20000})
+        return [RaceControlMessage(**row) for row in payload]
+
     async def grid(self, season: int, round_number: int) -> List[GridSlot]:
         payload = await self._get(
             "/data/qualifying", {"season": season, "round": round_number, "limit": 100}
         )
         return [GridSlot(**row) for row in payload]
+
+    async def sprint_grid(self, season: int, round_number: int) -> List[GridSlot]:
+        """The sprint qualifying classification, as the sprint's grid.
+
+        Served from its own dataset, never ``/data/qualifying``: that is the
+        Grand Prix grid, and on a 2024-format weekend it does not exist yet
+        when the sprint locks — or, worse, on a 2023-format one it does and
+        sets a different order.
+
+        Rows carry no ``grid_source``, so every slot reads as unconfirmed and
+        the forecast is flagged provisional. That is the truth: no stewards'
+        grid for the sprint is read, so a penalty taken in the sprint is not
+        applied.
+        """
+        payload = await self._get(
+            "/data/sprint_qualifying",
+            {"season": season, "round": round_number, "limit": 100},
+        )
+        return [GridSlot(**row) for row in payload]
+
+    async def sprint_results(self, season: int) -> List[RaceResult]:
+        """Every ingested sprint classification for a season. Backtests only."""
+        payload = await self._get(
+            "/data/sprint_results", {"season": season, "limit": 20000}
+        )
+        return [RaceResult(**row) for row in payload]
 
     async def weekends(self, season: int) -> List[Weekend]:
         payload = await self._get("/forward/upcoming", {"limit": 25})

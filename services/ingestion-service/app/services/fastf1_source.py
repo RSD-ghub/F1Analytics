@@ -26,8 +26,10 @@ from app.models.schemas import (
     RaceWeekend,
     ResultRow,
     TelemetryRow,
+    sprint_session_names,
 )
 from app.services import practice_pace, transforms
+from app.services.openf1_source import OpenF1Client, OpenF1Unavailable
 from app.services.transforms import (
     build_driver_name_map,
     build_telemetry_row,
@@ -174,13 +176,359 @@ def _named_session(
     return None
 
 
+def _safe_results(source: "FastF1Source", session: Any, season: int) -> pd.DataFrame:
+    """The session's results frame, or an empty one if FastF1 has none."""
+    try:
+        return source._results_frame(session, season)
+    except Exception:
+        return pd.DataFrame()
+
+
+def classified_distance(results: pd.DataFrame) -> int:
+    """Laps the winner completed, from the classification; 0 when unknown."""
+    if results is None or results.empty or "Laps" not in results:
+        return 0
+    laps = pd.to_numeric(results["Laps"], errors="coerce").dropna()
+    return int(laps.max()) if not laps.empty else 0
+
+
+def _held_distance(laps: pd.DataFrame) -> int:
+    if laps is None or laps.empty or "LapNumber" not in laps:
+        return 0
+    numbers = pd.to_numeric(laps["LapNumber"], errors="coerce").dropna()
+    return int(numbers.max()) if not numbers.empty else 0
+
+
+def _session_time(value: Any, t0: Optional[datetime]) -> Any:
+    """An OpenF1 UTC instant as FastF1 session time (offset from ``t0``)."""
+    if value is None or t0 is None:
+        return pd.NaT
+    stamp = pd.Timestamp(value)
+    if pd.isna(stamp):
+        return pd.NaT
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return stamp - pd.Timestamp(t0)
+
+
+def _naive_utc(value: Any) -> Any:
+    stamp = pd.Timestamp(value) if value is not None and value != "" else pd.NaT
+    if pd.isna(stamp):
+        return pd.NaT
+    if stamp.tzinfo is not None:
+        stamp = stamp.tz_convert("UTC").tz_localize(None)
+    return stamp
+
+
+def session_t0(session: Any, laps: pd.DataFrame) -> Optional[datetime]:
+    """The UTC instant FastF1's session times count from, or None.
+
+    ``session.t0_date`` raises ``DataNotLoadedError`` (not ``AttributeError``)
+    unless car telemetry was loaded, which the backfill script never does. A
+    lap carries both clocks, so ``LapStartDate - LapStartTime`` gives the same
+    instant without telemetry; the median shrugs off a lap with a bad stamp.
+    """
+    try:
+        t0 = session.t0_date
+        if t0 is not None and not pd.isna(t0):
+            return pd.Timestamp(t0).to_pydatetime()
+    except Exception:  # noqa: BLE001 - DataNotLoadedError and friends
+        pass
+    if laps is None or laps.empty or not {"LapStartDate", "LapStartTime"} <= set(laps):
+        return None
+    offsets = (pd.to_datetime(laps["LapStartDate"], errors="coerce")
+               - pd.to_timedelta(laps["LapStartTime"], errors="coerce")).dropna()
+    if offsets.empty:
+        return None
+    return offsets.sort_values().iloc[len(offsets) // 2].to_pydatetime()
+
+
+def t0_from_matched_laps(official: pd.DataFrame, other: pd.DataFrame) -> Optional[datetime]:
+    """Session t0 from laps both feeds have: OpenF1's UTC start minus FastF1's
+    session-time start, by car and lap.
+
+    Needed because without telemetry FastF1 fills neither ``t0_date`` nor
+    ``LapStartDate``. On Mexico 2026 this lands 0.19 s from the telemetry t0,
+    with an interquartile spread under 0.1 s.
+    """
+    needed_official = {"DriverNumber", "LapNumber", "LapStartTime"}
+    needed_other = {"DriverNumber", "LapNumber", "LapStartDate"}
+    if (official is None or other is None or official.empty or other.empty
+            or not needed_official <= set(official) or not needed_other <= set(other)):
+        return None
+    left = pd.DataFrame({
+        "number": official["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(official["LapNumber"], errors="coerce"),
+        "session": pd.to_timedelta(official["LapStartTime"], errors="coerce"),
+    })
+    right = pd.DataFrame({
+        "number": other["DriverNumber"].astype(str),
+        "lap": pd.to_numeric(other["LapNumber"], errors="coerce"),
+        "utc": [_naive_utc(v) for v in other["LapStartDate"]],
+    })
+    joined = left.merge(right, on=["number", "lap"]).dropna()
+    if joined.empty:
+        return None
+    offsets = (pd.to_datetime(joined["utc"]) - joined["session"]).sort_values()
+    return offsets.iloc[len(offsets) // 2].to_pydatetime()
+
+
+#: How far before official timing's last lap start an OpenF1 lap may begin
+#: and still count as "after the cut": one slow lap, so a car a lap down at
+#: the red flag keeps its lap in progress.
+CUT_MARGIN = pd.Timedelta(minutes=3)
+
+
+def laps_after_cut(official: pd.DataFrame, other: pd.DataFrame,
+                   t0: Optional[datetime]) -> pd.DataFrame:
+    """OpenF1 laps past the point where official timing stopped, FastF1-shaped.
+
+    Mexico 2026 is why: the official archive ends at the red flag on lap 56
+    and has nothing after the restart, while OpenF1 has all 71 laps. Only laps
+    beyond each car's last official lap are taken, so every lap official
+    timing does have stays official. The rows are converted to FastF1's own
+    conventions (driver code, session-time pit timestamps, stint numbering)
+    so that pit stops and stints derive across the join as if from one feed.
+    """
+    if official is None or official.empty or other is None or other.empty:
+        return pd.DataFrame()
+    official_numbers = official["DriverNumber"].astype(str)
+    other = other.copy()
+    other["DriverNumber"] = other["DriverNumber"].astype(str)
+    other["LapNumber"] = pd.to_numeric(other["LapNumber"], errors="coerce")
+
+    # Only laps that start after official timing stopped. Without this a car
+    # that retired long before the cut picks up its untimed retirement lap
+    # from OpenF1 (Stroll, Mexico 2026: a phantom lap 6 on UNKNOWN tyres).
+    shared = other  # every lap, for lining up stint numbers below
+    if "LapStartTime" in official and "LapStartDate" in other and t0 is not None:
+        last_start = pd.to_timedelta(official["LapStartTime"], errors="coerce").max()
+        if pd.notna(last_start):
+            cut = pd.Timestamp(t0) + last_start - CUT_MARGIN
+            starts = pd.Series([_naive_utc(v) for v in other["LapStartDate"]],
+                               index=other.index)
+            other = other[starts.notna() & (starts >= cut)]
+
+    pieces = []
+    for number, theirs in other.groupby("DriverNumber"):
+        ours = official[official_numbers == number]
+        if ours.empty:
+            continue
+        last = int(pd.to_numeric(ours["LapNumber"], errors="coerce").max())
+        extra = theirs[theirs["LapNumber"] > last].copy()
+        if extra.empty:
+            continue
+        # OpenF1 may count stints differently; continue the official count
+        # from the lap both feeds share.
+        offset = 0
+        ours_last = ours[pd.to_numeric(ours["LapNumber"], errors="coerce") == last]
+        theirs_last = shared[(shared["DriverNumber"] == number)
+                             & (shared["LapNumber"] == last)]
+        if not ours_last.empty and not theirs_last.empty and "Stint" in ours:
+            mine = pd.to_numeric(ours_last["Stint"].iloc[0:1], errors="coerce").iloc[0]
+            yours = pd.to_numeric(theirs_last["Stint"].iloc[0:1], errors="coerce").iloc[0]
+            if pd.notna(mine) and pd.notna(yours):
+                offset = int(mine) - int(yours)
+        if "Stint" in extra:
+            extra["Stint"] = pd.to_numeric(extra["Stint"], errors="coerce") + offset
+        extra["Driver"] = ours["Driver"].iloc[0]
+        pieces.append(extra)
+    if not pieces:
+        return pd.DataFrame()
+
+    extra = pd.concat(pieces, ignore_index=True)
+    for column in ("PitInTime", "PitOutTime"):
+        if column in extra:
+            extra[column] = pd.Series(
+                [_session_time(v, t0) for v in extra[column]],
+                index=extra.index, dtype="timedelta64[ns]",
+            )
+    if "LapStartDate" in extra:
+        extra["LapStartDate"] = pd.Series(
+            [_naive_utc(v) for v in extra["LapStartDate"]],
+            index=extra.index, dtype="datetime64[ns]",
+        )
+    return extra
+
+
+def rows_after(official: pd.DataFrame, other: pd.DataFrame, convert) -> pd.DataFrame:
+    """Rows of ``other`` later than the last official row, in official time."""
+    if other is None or other.empty or "Time" not in other:
+        return pd.DataFrame()
+    other = other.copy()
+    other["Time"] = [convert(v) for v in other["Time"]]
+    other = other[other["Time"].notna()]
+    if official is not None and not official.empty and "Time" in official:
+        cut = official["Time"].dropna().max()
+        if pd.notna(cut):
+            other = other[other["Time"] > cut]
+    return other.reset_index(drop=True)
+
+
+def canonical_driver_names(
+    frame: pd.DataFrame, names: Optional[Dict[int, str]]
+) -> pd.DataFrame:
+    """Rename drivers in a results frame to the spelling we already store.
+
+    FastF1 names a driver from whichever backend answered. F1's live timing
+    calls car 12 "Kimi Antonelli"; when live timing is missing it falls back to
+    jolpica, which calls him "Andrea Kimi Antonelli". Every join downstream —
+    scoring, the last-race panel, the model's driver history — is on the name,
+    so the 2026 United States Grand Prix result forked him into a second driver
+    and our favourite was scored as a non-starter in a race he won.
+
+    The car number is the same on both backends, so it decides. A number the
+    registry does not know keeps FastF1's name: a new driver is not an error.
+    """
+    if not names or frame is None or frame.empty:
+        return frame
+    if "DriverNumber" not in frame.columns or "FullName" not in frame.columns:
+        return frame
+    frame = frame.copy()
+    for index, row in frame.iterrows():
+        known = names.get(safe_int(row.get("DriverNumber"), 0))
+        if known and known != row.get("FullName"):
+            frame.at[index, "FullName"] = known
+    return frame
+
+
 class FastF1Source:
     """Fetches schedules and race sessions from FastF1."""
 
-    def __init__(self, cache_dir: str, load_telemetry: bool = True) -> None:
+    def __init__(self, cache_dir: str, load_telemetry: bool = True,
+                 openf1: Optional[OpenF1Client] = None) -> None:
         self._cache_dir = cache_dir
         self._load_telemetry = load_telemetry
         self._cache_enabled = False
+        #: Where laps come from when F1's live timing returns none. Since
+        #: October 2026 that archive needs an F1TV login; see openf1_source.
+        self._openf1 = openf1
+        #: season -> {car number: driver}, the spellings already in our data.
+        self._driver_names: Dict[int, Dict[int, str]] = {}
+
+    def use_driver_names(self, season: int, names: Dict[int, str]) -> None:
+        """Name drivers this way in ``season``, whichever backend answers."""
+        self._driver_names[season] = dict(names or {})
+
+    def _results_frame(self, session: Any, season: int) -> pd.DataFrame:
+        return canonical_driver_names(
+            _session_frame(session, "results"), self._driver_names.get(season)
+        )
+
+    # ── OpenF1 fallback ──────────────────────────────────────────────────────
+
+    def _named_laps(self, season: int, laps: pd.DataFrame, results: pd.DataFrame,
+                    openf1_names: Dict[str, str], numbers: Dict[str, int]) -> pd.DataFrame:
+        """Put our own spelling of each driver in the ``Driver`` column.
+
+        The car-number registry decides first (as in PR #12), then the results
+        frame, and OpenF1's own name only for a driver neither knows. A full
+        name in ``Driver`` passes through ``build_driver_name_map`` untouched.
+        """
+        registry = self._driver_names.get(season) or {}
+        from_results: Dict[int, str] = {}
+        if results is not None and not results.empty and "DriverNumber" in results:
+            for _, row in results.iterrows():
+                number = safe_int(row.get("DriverNumber"), 0)
+                name = row.get("FullName")
+                if number and isinstance(name, str) and name:
+                    from_results[number] = name
+        spelled = {
+            code: registry.get(number) or from_results.get(number)
+            or openf1_names.get(code, code)
+            for code, number in numbers.items()
+        }
+        laps = laps.copy()
+        laps["Driver"] = laps["Driver"].map(lambda code: spelled.get(code, code))
+        return laps
+
+    def _fill_from_openf1(self, expected: ExpectedSession, frames: SessionFrames) -> None:
+        """Laps, weather and race control for a race live timing left empty."""
+        if self._openf1 is None or not self._openf1.enabled:
+            return
+        try:
+            race = self._openf1.find_session(expected, "R")
+            key = race["session_key"]
+            laps, names, numbers = self._openf1.laps_frame(key, with_pits=True)
+            if laps.empty:
+                return
+            frames.laps = self._named_laps(
+                expected.season, laps, frames.results, names, numbers
+            )
+            if frames.weather.empty:
+                frames.weather = self._openf1.weather_frame(key)
+            if frames.race_control.empty:
+                frames.race_control = self._openf1.race_control_frame(key)
+        except OpenF1Unavailable as exc:
+            logger.info("OpenF1 has no laps for %s: %s", expected.key, exc)
+            return
+        logger.info(
+            "laps for %s from OpenF1 (session %s): %s laps",
+            expected.key, key, len(frames.laps),
+        )
+
+    def _extend_from_openf1(self, expected: ExpectedSession, frames: SessionFrames,
+                            t0: Optional[datetime]) -> None:
+        """Finish a race whose official laps stop short of the classified distance."""
+        distance = classified_distance(frames.results)
+        held = _held_distance(frames.laps)
+        if not distance or held >= distance:
+            return
+        if self._openf1 is None or not self._openf1.enabled:
+            logger.warning(
+                "official laps for %s stop at %s of %s; no OpenF1 to finish them",
+                expected.key, held, distance,
+            )
+            return
+        try:
+            key = self._openf1.find_session(expected, "R")["session_key"]
+            theirs, _, _ = self._openf1.laps_frame(key, with_pits=True)
+            if t0 is None:
+                t0 = t0_from_matched_laps(frames.laps, theirs)
+            if t0 is None:
+                logger.warning("cannot place %s on the session clock; laps left short",
+                               expected.key)
+                return
+            extra = laps_after_cut(frames.laps, theirs, t0)
+            if extra.empty:
+                return
+            frames.laps = pd.concat([frames.laps, extra], ignore_index=True)
+            weather = rows_after(
+                frames.weather, self._openf1.weather_frame(key),
+                lambda v: _session_time(v, t0),
+            )
+            if not weather.empty:
+                frames.weather = pd.concat([frames.weather, weather], ignore_index=True)
+            control = rows_after(
+                frames.race_control, self._openf1.race_control_frame(key), _naive_utc,
+            )
+            if not control.empty:
+                frames.race_control = pd.concat(
+                    [frames.race_control, control], ignore_index=True
+                )
+        except OpenF1Unavailable as exc:
+            logger.warning("OpenF1 cannot finish %s: %s", expected.key, exc)
+            return
+        logger.info(
+            "official laps for %s stop at %s of %s; laps %s-%s from OpenF1 (%s rows)",
+            expected.key, held, distance, held + 1, _held_distance(frames.laps), len(extra),
+        )
+
+    def _openf1_practice_laps(self, expected: ExpectedSession, code: str,
+                              results: pd.DataFrame) -> pd.DataFrame:
+        if self._openf1 is None or not self._openf1.enabled:
+            return pd.DataFrame()
+        try:
+            session = self._openf1.find_session(expected, code)
+            laps, names, numbers = self._openf1.laps_frame(
+                session["session_key"], with_pits=False
+            )
+        except OpenF1Unavailable as exc:
+            logger.info("OpenF1 has no %s laps for %s: %s", code, expected.key, exc)
+            return pd.DataFrame()
+        if laps.empty:
+            return laps
+        return self._named_laps(expected.season, laps, results, names, numbers)
 
     # ── Library plumbing ─────────────────────────────────────────────────────
 
@@ -278,6 +626,7 @@ class FastF1Source:
                 if name and start:
                     sessions[name] = start
 
+            sprint_quali_name, sprint_name = sprint_session_names(sessions)
             weekends.append(
                 RaceWeekend(
                     season=season,
@@ -294,6 +643,10 @@ class FastF1Source:
                     ),
                     is_sprint_weekend=any(
                         "sprint" in name.lower() for name in sessions
+                    ),
+                    sprint_start_utc=_named_session(sessions, (sprint_name,)),
+                    sprint_qualifying_start_utc=_named_session(
+                        sessions, (sprint_quali_name,)
                     ),
                 )
             )
@@ -329,7 +682,7 @@ class FastF1Source:
                 "session load failed for {}: {}".format(expected.key, exc)
             ) from exc
 
-        results = _session_frame(session, "results")
+        results = self._results_frame(session, expected.season)
         laps = _session_frame(session, "laps")
 
         frames = SessionFrames(
@@ -339,6 +692,10 @@ class FastF1Source:
             weather=_session_frame(session, "weather_data"),
             race_control=_session_frame(session, "race_control_messages"),
         )
+        if frames.laps.empty:
+            self._fill_from_openf1(expected, frames)
+        else:
+            self._extend_from_openf1(expected, frames, session_t0(session, frames.laps))
         if self._load_telemetry:
             frames.telemetry = self._extract_telemetry(frames.session, session, results)
         return frames
@@ -365,7 +722,7 @@ class FastF1Source:
             ) from exc
 
         return transforms.extract_results(
-            expected, _session_frame(session, "results")
+            expected, self._results_frame(session, expected.season)
         )
 
     def load_race_frames_results_only(
@@ -393,7 +750,7 @@ class FastF1Source:
                 "results load failed for {}: {}".format(expected.key, exc)
             ) from exc
 
-        results = _session_frame(session, "results")
+        results = self._results_frame(session, expected.season)
         if results.empty:
             raise SessionFetchError(
                 "results for {} came back empty; treating as a failed fetch "
@@ -402,6 +759,82 @@ class FastF1Source:
         return SessionFrames(
             session=self._with_actual_date(expected, session), results=results
         )
+
+    @staticmethod
+    def _classify_from_laps(session: Any, rows, expected: ExpectedSession):
+        """Fill positions and segment times on an unclassified knockout session.
+
+        Costs a second, heavier load — laps, session status and race control
+        — paid only on the sessions upstream cannot classify. Race control is
+        not optional: it is where FastF1 learns which laps were deleted for
+        track limits, and without it every deleted lap counts. Measured on the
+        2023-2025 sprint shootouts, that put the wrong driver ahead in 16 of 18
+        rounds. Any failure leaves the rows as they were, which the caller
+        already treats as "not classified yet".
+        """
+        try:
+            session.load(laps=True, telemetry=False, weather=False, messages=True)
+            parts = session.laps.split_qualifying_sessions()
+        except Exception as exc:
+            logger.info(
+                "could not rebuild %s classification from laps: %s",
+                expected.key, str(exc)[:120],
+            )
+            return rows
+
+        order = transforms.knockout_classification(
+            [None if part is None else _as_frame(part) for part in parts]
+        )
+        classified = []
+        for row in rows:
+            found = order.get(str(row.driver_number))
+            if found is None:
+                classified.append(row)
+                continue
+            position, (q1, q2, q3) = found
+            classified.append(row.model_copy(update={
+                "position": position, "q1_seconds": q1,
+                "q2_seconds": q2, "q3_seconds": q3,
+            }))
+        return classified
+
+    def load_sprint_results(
+        self, expected: ExpectedSession, session_name: str = "Sprint"
+    ) -> List[ResultRow]:
+        """The sprint's classification, by the name the timetable gives it.
+
+        The name rather than FastF1's "S" code, because the 2021 sprint was
+        published as "Sprint Qualifying" — see ``sprint_session_names``. Same
+        guards as a race: a sprint that has not run is unavailable rather than
+        failed, and an empty or unordered classification is a failed fetch,
+        never "nobody finished".
+        """
+        if self._is_future(expected):
+            raise SessionUnavailableError(
+                "sprint has not run yet (scheduled {})".format(
+                    expected.session_start_utc or "unknown"
+                )
+            )
+
+        fastf1 = self._fastf1()
+        try:
+            session = fastf1.get_session(expected.season, expected.round, session_name)
+            session.load(laps=False, telemetry=False, weather=False, messages=False)
+        except Exception as exc:
+            raise SessionFetchError(
+                "sprint load failed for {}: {}".format(expected.key, exc)
+            ) from exc
+
+        rows = transforms.extract_results(
+            expected, self._results_frame(session, expected.season)
+        )
+        if not any(1 <= row.position < 999 for row in rows):
+            raise SessionUnavailableError(
+                "sprint for {} has no classification yet ({} rows)".format(
+                    expected.key, len(rows)
+                )
+            )
+        return rows
 
     #: FastF1 session codes for the practice sessions, in running order.
     PRACTICE_SESSIONS = ("FP1", "FP2", "FP3")
@@ -439,27 +872,37 @@ class FastF1Source:
             session.load(laps=True, telemetry=False, weather=False, messages=False)
             laps = _as_frame(session.laps)
         except Exception as exc:
-            # Retryable. Deliberately *not* swallowed into an empty frame:
-            # doing that turns a transient API failure into "this session has
-            # no data", which is indistinguishable from a genuinely
-            # practice-free weekend and silently thins the corpus.
-            raise SessionFetchError(
-                "{} load failed for {}: {}".format(
-                    session_code, expected.key, str(exc)[:120]
-                )
-            ) from exc
+            # Live timing now needs a login, and FastF1 then raises here
+            # rather than returning nothing. OpenF1 is tried before giving up.
+            results = _safe_results(self, session, expected.season)
+            laps = self._openf1_practice_laps(expected, session_code, results)
+            if laps.empty:
+                # Retryable. Deliberately *not* swallowed into an empty frame:
+                # doing that turns a transient API failure into "this session
+                # has no data", which is indistinguishable from a genuinely
+                # practice-free weekend and silently thins the corpus.
+                raise SessionFetchError(
+                    "{} load failed for {}: {}".format(
+                        session_code, expected.key, str(exc)[:120]
+                    )
+                ) from exc
 
+        results = _safe_results(self, session, expected.season)
+        if laps.empty:
+            laps = self._openf1_practice_laps(expected, session_code, results)
         if laps.empty:
             raise SessionUnavailableError(
                 "{} for {} has no laps".format(session_code, expected.key)
             )
 
-        names = build_driver_name_map(_session_frame(session, "results"))
+        names = build_driver_name_map(results)
         return practice_pace.extract_practice_pace(
             expected, session_code, laps, names
         )
 
-    def load_qualifying(self, expected: ExpectedSession) -> List[QualifyingRow]:
+    def load_qualifying(
+        self, expected: ExpectedSession, session_name: str = "Q"
+    ) -> List[QualifyingRow]:
         """Load a qualifying session and return the grid.
 
         The forward-looking counterpart to ``load_race``: for an upcoming
@@ -470,16 +913,25 @@ class FastF1Source:
         """
         fastf1 = self._fastf1()
         try:
-            session = fastf1.get_session(expected.season, expected.round, "Q")
+            session = fastf1.get_session(
+                expected.season, expected.round, session_name
+            )
             session.load(laps=False, telemetry=False, weather=False, messages=False)
         except Exception as exc:
             raise SessionFetchError(
-                "qualifying load failed for {}: {}".format(expected.key, exc)
+                "{} load failed for {}: {}".format(
+                    "qualifying" if session_name == "Q" else session_name,
+                    expected.key, exc,
+                )
             ) from exc
 
         rows = transforms.extract_qualifying(
-            expected, _session_frame(session, "results")
+            expected, self._results_frame(session, expected.season)
         )
+        if session_name != "Q" and rows and not any(r.position < 999 for r in rows):
+            # Sprint qualifying is never classified upstream (see
+            # ``knockout_classification``), so rebuild the order from its laps.
+            rows = self._classify_from_laps(session, rows, expected)
         # A qualifying session that ran but yields no classification is a failed
         # fetch, not an empty session — upstream returns an empty frame under
         # rate limiting rather than an error. Returning [] here reads as "no
@@ -592,7 +1044,7 @@ class FastF1Source:
                 "qualifying entry list unavailable for {}: {}".format(expected.key, exc)
             ) from exc
 
-        frame = _session_frame(session, "results")
+        frame = self._results_frame(session, expected.season)
         entries = {}
         if frame is None or frame.empty:
             return entries

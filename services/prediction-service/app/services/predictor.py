@@ -22,6 +22,7 @@ from typing import List, Optional, Sequence, Tuple
 from app.models.schemas import (
     GRID_WINDOWS,
     MARKETS_BY_WINDOW,
+    SPRINT_WINDOWS,
     DataQuality,
     DriverProbability,
     FeatureSnapshot,
@@ -29,18 +30,28 @@ from app.models.schemas import (
     Market,
     ModelVersion,
     Prediction,
+    RaceSimulation,
+    SimulationStatus,
     published_markets,
+    sprint_points_positions,
 )
 from app.services import features as feature_builder
+from app.services import race_simulation
+from app.services.neural_model import SIMULATION_RUNS
 from app.services.ingestion_client import (
     GridSlot,
     IngestionClient,
     IngestionUnavailable,
 )
-from app.services.model import RaceModel
+from app.services.model import POINTS_POSITIONS, RaceModel
 from app.services.storage import PredictionStore
 
 logger = logging.getLogger(__name__)
+
+
+#: A sprint's length as a fraction of a Grand Prix's: 100 km against the
+#: 305 km minimum. Scales the retirement rate, which is measured per race.
+SPRINT_DISTANCE_FRACTION = 100.0 / 305.0
 
 
 class ConfirmedGridRequired(RuntimeError):
@@ -52,6 +63,10 @@ class ConfirmedGridRequired(RuntimeError):
     wrong label, the same mislabelling the scheduler already refuses in the
     other direction for pre-quali.
     """
+
+
+class ReplayUnavailable(RuntimeError):
+    """A race that cannot be replayed: no lap timing, no result, no simulator."""
 
 
 class GridRequired(RuntimeError):
@@ -81,10 +96,29 @@ class Predictor:
         client: IngestionClient,
         store: PredictionStore,
         model: RaceModel,
+        final_grid_model: Optional[RaceModel] = None,
+        lap_engine=None,
     ) -> None:
         self._client = client
         self._store = store
         self._model = model
+        # The lap-by-lap simulator, when fitted. It runs the race simulation
+        # only if its artifact says it scored no worse than sampling.
+        self._lap_engine = lap_engine
+        # The neural model, when one is trained. It places the final-grid
+        # forecast only once promoted; until then it is simulated alongside.
+        self._final_grid_model = final_grid_model
+
+    def model_for(self, window: LockWindow) -> RaceModel:
+        """The model that places this window's forecast."""
+        candidate = self._final_grid_model
+        if (
+            window is LockWindow.FINAL_GRID
+            and candidate is not None
+            and getattr(candidate, "promoted", False)
+        ):
+            return candidate
+        return self._model
 
     async def build(
         self,
@@ -102,6 +136,209 @@ class Predictor:
         rebuilding — and so a caller previewing a forecast can inspect exactly
         what fed it.
         """
+        snapshot, quality = await self._prepare(
+            season, round_number, window, circuit
+        )
+        seed = derive_seed(season, round_number, window)
+        points_positions, distance = _race_terms(season, window)
+        model = self.model_for(window)
+
+        return Prediction(
+            prediction_id=str(uuid.uuid4()),
+            season=season,
+            round=round_number,
+            race_name=race_name,
+            window=window,
+            locked_at=datetime.now(timezone.utc),
+            race_start_utc=race_start_utc,
+            window_opened_at=window_opened_at,
+            model_version=model.version,
+            seed=seed,
+            driver_probabilities=_restrict_to_published(
+                model.predict(
+                    snapshot.drivers, seed=seed,
+                    points_positions=points_positions,
+                    distance_fraction=distance,
+                ),
+                window,
+            ),
+            published_markets=published_markets(window),
+            feature_snapshot_ref=snapshot.snapshot_id,
+            data_quality=quality,
+            points_positions=points_positions,
+        ), snapshot
+
+    async def simulate(
+        self,
+        season: int,
+        round_number: int,
+        circuit: str = "",
+        race_name: str = "",
+        runs: Optional[int] = None,
+    ) -> RaceSimulation:
+        """Simulate the Grand Prix on the confirmed grid with the neural model.
+
+        The same preparation as the final-grid lock — the same features, the
+        same refusal of an unconfirmed grid — so the simulation and the locked
+        forecast are always about the same field. Never persisted.
+        """
+        base = dict(season=season, round=round_number, race_name=race_name)
+        # Without a trained network the simulation still runs, on the
+        # Plackett-Luce model itself: the same field, the same sampler and the
+        # same 10,000 races, just without a second opinion to compare against.
+        network = self._final_grid_model or self._model
+        window = LockWindow.FINAL_GRID
+        try:
+            snapshot, quality = await self._prepare(
+                season, round_number, window, circuit
+            )
+        except (ConfirmedGridRequired, GridRequired) as exc:
+            # No grid to run on yet: a state to show, not an error to raise.
+            return RaceSimulation(
+                status=SimulationStatus.AWAITING_CONFIRMED_GRID,
+                detail=str(exc), **base,
+            )
+
+        seed = derive_seed(season, round_number, window)
+        points_positions, _ = _race_terms(season, window)
+        compare = network is not self._model
+        baseline = self._model.predict(
+            snapshot.drivers, seed=seed, points_positions=points_positions
+        ) if compare else None
+        runs = runs or SIMULATION_RUNS
+        engine = self._lap_engine
+        outcomes = None
+        if engine is not None and engine.enabled:
+            outcomes = engine.sample_outcomes(
+                network, snapshot.drivers, seed=seed, runs=runs, circuit=circuit)
+        return RaceSimulation(
+            engine=engine.version if outcomes is not None else "plackett-luce",
+            engine_metrics=engine.metrics if outcomes is not None else {},
+            status=SimulationStatus.READY,
+            runs=runs,
+            seed=seed,
+            model_version=network.version,
+            baseline_model_version=self._model.version if compare else "",
+            model_promoted=bool(getattr(network, "promoted", False)),
+            model_metrics=getattr(network, "metrics", {}) or {},
+            generated_at=datetime.now(timezone.utc),
+            data_quality=quality,
+            drivers=race_simulation.simulate(
+                network, snapshot.drivers, seed=seed, runs=runs,
+                points_positions=points_positions, baseline=baseline,
+                outcomes=outcomes,
+            ),
+            **base,
+        )
+
+    async def replay(
+        self,
+        season: int,
+        round_number: int,
+        circuit: str = "",
+        runs: int = 0,
+        step: int = 1,
+    ) -> dict:
+        """A finished Grand Prix replayed lap by lap with the live forecast.
+
+        The field and its pre-race strengths are the final-grid forecast's
+        (the post-quali grid when the confirmed one was never ingested). The
+        heavy part runs in a worker thread. Never persisted.
+        """
+        import asyncio
+
+        from app.services import live_replay
+
+        inputs = await self.live_inputs(season, round_number, circuit)
+        laps = await self._client.race_laps(season, round_number)
+        if not laps:
+            raise ReplayUnavailable(
+                "no lap timing ingested for {}-{}".format(season, round_number))
+        results = [r for r in await self._client.season_results(season)
+                   if r.round == round_number]
+        if not results:
+            raise ReplayUnavailable(
+                "{}-{} has no result yet; only finished races can be replayed".format(
+                    season, round_number))
+        stops = [r for r in await self._client.season_pit_stops(season)
+                 if r.round == round_number]
+        messages = [r for r in await self._client.season_race_control(season)
+                    if r.round == round_number]
+        replay = await asyncio.to_thread(
+            live_replay.build_replay,
+            inputs["drivers"], inputs["strengths"], inputs["profile"], inputs["params"],
+            laps, stops, messages, results,
+            seed=inputs["seed"], runs=runs or live_replay.REPLAY_RUNS, step=step,
+            network=inputs["network"], **inputs["retirement"])
+        replay.update(season=season, round=round_number, circuit=circuit,
+                      race_name=next((r.race_name for r in results if r.race_name), ""),
+                      grid=inputs["grid"], model_version=inputs["model_version"],
+                      engine=inputs["engine"])
+        return replay
+
+    async def live_inputs(self, season: int, round_number: int, circuit: str = "") -> dict:
+        """What the live forecast needs before the first lap, for the replay and
+        the live feed alike: the field and its pre-race strengths from the
+        final-grid forecast (post-quali when the confirmed grid never came),
+        the circuit's lap profile, the simulator and the correcting network."""
+        from app.services import live_replay
+
+        engine = self._lap_engine
+        if engine is None:
+            raise ReplayUnavailable("the lap simulator has not been fitted")
+        window = LockWindow.FINAL_GRID
+        try:
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        except ConfirmedGridRequired:
+            window = LockWindow.POST_QUALI
+            snapshot, _ = await self._prepare(season, round_number, window, circuit)
+        network, _ = live_replay.cached_live_network()
+        model = self._model
+        drivers = snapshot.drivers
+        return {
+            "drivers": drivers,
+            "strengths": model.strengths(drivers),
+            "profile": engine.profile(circuit),
+            "params": engine.params,
+            "seed": derive_seed(season, round_number, window),
+            "network": network,
+            "retirement": dict(
+                retirement_race_k=getattr(model, "retirement_race_k", None),
+                retirement_team_k=getattr(model, "retirement_team_k", None)),
+            "grid": window.value,
+            "model_version": model.version,
+            "engine": engine.version,
+        }
+
+    async def _pace_history(self, season: int):
+        """Qualifying (this season and last) and this season's practice.
+
+        Training builds every example with both (``training/dataset.py``), so
+        the qualifying-gap and practice features carry real weight in the
+        model; served without them, every driver got the neutral value and the
+        forecast was not the one the backtest scored. Unavailable is not fatal:
+        the neutral values are what a missing session means anyway.
+        """
+        quali, practice = [], []
+        for year in (season - 1, season):
+            try:
+                quali += list(await self._client.season_qualifying(year))
+            except IngestionUnavailable:
+                logger.warning("qualifying for %s unavailable; quali gaps neutral", year)
+        try:
+            practice = list(await self._client.season_practice(season))
+        except IngestionUnavailable:
+            logger.warning("practice for %s unavailable; practice gaps neutral", season)
+        return quali, practice
+
+    async def _prepare(
+        self,
+        season: int,
+        round_number: int,
+        window: LockWindow,
+        circuit: str = "",
+    ) -> Tuple[FeatureSnapshot, DataQuality]:
+        """Fetch, refuse an unusable grid, and build the features."""
         results = await self._client.season_results(season)
         # Prior seasons carry career form and circuit history, both legitimately
         # known before the race.
@@ -112,8 +349,15 @@ class Predictor:
                 )
             except IngestionUnavailable:
                 logger.warning("prior season unavailable; using current season only")
+        quali_history, practice = await self._pace_history(season)
 
         grid = await self._maybe_grid(season, round_number, window)
+        if window in SPRINT_WINDOWS and not grid:
+            raise GridRequired(
+                "no sprint qualifying classification ingested for {}-{}; a "
+                "sprint forecast is placed on the sprint grid or not at "
+                "all".format(season, round_number)
+            )
         if window in GRID_WINDOWS and not grid:
             raise GridRequired(
                 "no grid ingested for {}-{}; a post-quali forecast without the "
@@ -157,6 +401,8 @@ class Predictor:
             window=window,
             circuit=circuit,
             grid=grid,
+            quali_history=quali_history,
+            practice=practice,
         )
         # A grid we had to infer from qualifying classification is not the grid.
         # Recorded on the prediction so a penalty-weekend forecast is
@@ -168,32 +414,14 @@ class Predictor:
             bool(grid),
             grid_is_provisional=provisional,
             grid_source=_grid_source(grid),
+            sprint=window in SPRINT_WINDOWS,
         )
         if provisional:
             logger.warning(
                 "grid for %s-%s is provisional (qualifying classification, "
                 "penalties not applied)", season, round_number,
             )
-        seed = derive_seed(season, round_number, window)
-
-        return Prediction(
-            prediction_id=str(uuid.uuid4()),
-            season=season,
-            round=round_number,
-            race_name=race_name,
-            window=window,
-            locked_at=datetime.now(timezone.utc),
-            race_start_utc=race_start_utc,
-            window_opened_at=window_opened_at,
-            model_version=self._model.version,
-            seed=seed,
-            driver_probabilities=_restrict_to_published(
-                self._model.predict(snapshot.drivers, seed=seed), window
-            ),
-            published_markets=published_markets(window),
-            feature_snapshot_ref=snapshot.snapshot_id,
-            data_quality=quality,
-        ), snapshot
+        return snapshot, quality
 
     async def lock(
         self,
@@ -215,13 +443,18 @@ class Predictor:
             window_opened_at,
         )
 
+        model = self.model_for(window)
         await self._store.save_snapshot(snapshot)
         await self._store.record_model_version(
             ModelVersion(
-                version=self._model.version,
+                version=model.version,
                 created_at=datetime.now(timezone.utc),
-                description="Plackett-Luce sampling over linear strength scores",
-                parameters=self._model.parameters(),
+                description=(
+                    "Plackett-Luce sampling over linear strength scores"
+                    if model is self._model else
+                    "Plackett-Luce sampling over neural-network strength scores"
+                ),
+                parameters=model.parameters(),
             )
         )
         stored = await self._store.insert_prediction(prediction)
@@ -244,6 +477,8 @@ class Predictor:
         if window not in GRID_WINDOWS:
             return None
         try:
+            if window in SPRINT_WINDOWS:
+                return await self._client.sprint_grid(season, round_number)
             return await self._client.grid(season, round_number)
         except IngestionUnavailable as exc:
             logger.warning("grid fetch failed for %s-%s: %s", season, round_number, exc)
@@ -256,6 +491,7 @@ class Predictor:
         has_grid: bool,
         grid_is_provisional: bool = False,
         grid_source: str = "",
+        sprint: bool = False,
     ) -> DataQuality:
         """Record what was missing, without blocking publication.
 
@@ -296,6 +532,8 @@ class Predictor:
             notes.append("{} prior round(s) missing or incomplete".format(len(missing)))
         if grid_is_provisional:
             notes.append(
+                "grid is the sprint qualifying classification; penalties not "
+                "applied" if sprint else
                 "grid is qualifying classification; penalties not yet applied"
             )
         return DataQuality(
@@ -306,6 +544,13 @@ class Predictor:
             grid_source=grid_source,
             notes="; ".join(notes),
         )
+
+
+def _race_terms(season: int, window: LockWindow) -> Tuple[int, float]:
+    """Places that score, and the race's length as a fraction of a Grand Prix."""
+    if window in SPRINT_WINDOWS:
+        return sprint_points_positions(season), SPRINT_DISTANCE_FRACTION
+    return POINTS_POSITIONS, 1.0
 
 
 def _restrict_to_published(

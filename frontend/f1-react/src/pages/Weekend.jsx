@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { usePageTitle } from '../hooks/usePageTitle'
 import { useParams } from 'react-router-dom'
 import { getWeekend, getCircuit } from '../api/f1Api'
 import { useAsync } from '../hooks/useAsync'
@@ -6,6 +7,7 @@ import { Panel, Loading, Unavailable, Probability } from '../components/Panel'
 import TrackMap from '../components/TrackMap'
 import CircuitBrief from '../components/CircuitBrief'
 import VenuePhotos from '../components/VenuePhotos'
+import NewsCards from '../components/NewsCards'
 
 /**
  * One Blog — a race weekend as an append-only timeline.
@@ -21,6 +23,7 @@ import VenuePhotos from '../components/VenuePhotos'
  * one, so provenance is shown rather than assumed.
  */
 const KIND_LABEL = {
+  paddock_news: 'Paddock news',
   practice_report: 'Practice',
   qualifying_report: 'Qualifying',
   forecast: 'Our forecast',
@@ -29,6 +32,7 @@ const KIND_LABEL = {
 
 export default function Weekend() {
   const { season, round } = useParams()
+  usePageTitle(`${season} round ${round}`)
   /*
    * Two requests, not one, because they cost three orders of magnitude apart.
    *
@@ -146,6 +150,29 @@ export default function Weekend() {
 }
 
 function Entry({ entry }) {
+  // Paddock news is the outlets' reporting, not our computation, so it gets
+  // its own rendering: every headline with its outlet and a link out, and none
+  // of the facts grid or data table that present our own numbers.
+  if (entry.kind === 'paddock_news') {
+    return (
+      <Panel
+        title={entry.headline}
+        subtitle={KIND_LABEL[entry.kind]}
+        footer={
+          entry.sources?.length > 0 && (
+            <details className="sources">
+              <summary>Where these headlines come from</summary>
+              <ul>{entry.sources.map((s) => <li key={s}>{s}</li>)}</ul>
+            </details>
+          )
+        }
+      >
+        {entry.summary && <p className="lede">{entry.summary}</p>}
+        <NewsCards items={entry.table || []} showSummary={false} />
+      </Panel>
+    )
+  }
+
   return (
     <Panel
       title={entry.headline}

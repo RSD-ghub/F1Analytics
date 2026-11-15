@@ -20,8 +20,8 @@ service look dead during a backfill.
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.models.schemas import (
     CompletenessSummary,
@@ -31,6 +31,7 @@ from app.models.schemas import (
     SessionIngestState,
     SessionPayload,
     SessionState,
+    sprint_session_names,
 )
 from app.services.completeness import run_integrity_checks, summarise
 from app.services.fastf1_source import (
@@ -43,7 +44,12 @@ from app.services.fastf1_source import (
 from app.services.storage import IngestionStore
 from app.services import fia_documents, grid_resolution, jolpica
 from app.services.transforms import stable_id
-from app.services.storage import DATA_COLLECTIONS, QUALIFYING
+from app.services.storage import (
+    DATA_COLLECTIONS,
+    QUALIFYING,
+    SPRINT_QUALIFYING,
+    SPRINT_RESULTS,
+)
 from app.services import signals, transforms
 from f1_common.llm import LLMClient
 
@@ -96,8 +102,22 @@ class _Pacer:
         self._last = time.monotonic()
 
 
-def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
-    """Has a scheduled session's start time passed?
+#: A race's results are not looked for until this long after lights out.
+#: Asked from the start, every race spent its first two hours failing as "no
+#: data yet" (São Paulo 2026: three failures from 22:36 IST, then filled in by
+#: a later backfill). Two hours covers a race run without a red flag.
+RACE_RESULTS_AFTER = timedelta(hours=2)
+#: A practice session's laps are read this long after it starts (an hour of
+#: running, then OpenF1 or F1 publishing it).
+PRACTICE_READY_AFTER = timedelta(minutes=90)
+#: Practice is still read up to this long after the race start, so a weekend
+#: missed by a sleeping host is filled in afterwards for the next model fit.
+PRACTICE_KEEP_TRYING = timedelta(days=2)
+
+
+def _has_run(when: Any, now: Optional[datetime] = None,
+             after: timedelta = timedelta(0)) -> bool:
+    """Has a scheduled session's start time (plus ``after``) passed?
 
     False when the calendar has no time for it — an unknown start is not an
     invitation to fetch something that may not exist yet.
@@ -111,7 +131,7 @@ def _has_run(when: Any, now: Optional[datetime] = None) -> bool:
             return False
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
-    return (now or datetime.now(timezone.utc)) >= when
+    return (now or datetime.now(timezone.utc)) >= when + after
 
 
 def _due_for_retry(
@@ -154,6 +174,7 @@ class IngestRunner:
         self._source = source
         self._store = store
         self._max_attempts = max_attempts
+        self._practice_read: Dict[Tuple[int, int], int] = {}
         self._backoff_seconds = backoff_seconds
         # Injectable so retry tests don't actually wait.
         self._sleep = sleep or asyncio.sleep
@@ -202,6 +223,7 @@ class IngestRunner:
         case, not a hole in the historical record. The caller decides whether a
         missing grid matters — which, for a post-quali forecast, it does.
         """
+        await self._prime_driver_names(expected.season)
         try:
             rows = await asyncio.to_thread(self._source.load_qualifying, expected)
         except SessionFetchError as exc:
@@ -224,6 +246,24 @@ class IngestRunner:
         logger.info("qualifying: %s grid rows for %s", saved, expected.key)
         return saved
 
+    async def _prime_driver_names(self, season: int) -> None:
+        """Have the source spell drivers the way our stored data already does.
+
+        Upstream backends disagree on names ("Kimi Antonelli" against "Andrea
+        Kimi Antonelli") and every join downstream is on the name. The registry
+        is keyed on car number, which they agree on. Best effort: without it
+        the source keeps whatever name upstream sent, as before.
+        """
+        prime = getattr(self._source, "use_driver_names", None)
+        if prime is None:
+            return
+        try:
+            remembered = await self._store.recall_drivers(season)
+        except Exception:
+            logger.warning("driver registry unavailable for %s", season, exc_info=True)
+            return
+        prime(season, {number: entry[0] for number, entry in remembered.items()})
+
     async def _identities_for(self, expected: ExpectedSession):
         """Car number -> (driver, team), live if possible, remembered if not.
 
@@ -238,6 +278,7 @@ class IngestRunner:
         with FastF1 unreachable the other two were unusable, and a weekend could
         be lost to an outage at one provider despite two others having the data.
         """
+        await self._prime_driver_names(expected.season)
         try:
             identities = await asyncio.to_thread(
                 self._source.load_qualifying_entry_list, expected
@@ -461,7 +502,7 @@ class IngestRunner:
         ingested, waiting, failed = [], [], []
         for weekend in await self._store.list_weekends(season, season):
             round_number = weekend["round"]
-            if not _has_run(weekend.get("race_start_utc")):
+            if not _has_run(weekend.get("race_start_utc"), after=RACE_RESULTS_AFTER):
                 continue
             if await self._store.count_matching(
                 DATA_COLLECTIONS["results"], {"season": season, "round": round_number}
@@ -504,6 +545,89 @@ class IngestRunner:
         if ingested:
             logger.info("ingested finished races: %s", ", ".join(ingested))
         return {"ingested": ingested, "waiting": waiting, "failed": failed}
+
+    async def ingest_sprint_sessions(
+        self, season: int, include_finished: bool = False
+    ) -> dict:
+        """Pull each sprint weekend's grid-setting session and its result.
+
+        The sprint's own version of ``refresh_pending_grids`` and
+        ``ingest_finished_races`` together, because a sprint weekend has both
+        shapes inside one day: sprint qualifying on Friday sets a grid a lock
+        window waits on, and the sprint on Saturday leaves a result scoring
+        waits on. Each is fetched once its session has run and never again once
+        it is stored, so outside a sprint weekend this costs one query a round.
+
+        ``include_finished`` also fetches sprint qualifying for weekends whose
+        sprint has already run. Off for the scheduled job, which has no use for
+        a grid it can no longer forecast on; on for a historical backfill, where
+        that grid is what a backtest conditions on.
+        """
+        ingested, waiting, failed = [], [], []
+        for weekend in await self._store.list_weekends(season, season):
+            sessions = weekend.get("sessions") or {}
+            quali_name, sprint_name = sprint_session_names(sessions)
+            if sprint_name is None:
+                continue
+            round_number = weekend["round"]
+            key = "{}-{}".format(season, round_number)
+            where = {"season": season, "round": round_number}
+            sprint_stored = await self._store.count_matching(SPRINT_RESULTS, where)
+
+            if (
+                quali_name
+                and _has_run(sessions.get(quali_name))
+                and (include_finished or not sprint_stored)
+                and not await self._has_usable_rows(SPRINT_QUALIFYING, where)
+            ):
+                label = "{} {}".format(key, quali_name)
+                await self._prime_driver_names(season)
+                try:
+                    rows = await asyncio.to_thread(
+                        self._source.load_qualifying,
+                        _sprint_expected(weekend, sessions.get(quali_name)),
+                        quali_name,
+                    )
+                    saved = await self._store.save_session_rows(
+                        SPRINT_QUALIFYING, season, round_number, rows
+                    )
+                    ingested.append("{} ({} rows)".format(label, saved))
+                except SessionFetchError as exc:
+                    logger.info("%s not ingestable yet: %s", label, exc)
+                    waiting.append(label)
+                except Exception:
+                    logger.exception("could not ingest %s", label)
+                    failed.append(label)
+
+            if not sprint_stored and _has_run(sessions.get(sprint_name)):
+                label = "{} {}".format(key, sprint_name)
+                await self._prime_driver_names(season)
+                try:
+                    rows = await asyncio.to_thread(
+                        self._source.load_sprint_results,
+                        _sprint_expected(weekend, sessions.get(sprint_name)),
+                        sprint_name,
+                    )
+                    saved = await self._store.save_session_rows(
+                        SPRINT_RESULTS, season, round_number, rows
+                    )
+                    ingested.append("{} ({} rows)".format(label, saved))
+                except SessionUnavailableError:
+                    # Same as a race: upstream publishes at its own pace after
+                    # the flag, and "not yet" is the normal state for a while.
+                    waiting.append(label)
+                except Exception:
+                    logger.exception("could not ingest %s", label)
+                    failed.append(label)
+
+        if ingested:
+            logger.info("ingested sprint sessions: %s", ", ".join(ingested))
+        return {"ingested": ingested, "waiting": waiting, "failed": failed}
+
+    async def _has_usable_rows(self, collection: str, where: dict) -> bool:
+        """At least one classified position — an entry list is not a grid."""
+        rows = await self._store.find_rows(collection, where)
+        return any((row.get("position") or 999) < 999 for row in rows)
 
     async def refresh_pending_grids(self, season: int) -> dict:
         """Try to confirm the grid for any round still running on a stand-in.
@@ -624,6 +748,44 @@ class IngestRunner:
             )
         return rows
 
+    async def ingest_weekend_practice(self, season: int,
+                                      now: Optional[datetime] = None) -> List[str]:
+        """Practice pace for the weekend under way, as each session ends.
+
+        Practice was only ever read by ``scripts/backfill.py practice``, so no
+        2026 weekend had any and every forecast used the neutral practice gap.
+        This runs on the grid cadence: once a practice session is
+        ``PRACTICE_READY_AFTER`` past its start, the weekend's practice is read
+        (FP2 first, OpenF1 when F1's timing refuses), and read again after
+        each later session. A weekend whose read came back empty is tried
+        again on the next tick.
+        """
+        now = now or datetime.now(timezone.utc)
+        done = []
+        for weekend in await self._store.list_weekends(season, season):
+            if not _has_run(weekend.get("race_start_utc"), now=now - PRACTICE_KEEP_TRYING) \
+                    and weekend.get("race_start_utc") is not None:
+                finished = sum(
+                    1 for name, start in (weekend.get("sessions") or {}).items()
+                    if name.lower().startswith("practice")
+                    and _has_run(start, now=now, after=PRACTICE_READY_AFTER))
+                key = (season, weekend["round"])
+                if not finished or self._practice_read.get(key, 0) >= finished:
+                    continue
+                expected = ExpectedSession(
+                    season=season, round=weekend["round"],
+                    race_name=weekend.get("race_name", ""),
+                    circuit=weekend.get("circuit", ""))
+                try:
+                    rows = await self.ingest_practice(expected)
+                except Exception:
+                    logger.exception("practice ingest failed for %s", expected.key)
+                    continue
+                if rows:
+                    self._practice_read[key] = finished
+                    done.append(expected.key)
+        return done
+
     async def ingest_practice(
         self,
         expected: ExpectedSession,
@@ -639,6 +801,7 @@ class IngestRunner:
         than recorded as a failure.
         """
         total = 0
+        await self._prime_driver_names(expected.season)
         for code in session_codes:
             rows = None
             for attempt in range(1, self._max_attempts + 1):
@@ -716,7 +879,10 @@ class IngestRunner:
         else:
             payload = build_payload(frames)
             report = run_integrity_checks(payload, depth)
-            state.row_counts = await self._store.save_payload(payload, depth=depth)
+            not_fetched = () if getattr(self._source, "_load_telemetry", True) else ("telemetry",)
+            state.row_counts = await self._store.save_payload(
+                payload, depth=depth, not_fetched=not_fetched
+            )
             state.integrity = report
             await self._extract_signals(payload)
 
@@ -758,6 +924,40 @@ class IngestRunner:
         except Exception:
             logger.exception("signal extraction failed for %s (ignored)", session.key)
 
+    async def fill_lap_positions(self, expected: ExpectedSession, jolpica=None) -> dict:
+        """Add each stored lap's place on the road, without rewriting the race.
+
+        Unlike a refresh, nothing is cleared or replaced: the race is read
+        again only for its positions, which are set on the laps already
+        stored. A source that now returns fewer laps (a car out on lap 1) or
+        fails outright (FastF1 on Monza 2018) cannot lose data this way. When
+        official timing has no positions, jolpica's lap-by-lap table is used,
+        matched to the stored drivers by surname. Leaves the ingest record
+        alone: the race is no more or less complete than it was.
+        """
+        season, round_number = expected.season, expected.round
+        positions, source = {}, "none"
+        try:
+            frames = await self._fetch_with_retry(
+                expected, SessionIngestState(season=season, round=round_number),
+                IngestDepth.FULL)
+            laps = build_payload(frames).laps
+            positions = {(r.driver, r.lap): r.position for r in laps if r.position > 0}
+            source = "official" if positions else source
+        except (SessionUnavailableError, SessionFetchError) as exc:
+            logger.warning("positions for %s: %s", expected.key, exc)
+        if not positions and jolpica is not None:
+            from app.services import historical_laps
+
+            stored = await self._store.find_rows(
+                "laps", {"season": season, "round": round_number}, limit=20000)
+            drivers = sorted({row["driver"] for row in stored})
+            positions = await historical_laps.lap_positions(
+                jolpica, season, round_number, drivers)
+            source = "jolpica" if positions else source
+        matched = await self._store.set_lap_positions(season, round_number, positions)
+        return {"source": source, "positions": len(positions), "matched": matched}
+
     async def _fetch_with_retry(
         self,
         expected: ExpectedSession,
@@ -770,6 +970,7 @@ class IngestRunner:
         happened yet will not start existing because we asked three times.
         """
         last_error: Optional[Exception] = None
+        await self._prime_driver_names(expected.season)
 
         for attempt in range(1, self._max_attempts + 1):
             state.attempts += 1
@@ -903,6 +1104,27 @@ class IngestRunner:
         return summarise(
             from_season, to_season, [s.key for s in expected], states, depth=depth
         )
+
+
+def _sprint_expected(weekend: dict, start: Any) -> ExpectedSession:
+    """The weekend as an ``ExpectedSession`` timed to one sprint session.
+
+    The start time is the sprint session's, not the race's, so the source's
+    "has this run yet?" guard asks about the session actually being fetched.
+    """
+    when = start
+    if isinstance(when, str):
+        try:
+            when = datetime.fromisoformat(when.replace("Z", "+00:00"))
+        except ValueError:
+            when = None
+    return ExpectedSession(
+        season=weekend["season"],
+        round=weekend["round"],
+        race_name=weekend.get("race_name", ""),
+        circuit=weekend.get("circuit", ""),
+        session_start_utc=when,
+    )
 
 
 def build_payload(frames: SessionFrames) -> SessionPayload:

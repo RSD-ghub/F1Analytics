@@ -11,23 +11,37 @@ from fastapi import FastAPI
 
 from app import db
 from app.config import get_settings
-from app.dependencies import get_runner
+from app.dependencies import get_news_store, get_runner, get_store
+from app.guide import GuideStore
+from app.guide import router as guide_router
+from app.news import NewsStore
+from app.news import router as news_router
+from app.news import source as news_source
 from app.regulations import RegulationStore
 from app.regulations import router as regulations_router
 from app.routers import circuits as circuits_router
 from app.routers import data, forward, ingest
-from app.services import scheduler
+from app.routers import f1tv as f1tv_router
+from app.routers import live as live_router
+from app.services import f1tv_auth, live_autostart, live_feed, scheduler
 from app.services.storage import IngestionStore
+from f1_common import cache, streams
 from f1_common.health import build_health_router
+from f1_common.observability import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level)
+configure_logging(settings.log_level, settings.log_format, settings.service_name)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    # Before anything can load a session: a service must never stop to ask
+    # for an F1TV password on a terminal nobody is watching.
+    f1tv_auth.install_no_prompt()
+    cache.configure(settings.redis_url)
+    streams.configure(settings.redis_url)
 
     # Index creation is best-effort: Mongo being briefly unreachable at boot
     # should degrade query speed, not prevent the service from starting and
@@ -35,6 +49,8 @@ async def lifespan(_: FastAPI):
     try:
         await IngestionStore(db.db()).ensure_indexes()
         await RegulationStore(db.db()).ensure_indexes()
+        await NewsStore(db.db()).ensure_indexes()
+        await GuideStore(db.db()).ensure_indexes()
     except Exception:
         logger.exception("index creation failed; continuing without it")
 
@@ -42,9 +58,20 @@ async def lifespan(_: FastAPI):
         get_runner(),
         settings.auto_refresh_hours,
         settings.grid_check_minutes,
+        news_refresh=lambda: news_source.refresh(
+            get_news_store(), retention_days=settings.news_retention_days
+        ),
+        news_minutes=settings.news_refresh_minutes,
+        live_tick=(lambda: live_autostart.tick(
+            get_store(), live_feed.get_feed(settings.live_recordings_dir),
+            settings.live_autostart_minutes))
+        if settings.live_autostart_minutes > 0 else None,
     )
     yield
     scheduler.shutdown()
+    await live_router.shutdown()
+    await cache.close()
+    await streams.close()
     db.close()
 
 
@@ -54,6 +81,7 @@ app = FastAPI(
     description="FastF1 acquisition, completeness tracking, and point-in-time snapshots.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware, service=settings.service_name)
 
 app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)
@@ -63,3 +91,7 @@ app.include_router(forward.router)
 app.include_router(data.router)
 app.include_router(regulations_router.router)
 app.include_router(circuits_router.router)
+app.include_router(news_router.router)
+app.include_router(guide_router.router)
+app.include_router(f1tv_router.router)
+app.include_router(live_router.router)

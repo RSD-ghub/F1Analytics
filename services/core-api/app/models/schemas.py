@@ -13,6 +13,11 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 #: Short enough to be typed, long enough that an offline crack is not trivial.
 MIN_PASSWORD_LENGTH = 10
 
+#: bcrypt only reads the first 72 bytes of a password, and bcrypt 5 refuses
+#: anything longer instead of quietly truncating it. Counted in UTF-8 bytes, not
+#: characters: 40 accented letters are already 80 bytes.
+MAX_PASSWORD_BYTES = 72
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -31,7 +36,27 @@ class RegisterRequest(BaseModel):
             raise ValueError(
                 "password must be at least {} characters".format(MIN_PASSWORD_LENGTH)
             )
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError(
+                "password must be at most {} bytes (plain letters count 1, "
+                "accented letters 2)".format(MAX_PASSWORD_BYTES)
+            )
         return value
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def long_enough(cls, value: str) -> str:
+        # The same rule as registration, by calling it rather than copying it.
+        return RegisterRequest.long_enough(value)
 
 
 class LoginRequest(BaseModel):
@@ -51,6 +76,8 @@ class UserProfile(BaseModel):
     user_id: str
     email: str
     created_at: datetime
+    #: Shows the owner-only controls. The server checks again on every call.
+    is_admin: bool = False
 
 
 class HealthSummary(BaseModel):

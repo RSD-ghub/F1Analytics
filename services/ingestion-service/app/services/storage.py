@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from f1_common.cache import invalidates
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING, DeleteMany, ReplaceOne, UpdateOne
 
@@ -88,15 +89,49 @@ SIGNALS = "extracted_signals"
 #: weekend look incompletely ingested.
 CIRCUITS = "circuits"
 
+#: Sprint weekends' two extra sessions: the classification that sets the
+#: sprint grid, and the sprint's own result. Outside ``DATA_COLLECTIONS`` and
+#: apart from ``results`` and ``qualifying`` on purpose. Everything that reads
+#: those two — features, standings, completeness, scoring — means the Grand
+#: Prix by them, and a sprint row mixed in would be read as a second race in
+#: the same round.
+SPRINT_QUALIFYING = "sprint_qualifying"
+SPRINT_RESULTS = "sprint_results"
+
 #: Everything the read API may serve.
 READABLE_COLLECTIONS = dict(
-    DATA_COLLECTIONS, qualifying=QUALIFYING, signals=SIGNALS, practice=PRACTICE
+    DATA_COLLECTIONS,
+    qualifying=QUALIFYING,
+    signals=SIGNALS,
+    practice=PRACTICE,
+    sprint_qualifying=SPRINT_QUALIFYING,
+    sprint_results=SPRINT_RESULTS,
 )
 
 #: Field holding the ingest run id. Underscore-prefixed to mark it as
 #: bookkeeping rather than F1 data.
 RUN_FIELD = "_run"
 
+
+
+#: jolpica's constructor names -> the ones F1's own timing uses, which every
+#: other row is stored under. Qualifying taken from jolpica when FastF1 had
+#: nothing (Mexico City 2026) filed Verstappen under "Red Bull" while the rest
+#: of the season said "Red Bull Racing", so anything keyed by team saw two
+#: teams. From 2018 only: "Red Bull" is the period name in older seasons.
+TEAM_ALIASES = {
+    "Red Bull": "Red Bull Racing",
+    "RB F1 Team": "Racing Bulls",
+    "Alpine F1 Team": "Alpine",
+    "Cadillac F1 Team": "Cadillac",
+}
+TEAM_ALIAS_FROM = 2018
+
+
+def _canonical_team(document: Dict[str, Any], season: int) -> None:
+    team = document.get("team")
+    if team and season >= TEAM_ALIAS_FROM:
+        document["team"] = TEAM_ALIASES.get(team, team)
 
 class IngestionStore:
     """All Mongo access for ingestion-service."""
@@ -196,8 +231,10 @@ class IngestionStore:
 
     # ── Session data ─────────────────────────────────────────────────────────
 
+    @invalidates("ingestion")
     async def save_payload(
-        self, payload: SessionPayload, depth: IngestDepth = IngestDepth.FULL
+        self, payload: SessionPayload, depth: IngestDepth = IngestDepth.FULL,
+        not_fetched: Iterable[str] = (),
     ) -> Dict[str, int]:
         """Persist one session's data, replacing any previous ingest of it.
 
@@ -216,6 +253,11 @@ class IngestionStore:
             # "not requested", not "none exist". Clearing on that would let a
             # cheap training backfill silently destroy a full ingest's lap data.
             if depth is IngestDepth.RESULTS and attribute != "results" and not rows:
+                continue
+            # Same for a collection this source was set up not to fetch:
+            # backfill.py runs without telemetry, and clearing on its empty
+            # list wiped Mexico 2026's telemetry when its laps were refreshed.
+            if attribute in not_fetched and not rows:
                 continue
             written[attribute] = await self._replace_session_rows(
                 collection, season, round_number, rows, run_id
@@ -243,6 +285,7 @@ class IngestionStore:
         operations: List[Any] = []
         for row in rows:
             document = row.model_dump(mode="json")
+            _canonical_team(document, season)
             document["_id"] = document.pop("id")
             document[RUN_FIELD] = run_id
             operations.append(
@@ -259,6 +302,7 @@ class IngestionStore:
 
     # ── Forward-looking data ─────────────────────────────────────────────────
 
+    @invalidates("ingestion")
     async def upsert_weekends(self, weekends: Sequence[Any]) -> int:
         if not weekends:
             return 0
@@ -290,6 +334,18 @@ class IngestionStore:
         Unlike the race payload this never clears on empty: a failed or
         not-yet-run qualifying session must not delete a grid we already have.
         """
+        return await self.save_session_rows(QUALIFYING, season, round_number, rows)
+
+    @invalidates("ingestion")
+    async def save_session_rows(
+        self, collection: str, season: int, round_number: int, rows: Sequence[Any]
+    ) -> int:
+        """Replace one round's rows for a session ingested on its own schedule.
+
+        Qualifying and the sprint's two sessions all go through here: each is a
+        single classification per round, fetched apart from the race payload,
+        with the same reason never to clear on empty.
+        """
         if not rows:
             return 0
 
@@ -297,6 +353,7 @@ class IngestionStore:
         operations: List[Any] = []
         for row in rows:
             document = row.model_dump(mode="json")
+            _canonical_team(document, season)
             document["_id"] = document.pop("id")
             document[RUN_FIELD] = run_id
             document["_ingested_at"] = datetime.now(timezone.utc)
@@ -312,9 +369,10 @@ class IngestionStore:
                 }
             )
         )
-        await self._db[QUALIFYING].bulk_write(operations, ordered=True)
+        await self._db[collection].bulk_write(operations, ordered=True)
         return len(rows)
 
+    @invalidates("ingestion")
     async def save_signals(
         self, season: int, round_number: int, rows: Sequence[Any]
     ) -> int:
@@ -344,6 +402,7 @@ class IngestionStore:
         await self._db[SIGNALS].bulk_write(operations, ordered=True)
         return len(rows)
 
+    @invalidates("ingestion")
     async def save_practice(
         self, season: int, round_number: int, session_name: str, rows: Sequence[Any]
     ) -> int:
@@ -418,6 +477,32 @@ class IngestionStore:
         """How many rows match. Used for cheap existence checks."""
         return await self._db[collection].count_documents(query)
 
+    @invalidates("ingestion")
+    async def set_lap_positions(
+        self, season: int, round_number: int, positions: Dict[Tuple[str, int], int]
+    ) -> int:
+        """Write each stored lap's place at its end, and nothing else.
+
+        Only ``position`` is set, only on laps already stored, matched on
+        (driver, lap). Nothing is inserted, replaced or deleted, so a source
+        that comes back with fewer laps than we hold (a lap-1 retirement it
+        now drops, a race it fails to load) costs nothing. Returns how many
+        stored laps matched.
+        """
+        operations = [
+            UpdateOne(
+                {"season": season, "round": round_number, "driver": driver, "lap": lap},
+                {"$set": {"position": int(place)}},
+            )
+            for (driver, lap), place in positions.items()
+            if place and place > 0
+        ]
+        if not operations:
+            return 0
+        result = await self._db[DATA_COLLECTIONS["laps"]].bulk_write(operations, ordered=False)
+        return int(result.matched_count)
+
+    @invalidates("ingestion")
     async def backfill_result_grid(self, season: int, round_number: int) -> dict:
         """Fill a finished race's starting grid from the grid we already hold.
 
@@ -552,6 +637,57 @@ class IngestionStore:
             ]
         return {"results": results, "laps": laps}
 
+    async def circuit_strategy_history(
+        self, circuit: str, before_season: int, visits: int = 4
+    ) -> Dict[str, Any]:
+        """The circuit's most recent races, with what a strategy is built from.
+
+        Recent visits only. Tyre compounds are redesigned most winters and a
+        2019 medium says little about a 2026 one, so four visits trades a
+        smaller sample for one that still describes the tyres being raced.
+        Only seasons before ``before_season``: that season's own visit is the
+        race being planned, not history. Joined on (season, race name) pairs
+        for the reason ``circuit_history`` gives.
+        """
+        names = await self._circuit_names(circuit)
+        results = [
+            row async for row in
+            self._db[DATA_COLLECTIONS["results"]].find(
+                {"circuit": {"$in": names}, "season": {"$lt": before_season}},
+                {"_id": 0},
+            )
+        ]
+        pairs = sorted({
+            (row["season"], row["race_name"]) for row in results
+            if row.get("race_name") and row.get("season")
+        }, reverse=True)[:visits]
+        wanted = set(pairs)
+        results = [r for r in results if (r.get("season"), r.get("race_name")) in wanted]
+
+        async def rows(dataset: str, fields: List[str]) -> List[Dict[str, Any]]:
+            if not pairs:
+                return []
+            projection = {"_id": 0, "season": 1, "round": 1}
+            projection.update({field: 1 for field in fields})
+            return [
+                row async for row in self._db[DATA_COLLECTIONS[dataset]].find(
+                    {"$or": [
+                        {"season": season, "race_name": name} for season, name in pairs
+                    ]},
+                    projection,
+                )
+            ]
+
+        return {
+            "results": results,
+            "laps": await rows(
+                "laps", ["driver", "lap", "lap_time_seconds", "compound", "stint"]
+            ),
+            "pit_stops": await rows("pit_stops", ["driver", "stop", "lap"]),
+            "race_control": await rows("race_control", ["message", "lap"]),
+            "weather": await rows("weather", ["rainfall"]),
+        }
+
     async def circuit_outlines(self, limit: int = 12) -> List[Dict[str, Any]]:
         """Circuit shapes only, for decorative use.
 
@@ -565,6 +701,7 @@ class IngestionStore:
         ).limit(max(1, min(limit, 30)))
         return [doc async for doc in cursor]
 
+    @invalidates("ingestion")
     async def save_circuit_location(self, slug: str, lat: float, lon: float) -> None:
         """Where a circuit is, for the globe.
 
@@ -578,6 +715,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_imagery(
         self, slug: str, images: List[Dict[str, Any]]
     ) -> None:
@@ -593,6 +731,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_official(self, slug: str, facts: Dict[str, Any]) -> None:
         """Store the figures a circuit's official page states about itself.
 
@@ -608,6 +747,7 @@ class IngestionStore:
             upsert=True,
         )
 
+    @invalidates("ingestion")
     async def save_circuit_map(self, document: Dict[str, Any]) -> None:
         """Store a circuit's geometry, replacing any earlier derivation.
 
@@ -641,19 +781,27 @@ class IngestionStore:
         without a separate job. Upserts rather than replaces the season: a
         mid-season driver change should add an entry, not erase the drivers who
         have not changed.
+
+        The name is written once and then kept. It is the spelling the rest of
+        the season's data is filed under, and an entry list read through a
+        different backend ("Andrea Kimi Antonelli" for "Kimi Antonelli") must
+        not rename a driver part way through. Car numbers belong to one driver,
+        so a genuine change of driver arrives as a new number, not a new name.
         """
         if not identities:
             return 0
         operations = [
             UpdateOne(
                 {"season": season, "driver_number": int(number)},
-                {"$set": {
-                    "season": season,
-                    "driver_number": int(number),
-                    "driver": driver,
-                    "team": team,
-                    "last_seen": datetime.now(timezone.utc),
-                }},
+                {
+                    "$set": {
+                        "season": season,
+                        "driver_number": int(number),
+                        "team": team,
+                        "last_seen": datetime.now(timezone.utc),
+                    },
+                    "$setOnInsert": {"driver": driver},
+                },
                 upsert=True,
             )
             for number, (driver, team) in identities.items()

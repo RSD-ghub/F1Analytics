@@ -115,6 +115,25 @@ def evaluate_temperature(
         model.noise_scale, model.pre_quali_noise_scale = original
 
 
+def retirement_count_score(model, races: Sequence, runs: int = 4000) -> float:
+    """Mean log-probability of each race's actual number of non-finishers.
+
+    The published markets are per driver and cannot see whether retirements
+    arrive together; this can. Higher is better. Counts are smoothed by half a
+    run so a count the simulation never produced scores finite.
+    """
+    if not races:
+        return 0.0
+    total = 0.0
+    for drivers, actual_positions, seed in races:
+        _, retired = model.sample_outcomes(drivers, seed=seed, runs=runs)
+        field = len(drivers)
+        histogram = np.bincount(retired.sum(axis=1), minlength=field + 1) + 0.5
+        observed = sum(1 for p in actual_positions if not 1 <= p <= field)
+        total += float(np.log(histogram[observed] / histogram.sum()))
+    return total / len(races)
+
+
 def fit_temperature(
     model,
     races: Sequence,

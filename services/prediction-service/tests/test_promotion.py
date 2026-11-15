@@ -326,3 +326,62 @@ def test_the_decision_records_the_scales_it_used():
     assert recorded["champion_scale"] == 1.0
     assert recorded["challenger_scale"] == 0.75
     assert recorded["scale_fitted_on"] == [2022, 2023]
+
+
+# ── Noise: the paired bootstrap ──────────────────────────────────────────────
+
+
+def test_a_gain_carried_by_one_race_is_not_promoted():
+    """Nineteen races level and one huge win averages to a big gain, but it is
+    one race. Resampling drops it often enough that the lower bound is <= 0."""
+    from app.training.promotion import bootstrap_gain_interval
+
+    champion = np.full(20, -10.0)
+    baseline = np.full(20, -15.0)
+    challenger = champion.copy()
+    challenger[7] = -0.0  # one race, 10 nats better
+    mean_gain = (challenger.mean() - champion.mean()) / 5.0
+
+    low, high = bootstrap_gain_interval(champion, challenger, baseline)
+    assert mean_gain == pytest.approx(0.1)  # would clear the 2% margin
+    assert low <= 0.0 < high
+
+
+def test_a_steady_gain_has_a_positive_lower_bound():
+    from app.training.promotion import bootstrap_gain_interval
+
+    rng = np.random.default_rng(1)
+    champion = -10.0 + rng.normal(0, 0.5, 20)
+    baseline = champion - 5.0
+    challenger = champion + 0.5 + rng.normal(0, 0.1, 20)
+
+    low, _ = bootstrap_gain_interval(champion, challenger, baseline)
+    assert low > 0.05
+
+
+def test_a_sharper_but_correct_challenger_is_promoted_with_its_interval():
+    weak = {"a": 1.0, "b": 0.0}
+    decision = compare(weak, GOOD, NAMES, _races(2026, 20))
+
+    assert decision.promote
+    assert decision.gain_ci_low > 0
+    assert decision.gain_ci_low <= decision.relative_gain <= decision.gain_ci_high
+    assert "95% lower bound" in decision.reason
+
+
+def test_the_bootstrap_is_reproducible():
+    weak = {"a": 1.0, "b": 0.0}
+    first = compare(weak, GOOD, NAMES, _races(2026, 20))
+    second = compare(weak, GOOD, NAMES, _races(2026, 20))
+    assert (first.gain_ci_low, first.gain_ci_high) == (second.gain_ci_low, second.gain_ci_high)
+
+
+def test_per_race_scores_average_to_the_old_whole_set_score():
+    """Scoring race by race must not change the scores the gate reported."""
+    from app.training.plackett_luce import mean_log_likelihood
+
+    races = _races(2026, 20)
+    decision = compare({"a": 1.0, "b": 0.0}, GOOD, NAMES, races)
+    assert decision.challenger_score == pytest.approx(
+        mean_log_likelihood(np.array([3.0, 0.0]), races)
+    )

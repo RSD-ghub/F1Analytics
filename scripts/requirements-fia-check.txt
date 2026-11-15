@@ -1,0 +1,7 @@
+# scripts/fia_check.py runs in a venv of its own: fia-doc pulls in paddlepaddle,
+# paddleocr and opencv (about 1.2 GB) that no service needs. Python 3.12.
+#   python3.12 -m venv ~/fiadoc-venv
+#   ~/fiadoc-venv/bin/pip install -r scripts/requirements-fia-check.txt
+fia-doc @ git+https://github.com/harningle/fia-doc@4a9117290e45d81a44ecec118de7db593d688c3e
+pymongo==4.19.0
+requests>=2.32

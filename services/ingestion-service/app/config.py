@@ -17,6 +17,15 @@ class Settings(ServiceSettings):
     # Earliest season the backfill will reach for.
     season_floor: int = 2010
 
+    # Where the live feed's recordings are kept (one text file per race, as
+    # FastF1's live client writes it). Kept after the race so it can be
+    # replayed through the live path; see services/live_feed.py.
+    live_recordings_dir: str = "live-recordings"
+    # Start the live feed this many minutes before each race's calendar start,
+    # without anyone pressing Start live (services/live_autostart.py). Needs
+    # F1TV connected. 0 turns it off.
+    live_autostart_minutes: int = 10
+
     # Periodic refresh of the current season, in hours.
     auto_refresh_hours: int = 24
 
@@ -31,8 +40,21 @@ class Settings(ServiceSettings):
     # needing four passes across four hours. 0 disables pacing.
     backfill_sessions_per_hour: int = 55
 
+    # Paddock news. Outlets refresh their feeds every few minutes during a race
+    # weekend, but nothing downstream needs a headline within minutes of it
+    # being written, and a polite interval is part of reading a feed at all.
+    # 0 disables the scheduled read; POST /news/refresh still works.
+    news_refresh_minutes: int = 30
+    # Headlines older than this are dropped. Long enough to cover a race week
+    # and the fortnight either side of it; the outlets keep the archive.
+    news_retention_days: int = 60
+
     # Upstream schedule/results API used alongside FastF1 for forward-looking data.
     ergast_base_url: str = "https://api.jolpi.ca/ergast"
+    # Laps, stints, pit stops, weather and race control for sessions F1's live
+    # timing will not serve without an F1TV login (from October 2026). Free,
+    # no key, 2023 onwards. Empty turns the fallback off.
+    openf1_base_url: str = "https://api.openf1.org/v1"
 
     # LLM signal extraction. Enrichment only — with no key configured, ingestion
     # runs unchanged and simply produces rule-based signals alone.

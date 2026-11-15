@@ -13,15 +13,18 @@ from app import db
 from app.config import get_settings
 from app.dependencies import get_client, get_predictor
 from app.routers import circuits as circuits_router
+from app.routers import live as live_router
 from app.routers import predictions
 from app.services import scheduler as lock_scheduler
 from app.services.model import MODEL_STATE_DIR, ensure_state_dir
 from app.services.scheduler import LockScheduler
 from app.services.storage import PredictionStore
+from f1_common import cache, streams
 from f1_common.health import build_health_router
+from f1_common.observability import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level)
+configure_logging(settings.log_level, settings.log_format, settings.service_name)
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +42,11 @@ async def lifespan(_: FastAPI):
         )
 
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
+    streams.configure(settings.redis_url)
+    # A restart may have loaded a newly promoted model or archetype
+    # artifact, so whatever core-api remembers from this service is retired.
+    await cache.bump("prediction")
 
     # The unique index on (season, round, window) is what enforces prediction
     # immutability, so a failure here is worth shouting about — but it must not
@@ -59,12 +67,15 @@ async def lifespan(_: FastAPI):
             pre_quali_hours=settings.pre_quali_lock_hours_before,
             post_quali_hours=settings.post_quali_lock_hours_before,
             final_grid_minutes=settings.final_grid_lock_minutes_before,
+            sprint_hours=settings.sprint_lock_hours_before,
         ),
         settings.lock_check_minutes,
     )
 
     yield
     lock_scheduler.shutdown()
+    await cache.close()
+    await streams.close()
     db.close()
 
 
@@ -74,6 +85,7 @@ app = FastAPI(
     description="Point-in-time features, calibrated forecasts, championship simulation.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware, service=settings.service_name)
 
 app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)
@@ -81,3 +93,4 @@ app.include_router(
 app.include_router(predictions.router)
 app.include_router(predictions.championship_router)
 app.include_router(circuits_router.router)
+app.include_router(live_router.router)

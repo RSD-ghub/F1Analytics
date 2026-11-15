@@ -67,7 +67,9 @@ def log_score(probabilities: Sequence[float], outcomes: Sequence[bool]) -> float
     return total / len(probabilities)
 
 
-def baseline_probability(market: Market, field_size: int) -> float:
+def baseline_probability(
+    market: Market, field_size: int, winners: Optional[int] = None
+) -> float:
     """The naive forecast: every driver equally likely.
 
     This is the bar a model must clear to have demonstrated anything. It needs no
@@ -76,7 +78,8 @@ def baseline_probability(market: Market, field_size: int) -> float:
     """
     if field_size <= 0:
         return 0.0
-    return min(MARKET_WINNERS[market] / field_size, 1.0)
+    count = MARKET_WINNERS[market] if winners is None else winners
+    return min(count / field_size, 1.0)
 
 
 def skill_score(model_brier: float, baseline_brier: float) -> float:
@@ -95,15 +98,29 @@ def score_market(
     market: Market,
     probabilities: Sequence[float],
     outcomes: Sequence[bool],
+    winners: Optional[int] = None,
+    grid_probabilities: Optional[Sequence[float]] = None,
 ) -> MarketScore:
-    """Score one market for one race."""
+    """Score one market for one race.
+
+    ``winners`` overrides how many drivers the market expects to be true —
+    eight for a sprint's points market rather than the Grand Prix's ten. The
+    baseline has to ask the same question the forecast did, or a sprint's
+    points skill would be measured against a guess that two non-scoring
+    places score.
+    """
     field_size = len(probabilities)
     if field_size == 0:
         return MarketScore(market=market)
 
-    baseline = baseline_probability(market, field_size)
+    baseline = baseline_probability(market, field_size, winners)
     model_brier = brier_score(probabilities, outcomes)
     baseline_brier = brier_score([baseline] * field_size, outcomes)
+
+    grid_brier = grid_skill = None
+    if grid_probabilities is not None and len(grid_probabilities) == field_size:
+        grid_brier = brier_score(grid_probabilities, outcomes)
+        grid_skill = skill_score(model_brier, grid_brier)
 
     return MarketScore(
         market=market,
@@ -112,6 +129,8 @@ def score_market(
         skill_vs_baseline=skill_score(model_brier, baseline_brier),
         log_score=log_score(probabilities, outcomes),
         drivers_scored=field_size,
+        grid_baseline_brier=grid_brier,
+        skill_vs_grid=grid_skill,
     )
 
 

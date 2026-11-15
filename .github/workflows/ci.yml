@@ -1,0 +1,63 @@
+# Tests for the four services and a lint + build of the frontend, on every
+# push and pull request. No Mongo, Redis or network: the suites run against
+# in-memory fakes, which is what lets this stay fast and free.
+name: CI
+
+on:
+  push:
+    branches: [rebuild/python-forecasting-platform]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  services:
+    name: ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [ingestion-service, prediction-service, scoring-service, core-api]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/${{ matrix.service }}/requirements.txt
+      - name: Install
+        # Pinned versions when the repo has them (constraints.txt), so CI
+        # tests what a fresh install gets rather than whatever is newest.
+        run: |
+          pins=""
+          [ -f ../../constraints.txt ] && pins="-c ../../constraints.txt"
+          python -m pip install --upgrade pip
+          pip install $pins -r requirements.txt
+          if [ -f ../../requirements-dev.txt ]; then
+            pip install $pins -r ../../requirements-dev.txt
+          else
+            pip install pytest pytest-asyncio
+          fi
+      - name: Test
+        run: python -m pytest tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/f1-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/f1-react/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

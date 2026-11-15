@@ -6,6 +6,7 @@ accounts and one of them can never log in — the unique index would let both
 exist and the user would have no way to tell which they created.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -44,7 +45,7 @@ class UserStore:
         document = {
             "_id": str(uuid.uuid4()),
             "email": normalise(email),
-            "password_hash": hash_password(password),
+            "password_hash": await asyncio.to_thread(hash_password, password),
             "created_at": datetime.now(timezone.utc),
         }
         try:
@@ -61,6 +62,15 @@ class UserStore:
     async def by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         return await self._db[USERS].find_one({"_id": user_id})
 
+    async def set_password(self, user_id: str, password: str) -> None:
+        """Replace the hash and stamp the change, which retires older tokens."""
+        hashed = await asyncio.to_thread(hash_password, password)
+        await self._db[USERS].update_one(
+            {"_id": user_id},
+            {"$set": {"password_hash": hashed,
+                      "password_changed_at": datetime.now(timezone.utc)}},
+        )
+
     async def authenticate(self, email: str, password: str) -> Optional[Dict[str, Any]]:
         """Verify credentials.
 
@@ -71,9 +81,13 @@ class UserStore:
         """
         user = await self.find(email)
         if user is None:
-            verify_password(password, _TIMING_DECOY)
+            await asyncio.to_thread(verify_password, password, _TIMING_DECOY)
             return None
-        if not verify_password(password, user.get("password_hash", "")):
+        # bcrypt takes a quarter of a second on purpose. Run on the event loop,
+        # every login would freeze every other request for that long.
+        if not await asyncio.to_thread(
+            verify_password, password, user.get("password_hash", "")
+        ):
             return None
         return user
 

@@ -7,18 +7,23 @@ costs the panel that depends on it rather than the whole page, and the response
 names what is missing instead of quietly omitting it.
 """
 
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
 from app.models.schemas import HealthSummary, SystemStatus
-from app.routers.blog import WINDOW_PREFERENCE
-from app.services.downstream import ServiceClient, gather_optional
+from app.routers.blog import WINDOW_PREFERENCE, race_scores
+from app.services import weather
+from app.services.downstream import DownstreamUnavailable, ServiceClient, gather_optional
+from f1_common import streams
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +48,24 @@ class Unavailable(BaseModel):
 class NextRaceView(BaseModel):
     weekend: Optional[Dict[str, Any]] = None
     predictions: List[Dict[str, Any]] = Field(default_factory=list)
+    #: The sprint's forecast on a sprint weekend. Its own field rather than
+    #: mixed into ``predictions``: it is about a different race, scored
+    #: against a different result, and a reader of either list should never
+    #: have to check which race each row is for.
+    sprint_predictions: List[Dict[str, Any]] = Field(default_factory=list)
     qualifying_freshness: Optional[Dict[str, Any]] = None
     #: The track itself: shape, corners, and what our corpus knows about it.
     #: Optional on purpose — a circuit whose geometry was never derived still
     #: has a race history worth showing, and a brand-new venue has neither.
     circuit: Optional[Dict[str, Any]] = None
+    #: The neural model's simulated races on the confirmed grid. Carries its
+    #: own ``status``, so "the grid is not confirmed yet" is shown as such
+    #: rather than as a missing panel.
+    simulation: Optional[Dict[str, Any]] = None
+    #: Race-window rain forecast. ``None`` until the race is inside the
+    #: forecast horizon (or when the circuit has no location). Shown to
+    #: readers only: the forecast model does not use weather.
+    weather: Optional[Dict[str, Any]] = None
     unavailable: Unavailable = Field(default_factory=Unavailable)
 
 
@@ -137,7 +155,7 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         return NextRaceView(unavailable=Unavailable(panels=["weekend"]))
 
     season, round_number = weekend["season"], weekend["round"]
-    fetched = await gather_optional(
+    calls = dict(
         predictions=clients["prediction"].get(
             "/predictions/{}/{}".format(season, round_number)
         ),
@@ -147,17 +165,198 @@ async def next_race(settings: Settings = Depends(get_settings)) -> NextRaceView:
         circuit=clients["ingestion"].get(
             "/circuits/{}/{}".format(season, round_number)
         ),
+        simulation=clients["prediction"].get(
+            "/predictions/{}/{}/simulation".format(season, round_number),
+            _simulation_params(weekend),
+        ),
     )
+    if weekend.get("is_sprint_weekend"):
+        calls["sprint"] = clients["prediction"].get(
+            "/predictions/{}/{}".format(season, round_number), {"event": "sprint"}
+        )
+    fetched = await gather_optional(**calls)
 
     circuit = await _with_character(clients, fetched.get("circuit"))
+    forecast = await weather.race_forecast(
+        circuit, weekend.get("race_start_utc"),
+        url=settings.weather_forecast_url,
+        timeout=settings.weather_timeout_seconds,
+    )
 
     return NextRaceView(
         weekend=weekend,
         predictions=fetched.get("predictions") or [],
+        sprint_predictions=fetched.get("sprint") or [],
         qualifying_freshness=fetched.get("freshness"),
         circuit=circuit,
+        simulation=fetched.get("simulation"),
+        weather=forecast,
         unavailable=Unavailable(panels=fetched["_unavailable"]),
     )
+
+
+def _simulation_params(weekend: Dict[str, Any]) -> Dict[str, str]:
+    """The weekend's circuit and name, so prediction-service builds the same
+    circuit features the final-grid lock does without looking them up again."""
+    return {
+        key: weekend[key] for key in ("circuit", "race_name") if weekend.get(key)
+    }
+
+
+@router.get("/race-simulation/{season}/{round_number}")
+async def race_simulation(
+    season: int,
+    round_number: int,
+    circuit: str = Query(""),
+    race_name: str = Query(""),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """Any round's simulation. Passes through, like the championship."""
+    clients = _clients(settings)
+    return await clients["prediction"].get(
+        "/predictions/{}/{}/simulation".format(season, round_number),
+        _simulation_params({"circuit": circuit, "race_name": race_name}),
+    )
+
+
+@router.get("/live-replay/{season}/{round_number}")
+async def live_replay(
+    season: int,
+    round_number: int,
+    circuit: str = Query(""),
+    runs: int = Query(300, ge=50, le=2000),
+    step: int = Query(1, ge=1, le=10),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """A finished race forecast again lap by lap (the Live page's replay).
+    Passes through with a longer timeout: the first request builds it."""
+    client = ServiceClient("prediction", settings.prediction_service_url,
+                           settings.live_replay_timeout_seconds)
+    params: Dict[str, Any] = {"runs": runs, "step": step}
+    if circuit:
+        params["circuit"] = circuit
+    return await client.get(
+        "/live/{}/{}/replay".format(season, round_number), params)
+
+
+#: Seconds between polls of prediction-service by one live stream. Its own
+#: tracker polls the feed every 3 s and a lap takes 70-110 s.
+LIVE_STREAM_POLL = 3.0
+#: A stream sends a comment this often so proxies keep it open, seconds.
+LIVE_STREAM_HEARTBEAT = 15.0
+#: With Redis: longest one wait on the frames stream, and how often the race's
+#: state is fetched again regardless, seconds.
+LIVE_STREAM_BLOCK = 10.0
+LIVE_STREAM_REFRESH = 15.0
+#: Longest one stream stays open, seconds; EventSource reconnects by itself.
+LIVE_STREAM_MAX = 4 * 60 * 60
+
+
+@router.get("/live/now")
+async def live_now(
+    since: int = Query(-1, ge=-1, le=200),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """The race the live feed is following, as frames after lap ``since``."""
+    clients = _clients(settings)
+    return await clients["prediction"].get("/live/now", {"since": since})
+
+
+@router.get("/live/stream")
+async def live_stream(
+    request: Request,
+    since: int = Query(-1, ge=-1, le=200),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    """The live race as server-sent events.
+
+    * ``race`` — the race and its state (``live_now`` without frames), sent
+      first and whenever it changes;
+    * ``frame`` — one lap's forecast, in lap order, the moment it exists;
+    * ``unavailable`` ``{"message"}`` — prediction-service did not answer;
+      the stream keeps trying.
+
+    With ``REDIS_URL`` set, frames come from the race's Redis stream the
+    moment the tracker adds them, and prediction-service is asked only every
+    ``LIVE_STREAM_REFRESH`` seconds for the race's state. Without Redis, or
+    when it fails, the stream polls prediction-service every
+    ``LIVE_STREAM_POLL`` seconds.
+
+    A reconnecting browser sends ``Last-Event-ID`` (the last lap it got), so
+    it resumes where it was instead of receiving the race again.
+    """
+    clients = _clients(settings)
+    last = request.headers.get("last-event-id")
+    if last is not None and last.lstrip("-").isdigit():
+        since = max(since, int(last))
+
+    async def events() -> AsyncIterator[str]:
+        nonlocal since
+        loop = asyncio.get_running_loop()
+        opened = beat = loop.time()
+        refreshed = -float("inf")
+        race = None
+        stream_key, after = None, None
+        while loop.time() - opened < LIVE_STREAM_MAX:
+            if await request.is_disconnected():
+                return
+            # The race's state, and any frames the stream did not carry.
+            if (not streams.enabled() or stream_key is None
+                    or loop.time() - refreshed >= LIVE_STREAM_REFRESH):
+                refreshed = loop.time()
+                try:
+                    now = await clients["prediction"].get("/live/now", {"since": since})
+                except DownstreamUnavailable as exc:
+                    yield _sse_event("unavailable", {"message": str(exc)})
+                    now = None
+                if now is not None:
+                    frames = now.pop("frames", [])
+                    if now != race:
+                        race = now
+                        yield _sse_event("race", now)
+                        key = (streams.frames_stream(now["season"], now["round"])
+                               if now.get("season") and now.get("round") else None)
+                        if key != stream_key:
+                            stream_key, after = key, None
+                    for frame in frames:
+                        since = max(since, int(frame.get("lap", since)))
+                        yield _sse_event("frame", frame, event_id=since)
+                    if frames:
+                        beat = loop.time()
+            # With Redis: wait on the race's frames stream and pass frames on
+            # the moment the tracker adds them.
+            waited = False
+            if streams.enabled() and stream_key:
+                try:
+                    if after is None:
+                        after = await streams.last_id(stream_key)
+                    entries = await streams.read_after(
+                        stream_key, after, block_ms=int(LIVE_STREAM_BLOCK * 1000))
+                    waited = True
+                    for entry_id, frame in entries:
+                        after = entry_id
+                        lap = int(frame.get("lap", -1))
+                        if lap > since:
+                            since = lap
+                            frame.pop("run", None)
+                            yield _sse_event("frame", frame, event_id=since)
+                            beat = loop.time()
+                except streams.StreamsUnavailable:
+                    waited = False
+            if loop.time() - beat > LIVE_STREAM_HEARTBEAT:
+                beat = loop.time()
+                yield ": keep-alive\n\n"
+            if not waited:
+                await asyncio.sleep(LIVE_STREAM_POLL)
+
+    return StreamingResponse(
+        events(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _sse_event(event: str, data: Dict[str, Any], event_id: Optional[int] = None) -> str:
+    head = "id: {}\n".format(event_id) if event_id is not None else ""
+    return "{}event: {}\ndata: {}\n\n".format(head, event, json.dumps(data, default=str))
 
 
 class LastRaceView(BaseModel):
@@ -245,8 +444,10 @@ class GlobeStop(BaseModel):
     race_name: str = ""
     circuit: str = ""
     country: str = ""
-    lat: float
-    lon: float
+    #: None when the circuit has not been geocoded yet. The round is still
+    #: listed, so counts of the season are right; it just has no marker.
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     race_start_utc: Optional[str] = None
     #: "raced" — it has happened and been written up; "next" — the upcoming
     #: weekend; "scheduled" — later in the season. The frontend routes on this
@@ -257,11 +458,13 @@ class GlobeStop(BaseModel):
 
 @router.get("/globe", response_model=List[GlobeStop])
 async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
-    """Every race of the season that we can place on a map.
+    """Every race of the season, with coordinates where we have them.
 
-    A circuit with no coordinates is left off rather than dropped at (0, 0),
-    which is in the Atlantic. Geocoding is a separate job on its own schedule
-    and a new venue may not have run yet.
+    A circuit with no coordinates comes back with ``lat``/``lon`` of None
+    rather than (0, 0), which is in the Atlantic. Geocoding is a separate job
+    on its own schedule and a new venue may not have run yet. The round stays
+    in the list so "how many rounds have been run" counts the whole season,
+    not just the part of it the map can draw.
     """
     clients = _clients(settings)
     season = datetime.now(timezone.utc).year
@@ -282,8 +485,7 @@ async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
             )
         )
         place = ((found.get("circuit") or {}).get("location")) or {}
-        if not place.get("lat"):
-            continue
+        placed = place.get("lat") is not None and place.get("lon") is not None
 
         start = weekend.get("race_start_utc")
         has_run = False
@@ -308,8 +510,8 @@ async def globe(settings: Settings = Depends(get_settings)) -> List[GlobeStop]:
             race_name=weekend.get("race_name", ""),
             circuit=weekend.get("circuit", ""),
             country=weekend.get("country", ""),
-            lat=place["lat"],
-            lon=place["lon"],
+            lat=place["lat"] if placed else None,
+            lon=place["lon"] if placed else None,
             race_start_utc=start,
             status=status,
         ))
@@ -332,7 +534,7 @@ async def last_race(settings: Settings = Depends(get_settings)):
     fetched = await gather_optional(
         scores=clients["scoring"].get("/scores", {"limit": 20})
     )
-    scores = fetched.get("scores") or []
+    scores = race_scores(fetched.get("scores") or [])
     if not scores:
         return None
 

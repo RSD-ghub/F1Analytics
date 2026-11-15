@@ -19,6 +19,10 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.services import cache_policy
+from f1_common import cache
+from f1_common.observability import outgoing_headers
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,10 +40,27 @@ class ServiceClient:
         self._timeout = timeout_seconds
 
     async def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET ``path``, from Redis when ``cache_policy`` allows it.
+
+        Failures are never cached, so a cached read cannot turn a recovered
+        service into a stale 503.
+        """
+        policy = cache_policy.lookup(self.name, path)
+        if policy is None or not cache.enabled():
+            return await self._fetch(path, params)
+        return await cache.read_through(
+            self.name,
+            cache.query_ident(path, params),
+            policy.ttl_seconds,
+            policy.domains,
+            lambda: self._fetch(path, params),
+        )
+
+    async def _fetch(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         url = "{}{}".format(self._base_url, path)
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(url, params=params)
+                response = await client.get(url, params=params, headers=outgoing_headers())
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
@@ -53,7 +74,7 @@ class ServiceClient:
         url = "{}{}".format(self._base_url, path)
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(url, json=payload or {})
+                response = await client.post(url, json=payload or {}, headers=outgoing_headers())
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
@@ -65,7 +86,7 @@ class ServiceClient:
 
     async def healthy(self) -> bool:
         try:
-            payload = await self.get("/health")
+            payload = await self._fetch("/health")
             return str(payload.get("status", "")).lower() in ("ok", "degraded")
         except DownstreamUnavailable:
             return False

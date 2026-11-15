@@ -15,25 +15,31 @@ from fastapi.responses import JSONResponse
 
 from app import db
 from app.config import get_settings
-from app.routers import auth, bernie, blog, dashboard
+from app.routers import admin, auth, bernie, blog, dashboard, drivers, health_page, news, strategy
 from app.services.downstream import DownstreamUnavailable
 from app.services.security import AuthConfigurationError, require_secret
 from app.services.conversation import ConversationStore
 from app.services.usage import UsageStore
 from app.services.users import UserStore
+from app.services.password_reset import ResetStore
+from f1_common import cache, streams
 from f1_common.health import build_health_router
+from f1_common.observability import RequestIdMiddleware, configure_logging
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level)
+configure_logging(settings.log_level, settings.log_format, settings.service_name)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.connect(settings.mongo_uri, settings.mongo_database, settings.mongo_timeout_ms)
+    cache.configure(settings.redis_url)
+    streams.configure(settings.redis_url)
 
     try:
         await UserStore(db.db()).ensure_indexes()
+        await ResetStore(db.db()).ensure_indexes()
         await ConversationStore(db.db()).ensure_indexes()
         await UsageStore(db.db()).ensure_indexes()
     except Exception:
@@ -48,6 +54,8 @@ async def lifespan(_: FastAPI):
         logger.error("AUTH DISABLED: %s", exc)
 
     yield
+    await cache.close()
+    await streams.close()
     db.close()
 
 
@@ -57,6 +65,7 @@ app = FastAPI(
     description="Auth, aggregation, and the Bernie strategist layer.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestIdMiddleware, service=settings.service_name)
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +93,11 @@ app.include_router(
     build_health_router(settings.service_name, settings.environment, db.client)
 )
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(blog.router)
 app.include_router(bernie.router)
 app.include_router(dashboard.router)
+app.include_router(health_page.router)
+app.include_router(drivers.router)
+app.include_router(news.router)
+app.include_router(strategy.router)
