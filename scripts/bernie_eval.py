@@ -62,7 +62,8 @@ QUESTIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bernie_que
 REGULATIONS_KEY = "possibly relevant FIA regulation passages"
 RELATIVE_SCORE_FLOOR = 0.4
 SEARCH_LIMIT = 6  # core-api over-fetches six ...
-PASSAGE_LIMIT = 3  # ... and renders at most three
+PASSAGE_LIMIT = 3  # ... and renders at most three,
+MAX_REFERENCED_PASSAGES = 3  # then up to three articles those three refer to
 
 EXPECT_KEYS = {
     "retrieved_articles", "passage_terms", "facts_present", "requires_facts",
@@ -124,18 +125,23 @@ def validate(cases: Sequence[Dict[str, Any]]) -> List[str]:
 # ── What Bernie is handed ───────────────────────────────────────────────────
 
 def select_passages(hits: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The search hits core-api would turn into passages, best first.
+    """The search hits core-api would turn into passages, in its order.
 
-    The same rule as ``regulation_facts``: hits with an article and text, those
-    scoring at least the floor times the best, at most three.
+    The same rule as ``regulation_facts``: ranked hits with an article and
+    text, those scoring at least the floor times the best, at most three; then
+    up to three articles they refer to (search marks those ``referred_by``).
     """
-    scored = [hit for hit in hits if hit.get("article") and hit.get("text")]
+    usable = [hit for hit in hits if hit.get("article") and hit.get("text")]
+    scored = [hit for hit in usable if not hit.get("referred_by")]
     if not scored:
         return []
     best = max((hit.get("score") or 0.0) for hit in scored)
     if best > 0:
         scored = [hit for hit in scored if (hit.get("score") or 0.0) >= best * RELATIVE_SCORE_FLOOR]
-    return scored[:PASSAGE_LIMIT]
+    kept = scored[:PASSAGE_LIMIT]
+    shown = {hit["article"] for hit in kept}
+    extra = [hit for hit in usable if hit.get("referred_by") in shown and hit["article"] not in shown]
+    return kept + extra[:MAX_REFERENCED_PASSAGES]
 
 
 _PASSAGE_ARTICLE = re.compile(r"^Article (\S+?)(?: \[truncated\])? — ")

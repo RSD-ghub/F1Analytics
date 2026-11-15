@@ -487,16 +487,64 @@ RELATIVE_SCORE_FLOOR = 0.4
 MAX_PASSAGE_CHARS = 1500
 
 
+#: Articles that a passage refers to, added after the ranked passages. B8.2.8
+#: imposes the power unit penalty "should a driver use more Power Unit elements
+#: than the numbers prescribed in Articles B8.2.2, B8.2.3 and B8.2.4" and the
+#: numbers live in those three, so three covers the case that motivated this.
+MAX_REFERENCED_PASSAGES = 3
+
+
+def _render_passage(hit: Dict[str, Any]) -> str:
+    # Collapsed to one line per article. Regulation text carries its
+    # sub-points on separate lines, and inside a bulleted facts list those
+    # would read as separate facts; on one line the "a)" markers survive and
+    # the passage boundaries stay unambiguous.
+    body = " ".join((hit.get("text") or "").split())
+    # The marker goes beside the article number, not at the end of the text.
+    #
+    # It used to trail the body, and with a 1,500-character article between
+    # it and its own citation — and the next citation beginning on the line
+    # below — it read as belonging to whichever article came next. Asked
+    # about B8.2.8, which is 622 characters and complete, Bernie reported it
+    # as truncated: he had picked up the marker left by B8.2.2 beneath it.
+    # A caveat that attaches to the wrong claim is worse than no caveat.
+    marker = ""
+    if len(body) > MAX_PASSAGE_CHARS:
+        body = body[:MAX_PASSAGE_CHARS].rstrip() + " […]"
+        marker = " [truncated]"
+    referred = ""
+    if hit.get("referred_by"):
+        referred = "; referred to by {}".format(hit["referred_by"])
+    return "Article {}{} — {} ({} Section {}, issue {}{}): {}".format(
+        hit["article"],
+        marker,
+        hit.get("heading") or "untitled",
+        hit.get("season", "?"),
+        hit.get("section", "?"),
+        hit.get("issue", "?"),
+        referred,
+        body,
+    )
+
+
 def regulation_facts(
     hits: Sequence[Dict[str, Any]], limit: int = 3
 ) -> Dict[str, Any]:
     """Render regulation search hits as facts, best first.
 
+    Ranked hits first, cut by the relative score floor and ``limit``. Then the
+    articles those passages refer to (search marks them ``referred_by``), so a
+    rule that states a consequence arrives with the articles holding its
+    numbers. A referred-to article is kept only when the passage that cites it
+    survived the cut: a reference from a hit that was dropped is not evidence.
+
     Returns ``{}`` when nothing survives, so the caller can merge
     unconditionally and a question that is not about the rules simply carries no
     regulations section rather than an empty heading inviting Bernie to fill it.
     """
-    scored = [hit for hit in hits if hit.get("article") and hit.get("text")]
+    usable = [hit for hit in hits if hit.get("article") and hit.get("text")]
+    scored = [hit for hit in usable if not hit.get("referred_by")]
+    referenced = [hit for hit in usable if hit.get("referred_by")]
     if not scored:
         return {}
 
@@ -506,38 +554,13 @@ def regulation_facts(
             hit for hit in scored
             if (hit.get("score") or 0.0) >= best * RELATIVE_SCORE_FLOOR
         ]
-
-    passages: List[str] = []
-    for hit in scored[:limit]:
-        # Collapsed to one line per article. Regulation text carries its
-        # sub-points on separate lines, and inside a bulleted facts list those
-        # would read as separate facts; on one line the "a)" markers survive and
-        # the passage boundaries stay unambiguous.
-        body = " ".join((hit.get("text") or "").split())
-        # The marker goes beside the article number, not at the end of the text.
-        #
-        # It used to trail the body, and with a 1,500-character article between
-        # it and its own citation — and the next citation beginning on the line
-        # below — it read as belonging to whichever article came next. Asked
-        # about B8.2.8, which is 622 characters and complete, Bernie reported it
-        # as truncated: he had picked up the marker left by B8.2.2 beneath it.
-        # A caveat that attaches to the wrong claim is worse than no caveat.
-        marker = ""
-        if len(body) > MAX_PASSAGE_CHARS:
-            body = body[:MAX_PASSAGE_CHARS].rstrip() + " […]"
-            marker = " [truncated]"
-        passages.append(
-            "Article {}{} — {} ({} Section {}, issue {}): {}".format(
-                hit["article"],
-                marker,
-                hit.get("heading") or "untitled",
-                hit.get("season", "?"),
-                hit.get("section", "?"),
-                hit.get("issue", "?"),
-                body,
-            )
-        )
-    return {REGULATIONS_KEY: passages}
+    kept = scored[:limit]
+    shown = {hit["article"] for hit in kept}
+    extra = [
+        hit for hit in referenced
+        if hit["referred_by"] in shown and hit["article"] not in shown
+    ][:MAX_REFERENCED_PASSAGES]
+    return {REGULATIONS_KEY: [_render_passage(hit) for hit in kept + extra]}
 
 
 # ── Paddock news ─────────────────────────────────────────────────────────────

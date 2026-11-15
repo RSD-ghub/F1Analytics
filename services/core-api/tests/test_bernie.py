@@ -387,6 +387,45 @@ def _hit(article, text="The relevant rule text.", score=5.0, heading="Heading"):
     }
 
 
+def _referred(article, by, text="Each driver may use no more than four of each element."):
+    hit = _hit(article, text=text)
+    hit.pop("score")
+    hit["referred_by"] = by
+    return hit
+
+
+def test_referred_to_articles_follow_the_passage_that_cites_them():
+    """B8.2.8 states the penalty; B8.2.2 holds the number. Both must arrive."""
+    facts = regulation_facts([
+        _hit("B8.2.8", score=15.0, text="Should a driver use more than prescribed in Articles B8.2.2 ..."),
+        _hit("B8.2.1", score=9.0),
+        _referred("B8.2.2", by="B8.2.8"),
+    ])
+
+    passages = facts[REGULATIONS_KEY]
+    assert [p.split(" ", 2)[1] for p in passages] == ["B8.2.8", "B8.2.1", "B8.2.2"]
+    assert "issue 8; referred to by B8.2.8)" in passages[2]
+    assert "no more than four" in passages[2]
+
+
+def test_a_reference_from_a_dropped_hit_is_not_shown():
+    facts = regulation_facts([
+        _hit("B5.13.1", score=15.0),
+        _hit("B9.1", score=2.0),  # below the floor, so its reference goes too
+        _referred("B9.2", by="B9.1"),
+    ])
+
+    assert [p.split(" ", 2)[1] for p in facts[REGULATIONS_KEY]] == ["B5.13.1"]
+
+
+def test_referred_articles_alone_are_not_an_answer_and_are_capped():
+    assert regulation_facts([_referred("B8.2.2", by="B8.2.8")]) == {}
+    facts = regulation_facts(
+        [_hit("B8.2.8", score=15.0)] + [_referred("B8.2.%d" % i, by="B8.2.8") for i in range(1, 7)]
+    )
+    assert len(facts[REGULATIONS_KEY]) == 1 + 3
+
+
 def test_a_passage_arrives_with_the_citation_that_identifies_it():
     """Chunking by article exists so a claim can be traced. A passage rendered
     without its number throws that away at the last step."""
