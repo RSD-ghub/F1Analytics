@@ -82,6 +82,7 @@ export default function RaceSimulation({ simulation }) {
             <TableHead className="num">Podium</TableHead>
             <TableHead className="num">Points</TableHead>
             <TableHead className="num">DNF</TableHead>
+            <TableHead className="num" title="Share of races finishing ahead of the other car in the team">Beats team-mate</TableHead>
             {compared && <TableHead className="num">Linear model win</TableHead>}
           </TableRow>
         </TableHeader>
@@ -101,6 +102,9 @@ export default function RaceSimulation({ simulation }) {
               <TableCell className="num"><Probability value={row.p_podium} /></TableCell>
               <TableCell className="num"><Probability value={row.p_points} /></TableCell>
               <TableCell className="num"><Probability value={row.p_dnf} /></TableCell>
+              <TableCell className="num" title={row.teammate ? `vs ${row.teammate}` : undefined}>
+                <Probability value={row.p_beats_teammate} absentLabel="–" />
+              </TableCell>
               {compared && (
                 <TableCell className="num muted">
                   <Probability value={row.baseline?.p_win} absentLabel="–" />

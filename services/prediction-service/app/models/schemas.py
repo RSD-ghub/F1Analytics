@@ -360,6 +360,12 @@ class SimulatedDriver(BaseModel):
     #: ``position_probabilities[k]`` is the chance of finishing P(k+1), over all
     #: runs. Sums with ``p_dnf`` to 1.
     position_probabilities: List[float] = Field(default_factory=list)
+    #: The other car of the same team on this grid, and the share of runs this
+    #: car finished ahead of it. A retirement counts behind every finisher, so
+    #: a car that finishes beats a team-mate who retires; both retiring counts
+    #: for neither. None when the team has no other car in the field.
+    teammate: Optional[str] = None
+    p_beats_teammate: Optional[float] = None
     #: The linear model's numbers for the same driver on the same grid, so the
     #: network's view is always shown next to the one it is measured against.
     #: None when the simulation ran on the linear model itself.
