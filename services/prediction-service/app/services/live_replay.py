@@ -26,7 +26,7 @@ from app.services import live_forecast
 from app.services.ingestion_client import PitStop, RaceControlMessage, RaceLap, RaceResult
 from app.services.lap_simulation import LapSimulationParameters
 from app.services.live_state import WET_COMPOUNDS, RaceState, race_state
-from app.services.model import LIVE_NETWORK_PATH
+from app.services.model import LIVE_BLEND_PATH, LIVE_NETWORK_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,15 @@ def cached_live_network():
     except (OSError, ValueError, KeyError) as exc:
         logger.warning("live network unreadable, replaying without it: %s", exc)
         return None, None
+
+
+@lru_cache(maxsize=1)
+def cached_late_blend():
+    """The late-race blend when its artifact exists and passed its gate."""
+    from app.training import late_blend
+
+    blend = late_blend.load(LIVE_BLEND_PATH)
+    return blend if blend is not None and blend.enabled else None
 
 
 def total_laps_of(laps: Sequence[RaceLap], results: Sequence[RaceResult]) -> int:
@@ -195,8 +204,24 @@ def lap_frame(
                                   retired.mean(axis=0), profile)
         win, podium = network.predict(x, sim_win, sim_podium, ~state.retired)
         corrected = True
-    return (_frame(lap, names, teams, positions, retired, state, _flag(state, messages),
-                   win, podium, corrected), wet_so_far)
+    # Late in a dry race, lean toward the running order (training/late_blend).
+    blend = cached_late_blend() if not wet_so_far else None
+    blended = 0.0
+    if blend is not None and total > 0:
+        from app.training import late_blend
+
+        blended = blend.weight(lap / total)
+        if blended > 0:
+            if win is None:
+                win = ((positions == 1) & ~retired).mean(axis=0)
+                podium = ((positions <= PODIUM) & ~retired).mean(axis=0)
+            order_win, order_podium = late_blend.order_chances(
+                state.running_order(), names, state.retired)
+            win, podium = late_blend.blend(win, podium, order_win, order_podium, blended)
+    frame = _frame(lap, names, teams, positions, retired, state, _flag(state, messages),
+                   win, podium, corrected)
+    frame["blend"] = round(blended, 3)
+    return frame, wet_so_far
 
 
 def build_replay(

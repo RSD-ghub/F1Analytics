@@ -6,6 +6,7 @@ Usage:
         [--validation-seasons 2022,2023] [--test-seasons 2024,2025]
         [--runs 1000] [--drop-laps 0.0] [--report live_backtest.json]
         [--network [--write-network [path]]]
+        [--late-blend [--write-blend [path]]]
 
 Read-only: it reads the ingestion API and, with ``--report``, writes one JSON
 file. Nothing is changed in the database or the model artifacts.
@@ -28,6 +29,14 @@ the test seasons as ``live_net`` beside the simulator alone. It is enabled only
 if, per race, it beats the simulator alone on winner log loss plus podium
 Brier with a 95% interval clear of zero. ``--write-network`` writes the
 artifact either way, with that verdict in ``enabled``.
+
+**The late blend** (``--late-blend``, ``app/training/late_blend.py``) leans
+the served forecast (the network's when ``--network``, else the simulator's)
+toward "the order holds" late in a race. Its two settings are chosen on the
+validation seasons, it is scored on the test seasons as ``live_blend``, and it
+is enabled only if, per race, it beats the unblended forecast on winner log
+loss plus podium Brier with a 95% interval clear of zero. ``--write-blend``
+writes the artifact either way, with that verdict in ``enabled``.
 
 **What it prints**, per checkpoint (share of race distance): the live forecast
 against the pre-race forecast and against "the order holds", on winner log
@@ -55,9 +64,10 @@ from app.services import live_forecast  # noqa: E402
 from app.services.ingestion_client import IngestionClient  # noqa: E402
 from app.services.lap_simulation import LapSimulationParameters  # noqa: E402
 from app.services.live_state import WET_COMPOUNDS, race_state  # noqa: E402
-from app.services.model import LAP_SIMULATION_PATH, LIVE_NETWORK_PATH, RaceModel, feature_names  # noqa: E402
+from app.services.model import (  # noqa: E402
+    LAP_SIMULATION_PATH, LIVE_BLEND_PATH, LIVE_NETWORK_PATH, RaceModel, feature_names)
 from app.training import corpus, dataset, lap_profiles, live_backtest, plackett_luce, retirements  # noqa: E402
-from app.training import live_network  # noqa: E402
+from app.training import late_blend, live_network  # noqa: E402
 from train_model import TRAINING_FROM_SEASON, _load_practice  # noqa: E402
 from train_neural import calibration_races  # noqa: E402
 
@@ -155,7 +165,7 @@ def network_samples(races, model, profiles, params, prior_laps, runs):
 
 
 def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_cache,
-           network=None):
+           network=None, samples=None):
     """Score rows for one race at every checkpoint."""
     profile = lap_profiles.profile_for(profiles, race.circuit)
     strengths = model.strengths(race.drivers)
@@ -188,6 +198,9 @@ def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_
             race.drivers, strengths, profile, params, state,
             seed=race.seed + lap, runs=runs, prior_laps=prior_laps, **kwargs)
         add("live", outcome)
+        positions, retired = outcome
+        win = ((positions == 1) & ~retired).mean(axis=0)
+        podium = ((positions <= live_backtest.PODIUM) & ~retired).mean(axis=0)
         if network is not None:
             sample = live_sample(race, state, outcome, strengths, params, prior_laps, profile)
             win, podium = network.predict(sample.x, sample.sim_win, sample.sim_podium,
@@ -196,14 +209,35 @@ def replay(race, model, profiles, params, prior_laps, runs, drop_rate, pre_race_
                                                     race.actual)
             row.update(race=race.key, method="live_net", checkpoint=fraction, wet=race.wet)
             rows.append(row)
+        if samples is not None:
+            order_win, order_podium = late_blend.order_chances(
+                state.running_order(), names, state.retired)
+            samples.append(late_blend.Sample(
+                race.key, fraction, win, podium, order_win, order_podium,
+                positions.mean(axis=0), race.actual, race.wet))
     return rows
 
 
-def run_all(races, model, profiles, params, prior_laps, runs, drop_rate, network=None):
+def run_all(races, model, profiles, params, prior_laps, runs, drop_rate, network=None,
+            samples=None):
     cache, rows = {}, []
     for race in races:
         rows.extend(replay(race, model, profiles, params, prior_laps, runs, drop_rate, cache,
-                           network))
+                           network, samples))
+    return rows
+
+
+def blend_rows(samples, blend):
+    """Score rows for the blended forecast, method ``live_blend``."""
+    rows = []
+    for s in samples:
+        if s.fraction <= 0:
+            continue
+        win, podium = late_blend.blend(s.win, s.podium, s.order_win, s.order_podium,
+                                       late_blend.weight(s.fraction, blend[0], blend[1]))
+        row = live_backtest.score_probabilities(win, podium, s.expected, s.actual)
+        row.update(race=s.race, method="live_blend", checkpoint=s.fraction, wet=s.wet)
+        rows.append(row)
     return rows
 
 
@@ -243,6 +277,9 @@ def report(rows, title):
         pairs = [("live", b) for b in ("pre_race", "order_holds")]
         if "live_net" in methods:
             pairs += [("live_net", "live"), ("live_net", "order_holds")]
+        if "live_blend" in methods:
+            served = "live_net" if "live_net" in methods else "live"
+            pairs += [("live_blend", served), ("live_blend", "order_holds")]
         for method, baseline in pairs:
             parts = []
             for measure in ("winner_log_loss", "podium_brier"):
@@ -279,6 +316,10 @@ def main() -> int:
                         help="train the live network on the validation seasons and score it")
     parser.add_argument("--write-network", default=None, nargs="?", const=LIVE_NETWORK_PATH,
                         help="with --network, write the network artifact (default %(const)s)")
+    parser.add_argument("--late-blend", action="store_true",
+                        help="fit the late-race lean toward order-holds and gate it")
+    parser.add_argument("--write-blend", default=None, nargs="?", const=LIVE_BLEND_PATH,
+                        help="with --late-blend, write the blend artifact (default %(const)s)")
     args = parser.parse_args()
     validation_seasons = [int(s) for s in args.validation_seasons.split(",") if s]
     test_seasons = [int(s) for s in args.test_seasons.split(",") if s]
@@ -312,7 +353,7 @@ def main() -> int:
               "validation_seasons": validation_seasons, "test_seasons": test_seasons}
     prior_laps = args.prior_laps
     validation = None
-    if (prior_laps is None or args.network) and validation_seasons:
+    if (prior_laps is None or args.network or args.late_blend) and validation_seasons:
         validation = asyncio.run(load_races(client, results, quali, practice, validation_seasons))
     if prior_laps is None and validation:
         logger.info("\nchoosing prior_laps on %s (%s races):", validation_seasons, len(validation))
@@ -343,9 +384,27 @@ def main() -> int:
         output["network_simulator_loss"] = simulator_loss
         output["network_l2"] = l2
 
+    blend = None
+    if args.late_blend:
+        if not validation:
+            logger.error("--late-blend needs validation seasons to fit on")
+            return 2
+        fit_samples = []
+        run_all(validation, model, profiles, params, prior_laps, args.runs, 0.0, network,
+                fit_samples)
+        alpha, start, search = late_blend.choose(fit_samples)
+        blend = (alpha, start)
+        logger.info("\nlate blend on %s: alpha %.1f from %.0f%% of distance (validation loss "
+                    "%.4f; unblended %.4f)", validation_seasons, alpha, start * 100,
+                    search[(alpha, start)], search[(0.0, late_blend.STARTS[0])])
+        output["blend_search"] = {"{}@{}".format(a, b): v for (a, b), v in search.items()}
+
+    test_samples = [] if blend is not None else None
     test = asyncio.run(load_races(client, results, quali, practice, test_seasons))
     rows = run_all(test, model, profiles, params, prior_laps, args.runs, args.drop_laps,
-                   network)
+                   network, test_samples)
+    if blend is not None:
+        rows += blend_rows(test_samples, blend)
     dry = [r for r in rows if not r["wet"]]
     wet = [r for r in rows if r["wet"]]
     output["dry"] = report(dry, "held-out {} dry races ({} races)".format(
@@ -373,6 +432,23 @@ def main() -> int:
             with open(args.write_network, "w") as handle:
                 json.dump(artifact, handle, sort_keys=True)
             logger.info("wrote %s", os.path.abspath(args.write_network))
+    if blend is not None:
+        mean, (low, high), enabled = late_blend.gate(test_samples, *blend)
+        logger.info("\nlate blend gate (dry, blended minus unblended, winner log loss + podium "
+                    "Brier per race): %+.4f [%+.4f, %+.4f] -> %s", mean, low, high,
+                    "ENABLE" if enabled else "keep it off")
+        output["blend_gate"] = {"alpha": blend[0], "start": blend[1], "mean": mean,
+                                "low": low, "high": high, "enabled": enabled}
+        if args.write_blend:
+            artifact = late_blend.LateBlend(
+                alpha=blend[0], start=blend[1], enabled=enabled,
+                meta={"fitted_at": datetime.now(timezone.utc).isoformat(),
+                      "fitted_on": validation_seasons, "test_seasons": test_seasons,
+                      "applied_to": "live_net" if network is not None else "live",
+                      "gate": {"mean": mean, "low": low, "high": high}})
+            with open(args.write_blend, "w") as handle:
+                json.dump(artifact.to_dict(), handle, indent=2, sort_keys=True)
+            logger.info("wrote %s", os.path.abspath(args.write_blend))
     if args.report:
         with open(args.report, "w") as handle:
             json.dump(output, handle, indent=2, sort_keys=True)
