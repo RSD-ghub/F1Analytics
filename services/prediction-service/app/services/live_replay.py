@@ -248,4 +248,64 @@ def build_replay(
         "network": network is not None,
         "frames": frames,
         "result": result,
+        "scorecard": scorecard(frames, result, total),
     }
+
+
+#: The three forecasts each checkpoint compares, in the order they are shown.
+SCORECARD_METHODS = ("live", "pre_race", "order_holds")
+
+
+def scorecard(frames: Sequence[Dict], result: Sequence[Dict], total: int) -> List[Dict]:
+    """How this race's live forecast did, scored like the replay backtest.
+
+    At each checkpoint (10% to 90% of race distance) three forecasts are scored
+    against the real result with ``live_backtest.score_probabilities``: the
+    live forecast at that lap, the pre-race forecast (the grid frame, never
+    updated) and "order holds" (the running order at that lap taken as the
+    result, with certainty). Lower is better for log loss and Brier. One race
+    is one sample: this shows what happened here, not whether the method is
+    better, which is the backtest's job.
+    """
+    from app.training import live_backtest
+
+    if not frames:
+        return []
+    names = [car["driver"] for car in frames[0]["cars"]]
+    places = {r["driver"]: r["position"] for r in result}
+    actual = [places.get(n) or 999 for n in names]
+    if 1 not in actual:
+        return []
+    by_lap = {f["lap"]: f for f in frames}
+    laps = sorted(by_lap)
+
+    def probabilities(frame: Dict, method: str):
+        cars = {c["driver"]: c for c in frame["cars"]}
+        rows = [cars.get(n) for n in names]
+        if method == "order_holds":
+            running = [c for c in frame["cars"] if not c["retired"]]
+            place = {c["driver"]: i + 1 for i, c in enumerate(running)}
+            win = [float(place.get(n) == 1) for n in names]
+            podium = [float(place.get(n, 999) <= live_backtest.PODIUM) for n in names]
+            expected = [float(place.get(n, len(names))) for n in names]
+            return win, podium, expected
+        win = [r["win"] if r else 0.0 for r in rows]
+        podium = [r["podium"] if r else 0.0 for r in rows]
+        expected = [r["expected_position"] if r else float(len(names)) for r in rows]
+        return win, podium, expected
+
+    out = []
+    for fraction, target in zip(live_backtest.CHECKPOINTS,
+                                live_backtest.checkpoint_laps(total)):
+        if fraction == 0.0:
+            continue
+        lap = max((l for l in laps if l <= target), default=None)
+        if lap is None or lap == 0:
+            continue
+        row = {"checkpoint": fraction, "lap": lap}
+        for method in SCORECARD_METHODS:
+            frame = by_lap[0] if method == "pre_race" else by_lap[lap]
+            scores = live_backtest.score_probabilities(*probabilities(frame, method), actual)
+            row[method] = {k: (None if v != v else round(v, 4)) for k, v in scores.items()}
+        out.append(row)
+    return out
