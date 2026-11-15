@@ -68,6 +68,9 @@ export default function LastRace({ race }) {
           <Link className="link" to={`/blog/${race.season}/${race.round}`}>
             See the full weekend →
           </Link>{' '}
+          <Link className="link" to={`/race/${race.season}/${race.round}`}>
+            Race story →
+          </Link>{' '}
           <Link className="link" to={`/race-review/${race.season}/${race.round}`}>
             Pit stop review →
           </Link>

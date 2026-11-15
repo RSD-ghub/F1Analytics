@@ -17,6 +17,7 @@ import Drivers from './pages/Drivers'
 import Driver from './pages/Driver'
 import RaceReview from './pages/RaceReview'
 import Live from './pages/Live'
+import RaceStory from './pages/RaceStory'
 
 /**
  * Routing.
@@ -46,6 +47,9 @@ export default function App() {
         <Route path="/drivers" element={<Drivers />} />
         <Route path="/drivers/:season/:driver" element={<Driver />} />
         <Route path="/race-review/:season/:round" element={<RaceReview />} />
+        <Route path="/race" element={<RaceStory />} />
+        <Route path="/race/:season" element={<RaceStory />} />
+        <Route path="/race/:season/:round" element={<RaceStory />} />
         <Route path="/live" element={<Live />} />
         <Route path="/live/:season" element={<Live />} />
         <Route path="/live/:season/:round" element={<Live />} />

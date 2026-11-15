@@ -180,6 +180,7 @@ function Replay({ season, round }) {
             ))}
           </ol>
           <p className="muted small">
+            <Link className="link" to={`/race/${season}/${round}`}>Race story, lap by lap →</Link>{' '}
             <Link className="link" to={`/race-review/${season}/${round}`}>Pit stop review →</Link>
           </p>
         </Panel>
