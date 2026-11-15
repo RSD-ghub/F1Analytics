@@ -5,7 +5,8 @@ name: CI
 
 on:
   push:
-    branches: [rebuild/python-forecasting-platform]
+    # main is the home branch since PR #38 merged the rebuild into it.
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -45,6 +46,25 @@ jobs:
           fi
       - name: Test
         run: python -m pytest tests -q
+
+  scripts:
+    # The tests under scripts/tests (FIA check, lap repair, Bernie eval). They
+    # need only the standard library plus requests and httpx; fia-doc itself is
+    # never imported by them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: constraints.txt
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -c constraints.txt pytest httpx requests
+      - name: Test
+        run: python -m pytest scripts/tests -q
 
   frontend:
     runs-on: ubuntu-latest
